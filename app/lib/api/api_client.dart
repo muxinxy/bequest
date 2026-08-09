@@ -42,6 +42,53 @@ class ApiClient {
     return _get('/api/v1/me', jwt);
   }
 
+  /// GET /api/v1/categories
+  Future<List<Map<String, dynamic>>> listCategories(String jwt) {
+    return _getList('/api/v1/categories', jwt);
+  }
+
+  /// POST /api/v1/categories
+  Future<Map<String, dynamic>> createCategory(String jwt, String name) {
+    return _postAuth('/api/v1/categories', {'name': name}, jwt);
+  }
+
+  /// DELETE /api/v1/categories/{id}
+  Future<void> deleteCategory(String jwt, String id) {
+    return _delete('/api/v1/categories/$id', jwt);
+  }
+
+  /// GET /api/v1/assets
+  Future<List<Map<String, dynamic>>> listAssets(String jwt) {
+    return _getList('/api/v1/assets', jwt);
+  }
+
+  /// GET /api/v1/assets/{id},包含 encrypted_data。
+  Future<Map<String, dynamic>> getAsset(String jwt, String id) {
+    return _get('/api/v1/assets/$id', jwt);
+  }
+
+  /// POST /api/v1/assets
+  Future<Map<String, dynamic>> createAsset(
+    String jwt,
+    Map<String, dynamic> body,
+  ) {
+    return _postAuth('/api/v1/assets', body, jwt);
+  }
+
+  /// PUT /api/v1/assets/{id}
+  Future<Map<String, dynamic>> updateAsset(
+    String jwt,
+    String id,
+    Map<String, dynamic> body,
+  ) {
+    return _put('/api/v1/assets/$id', body, jwt);
+  }
+
+  /// DELETE /api/v1/assets/{id}
+  Future<void> deleteAsset(String jwt, String id) {
+    return _delete('/api/v1/assets/$id', jwt);
+  }
+
   Future<Map<String, dynamic>> _post(
     String path,
     Map<String, dynamic> body,
@@ -54,12 +101,74 @@ class ApiClient {
     return _decode(response);
   }
 
+  Future<Map<String, dynamic>> _postAuth(
+    String path,
+    Map<String, dynamic> body,
+    String jwt,
+  ) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl$path'),
+      headers: {'Content-Type': 'application/json', ..._authHeaders(jwt)},
+      body: jsonEncode(body),
+    );
+    return _decode(response);
+  }
+
+  Future<Map<String, dynamic>> _put(
+    String path,
+    Map<String, dynamic> body,
+    String jwt,
+  ) async {
+    final response = await _client.put(
+      Uri.parse('$baseUrl$path'),
+      headers: {'Content-Type': 'application/json', ..._authHeaders(jwt)},
+      body: jsonEncode(body),
+    );
+    return _decode(response);
+  }
+
   Future<Map<String, dynamic>> _get(String path, String jwt) async {
     final response = await _client.get(
       Uri.parse('$baseUrl$path'),
-      headers: {'Authorization': 'Bearer $jwt'},
+      headers: _authHeaders(jwt),
     );
     return _decode(response);
+  }
+
+  Future<List<Map<String, dynamic>>> _getList(String path, String jwt) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl$path'),
+      headers: _authHeaders(jwt),
+    );
+    _ensureSuccess(response);
+    final dynamic decoded = response.body.isEmpty ? const [] : jsonDecode(response.body);
+    if (decoded is! List) return const [];
+    return decoded.whereType<Map<String, dynamic>>().toList();
+  }
+
+  Future<void> _delete(String path, String jwt) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl$path'),
+      headers: _authHeaders(jwt),
+    );
+    _ensureSuccess(response);
+  }
+
+  Map<String, String> _authHeaders(String jwt) =>
+      {'Authorization': 'Bearer $jwt'};
+
+  void _ensureSuccess(http.Response response) {
+    if (response.statusCode >= 200 && response.statusCode < 300) return;
+    dynamic body;
+    try {
+      body = jsonDecode(response.body);
+    } catch (_) {
+      body = null;
+    }
+    final map = body is Map<String, dynamic> ? body : const <String, dynamic>{};
+    final message =
+        map['message'] ?? map['error'] ?? '请求失败(${response.statusCode})';
+    throw ApiException(message.toString(), statusCode: response.statusCode);
   }
 
   Map<String, dynamic> _decode(http.Response response) {

@@ -78,9 +78,16 @@ bequest/
 ## API 约定
 
 - REST，前缀 `/api/v1`
-- 认证：`Authorization: Bearer <JWT>`
+- 认证：`Authorization: Bearer <JWT>`（除 register/login 外全部需要）
 - 错误响应：`{"error": "..."}`
-- 当前端点：`GET /healthz`；`POST /api/v1/auth/register`、`POST /api/v1/auth/login`（P0）
+- 用户隔离：所有查询按 JWT 中 user_id 过滤，越权一律 404/401
+- 端点：
+  - `GET /healthz`
+  - `POST /api/v1/auth/register`、`POST /api/v1/auth/login`、`GET /api/v1/me`
+  - `GET|POST /api/v1/categories`、`DELETE /api/v1/categories/{id}`（删除后资产 category_id 自动置空）
+  - `GET|POST /api/v1/assets`、`GET|PUT|DELETE /api/v1/assets/{id}`
+- 资产列表不含 `encrypted_data`（元数据），单条含密文 base64；`encrypted_data` 为客户端 AES-256-GCM 加密后的 `base64(nonce‖ciphertext‖tag)`
+- 预设分类为客户端常量（不落库），自定义分类走 API；预设选中即 `category_id=null`（升级路径：服务端种子分类）
 
 ## 关键数据流
 
