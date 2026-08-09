@@ -36,6 +36,9 @@ class _AssetEditPageState extends State<AssetEditPage> {
   String _categoryValue = '';
   String? _expiryDate;
 
+  /// 到期提醒提前天数:null = 不提醒,0 = 到期当天。
+  int? _advanceDays;
+
   bool _loading = true;
   bool _saving = false;
   bool _decryptFailed = false;
@@ -79,6 +82,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
               if (payload is Map<String, dynamic>) {
                 credentials = payload['credentials']?.toString();
                 notes = payload['notes']?.toString();
+                _advanceDays = (payload['advance_days'] as num?)?.toInt();
               }
             }
           } catch (_) {
@@ -157,15 +161,18 @@ class _AssetEditPageState extends State<AssetEditPage> {
       if (jwt == null || masterKey == null) {
         throw ApiException('登录状态已失效,请重新登录');
       }
-      final payload = jsonEncode({
+      final payload = <String, dynamic>{
         'credentials': _credentialsController.text.trim(),
         'notes': _notesController.text.trim(),
-      });
+      };
+      // ponytail: 后端资产接口暂无 reminder_settings 字段,
+      // 提前天数先随加密载荷往返,待 API 支持后再挪到独立字段。
+      if (_advanceDays != null) payload['advance_days'] = _advanceDays;
       final body = {
         'name': _nameController.text.trim(),
         'asset_type': _assetType,
         'category_id': _categoryIdToSubmit(),
-        'encrypted_data': encryptSensitiveData(payload, masterKey),
+        'encrypted_data': encryptSensitiveData(jsonEncode(payload), masterKey),
         'expiry_date': _expiryDate,
       };
       if (_isEdit) {
@@ -289,6 +296,24 @@ class _AssetEditPageState extends State<AssetEditPage> {
                             ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<int?>(
+                      key: const ValueKey('advance-days'),
+                      initialValue: _advanceDays,
+                      decoration: const InputDecoration(
+                        labelText: '到期提醒提前天数',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem<int?>(value: null, child: Text('不提醒')),
+                        DropdownMenuItem<int?>(value: 30, child: Text('提前30天')),
+                        DropdownMenuItem<int?>(value: 7, child: Text('提前7天')),
+                        DropdownMenuItem<int?>(value: 1, child: Text('提前1天')),
+                        DropdownMenuItem<int?>(value: 0, child: Text('到期当天')),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _advanceDays = value),
                     ),
                     const SizedBox(height: 24),
                     FilledButton(

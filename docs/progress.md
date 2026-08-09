@@ -10,7 +10,7 @@
 | 骨架 | monorepo 结构、Git 初始化、首次提交 | ✅ 完成 |
 | P0 | 账号注册/登录（JWT + argon2id）、SQLite 接入、主密码派生 + 密钥安全存储 | ✅ 完成 |
 | P1 | 资产 CRUD、分类、端到端加密备份/同步、APP 锁 | ✅ 完成 |
-| P2 | 过期提醒、不登录升级阶梯、继承状态机 + 三重取消窗口、继承人设置、密钥发放、审计日志 | ⏳ |
+| P2 | 过期提醒、不登录升级阶梯、继承状态机 + 三重取消窗口、继承人设置、密钥发放、审计日志 | ✅ 完成 |
 | P3 | JSON 导入导出、免费/会员权益、提醒渠道抽象（短信/电话接口预留） | ⏳ |
 | 后置 | 多继承人优先级、定时释放、生前共享、数字遗言、Excel 导出、Web/iOS/鸿蒙 | ⏳ |
 
@@ -36,6 +36,19 @@
 - PowerShell 5.1 向 curl.exe 传含双引号的 `-d '{"json"...}'` 会被转义破坏，联调用 `-d "@file.json"` 或 Invoke-RestMethod
 - 本机 git 走代理 `127.0.0.1:7897`（Clash），无代理时 GitHub push 会 SSL 失败
 - Flutter/Dart 走 `storage.flutter-io.cn` 镜像；Go 模块临时设 `$env:GOPROXY="https://goproxy.cn,direct"`
+
+## 当前状态（P2 完成，下一步 P3）
+
+**P2 已交付（产品灵魂：提醒 + 继承）**：
+- 迁移 002：`inheritance_events`（事件状态机）+ `reminders`（dedup_key 唯一索引防重复）+ 3 个系统提醒模板种子
+- 调度器（scheduler.go，60s tick 后台 goroutine + 可测 `scan(db, now)`）：
+  - 过期提醒：到期前 30/7/1 天 + 已到期，按资产逐个触发，dedup 防重
+  - 升级阶梯：免费 `[30,60,90,120]` 天 / 会员 `[7,14,30,60]` 天；**level 映射 1-based 计数并封顶为 `len-1`**（40 天→1 级、130 天→3 级+触发继承，测试锁死）
+  - 触发继承：随机 16 字节 event_key + 继承人访问码哈希快照 → 事件 pending、stage=triggered、审计记录 event_key、SMTP 邮件（未配置则跳过记日志）
+- 继承 API：`inheritors` CRUD（访问码仅存 sha256）、`reminder-templates` CRUD（系统模板只读）、`reminders` 站内信 + 已读、`inheritance/claim`（**无需 JWT**，event_key+访问码双因子 → 返回 master_key_wrapped）、`inheritance/status`、`audit-log`
+- **登录重置**：号主登录 → last_login_at 刷新 + stage 复位 inactive + escalation 清零 + pending/claimed 事件全部 reversed + 审计（第三重取消窗口）
+- 前端：继承人管理页（访问码生成+线下交付提示）、提醒收件箱（未读徽标/类型图标/标记已读）、继承状态页（stage/事件/三重窗口说明）、提醒模板管理页、资产编辑新增「到期提醒提前天数」（存加密载荷，零 API 变更）
+- 验证：后端 15 测试全绿；**端到端时间旅行实测**——130 天未登录→调度器触发→claim 返回与注册一致的密钥→重复 409→错码 401→登录后 stage=inactive 事件 reversed
 
 ## 如何运行（交接用）
 

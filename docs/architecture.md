@@ -55,14 +55,21 @@ bequest/
 
 状态：`inactive → warning → triggered → claimed → reversed`
 
-1. 号主超时未登录 → 提醒升级（L1 推送 → L2 推送+邮件 → L3 警告）→ 号主登录即取消
-2. `triggered`：继承人收到「领取资格」+ 预设访问码，凭码领取
-3. `claimed`：交接冻结 72h 反悔期，号主登录即 `reversed` 冻结交接
+1. 号主超时未登录 → 提醒升级（升级阶梯：免费 30/60/90/120 天，会员 7/14/30/60 天；每档一次站内信，L3+ 邮件）→ 号主登录即取消（重置阶梯）
+2. `triggered`：调度器创建 `inheritance_events`（随机 16 字节 event_key + 继承人访问码哈希快照），stage→triggered，event_key 经 SMTP 邮件发给继承人（未配 SMTP 时记录在审计日志）
+3. `claimed`：继承人凭 **event_key + 预设访问码双因子** claim（无需账号）→ 拿到 `users.master_key_wrapped`；号主登录 → 事件 `reversed`（第三重窗口，72h 反悔期的服务端实现为「登录即反转」，未做倒计时到期自动完成——交接后 72h 倒计时为后续增强）
 
 ### ADR-3 免费/会员差异化
 
-- 继承提醒：免费保证送达但仅邮件、升级间隔长；会员多渠道（短信/电话）、间隔短
+- 继承提醒：免费保证送达但仅邮件、升级间隔长（30/60/90/120 天）；会员多渠道（短信/电话）、间隔短（7/14/30/60 天）
 - 权益门槛：资产/分类数量、导出格式（免费仅 JSON）、自定义模板、同步频率
+- `reminders` 表 `dedup_key` 唯一索引保证每档提醒只发一次（幂等调度）
+
+### ADR-6 提醒渠道与邮件
+
+- 站内信（reminders 表）为默认渠道，App 拉取即用，零外部依赖
+- SMTP 邮件经 `net/smtp` 标准库，env `SMTP_HOST/PORT/USER/PASS/FROM` 未配置则跳过记日志（免费档继承提醒=邮件渠道，需配置 SMTP 才能对外送达）
+- 推送/短信/电话：渠道抽象预留，P3 接 FCM/短信 API
 
 ### ADR-4 资产存储模型
 
@@ -86,6 +93,11 @@ bequest/
   - `POST /api/v1/auth/register`、`POST /api/v1/auth/login`、`GET /api/v1/me`
   - `GET|POST /api/v1/categories`、`DELETE /api/v1/categories/{id}`（删除后资产 category_id 自动置空）
   - `GET|POST /api/v1/assets`、`GET|PUT|DELETE /api/v1/assets/{id}`
+  - `GET|POST|PUT|DELETE /api/v1/inheritors`（访问码仅存 sha256，返回不含）
+  - `GET|POST|PUT|DELETE /api/v1/reminder-templates`（is_preset=1 系统模板只读）
+  - `GET /api/v1/reminders`、`POST /api/v1/reminders/{id}/read`
+  - `POST /api/v1/inheritance/claim`（无 JWT，event_key+access_code）→ `{"master_key_wrapped","status"}`
+  - `GET /api/v1/inheritance/status`、`GET /api/v1/audit-log`
 - 资产列表不含 `encrypted_data`（元数据），单条含密文 base64；`encrypted_data` 为客户端 AES-256-GCM 加密后的 `base64(nonce‖ciphertext‖tag)`
 - 预设分类为客户端常量（不落库），自定义分类走 API；预设选中即 `category_id=null`（升级路径：服务端种子分类）
 

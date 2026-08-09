@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"time"
 )
 
 func main() {
@@ -17,8 +18,19 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
+	go runScheduler(db)
+
 	log.Println("bequest server listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", newMux(db)))
+}
+
+// runScheduler ticks the dead-man's-switch scan every 60s.
+func runScheduler(db *sql.DB) {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		scan(db, time.Now())
+	}
 }
 
 func newMux(db *sql.DB) *http.ServeMux {
@@ -37,5 +49,18 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("POST /api/v1/assets", requireAuth(handleCreateAsset(db)))
 	mux.Handle("PUT /api/v1/assets/{id}", requireAuth(handleUpdateAsset(db)))
 	mux.Handle("DELETE /api/v1/assets/{id}", requireAuth(handleDeleteAsset(db)))
+	mux.Handle("GET /api/v1/inheritors", requireAuth(handleListInheritors(db)))
+	mux.Handle("POST /api/v1/inheritors", requireAuth(handleCreateInheritor(db)))
+	mux.Handle("PUT /api/v1/inheritors/{id}", requireAuth(handleUpdateInheritor(db)))
+	mux.Handle("DELETE /api/v1/inheritors/{id}", requireAuth(handleDeleteInheritor(db)))
+	mux.Handle("GET /api/v1/reminder-templates", requireAuth(handleListTemplates(db)))
+	mux.Handle("POST /api/v1/reminder-templates", requireAuth(handleCreateTemplate(db)))
+	mux.Handle("PUT /api/v1/reminder-templates/{id}", requireAuth(handleUpdateTemplate(db)))
+	mux.Handle("DELETE /api/v1/reminder-templates/{id}", requireAuth(handleDeleteTemplate(db)))
+	mux.Handle("GET /api/v1/reminders", requireAuth(handleListReminders(db)))
+	mux.Handle("POST /api/v1/reminders/{id}/read", requireAuth(handleMarkReminderRead(db)))
+	mux.HandleFunc("POST /api/v1/inheritance/claim", handleClaim(db))
+	mux.Handle("GET /api/v1/inheritance/status", requireAuth(handleInheritanceStatus(db)))
+	mux.Handle("GET /api/v1/audit-log", requireAuth(handleAuditLog(db)))
 	return mux
 }

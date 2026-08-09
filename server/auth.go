@@ -239,8 +239,27 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "invalid username or password")
 			return
 		}
-		// ponytail: last_login_at best-effort; not required by the contract
-		db.Exec(`UPDATE users SET last_login_at = datetime('now') WHERE id = ?`, id)
+		// Login is the owner's "still alive" proof: reset the dead man's
+		// switch — refresh last_login_at, drop any escalation/inheritance
+		// state, and reverse outstanding inheritance events.
+		var stage string
+		if err := db.QueryRow(`SELECT inherit_stage FROM users WHERE id = ?`, id).Scan(&stage); err != nil {
+			log.Printf("query inherit stage: %v", err)
+			stage = "inactive"
+		}
+		if _, err := db.Exec(`UPDATE users SET last_login_at = datetime('now'), inherit_stage = 'inactive', escalation_level = 0 WHERE id = ?`, id); err != nil {
+			log.Printf("update login state: %v", err)
+		}
+		if stage != "" && stage != "inactive" {
+			if _, err := db.Exec(`UPDATE inheritance_events SET status = 'reversed', reversed_at = datetime('now')
+				WHERE user_id = ? AND status IN ('pending','claimed')`, id); err != nil {
+				log.Printf("reverse inheritance events: %v", err)
+			}
+			if _, err := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'owner', 'login_reset', ?)`,
+				id, fmt.Sprintf("stage:%s→inactive", stage)); err != nil {
+				log.Printf("audit login reset: %v", err)
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"token": mustSign(id),
 			"user":  userJSON{ID: id, Username: username, Email: email, Tier: tier},

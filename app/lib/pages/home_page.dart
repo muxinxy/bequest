@@ -4,11 +4,16 @@ import '../api/api_client.dart';
 import '../models/asset.dart';
 import '../models/category.dart';
 import '../models/preset_categories.dart';
+import '../models/reminder.dart';
 import '../storage/secure_store.dart';
 import 'app_lock_setup_page.dart';
 import 'asset_edit_page.dart';
 import 'category_page.dart';
+import 'inheritance_status_page.dart';
+import 'inheritors_page.dart';
 import 'login_page.dart';
+import 'reminder_templates_page.dart';
+import 'reminders_page.dart';
 
 /// 主页:按分类过滤展示资产列表,提供分类管理、锁设置与退出登录。
 class HomePage extends StatefulWidget {
@@ -25,6 +30,7 @@ class _HomePageState extends State<HomePage> {
   List<Asset> _assets = const [];
   List<Category> _categories = const [];
   Map<String, String> _categoryNames = const {};
+  int _unreadReminders = 0;
 
   /// 过滤值:null = 全部;自定义分类 id;'未分类' 或预设名 → 无分类资产。
   String? _filterCategoryId;
@@ -48,11 +54,16 @@ class _HomePageState extends State<HomePage> {
       await _api.me(jwt);
       final categories = await _api.listCategories(jwt);
       final assets = await _api.listAssets(jwt);
+      final reminders = await _api.listReminders(jwt);
       if (!mounted) return;
       setState(() {
         _categories = categories.map(Category.fromJson).toList(growable: false);
         _categoryNames = {for (final c in _categories) c.id: c.name};
         _assets = assets.map(Asset.fromJson).toList(growable: false);
+        _unreadReminders = reminders
+            .map(Reminder.fromJson)
+            .where((r) => r.isUnread)
+            .length;
         _loading = false;
       });
     } catch (_) {
@@ -103,6 +114,33 @@ class _HomePageState extends State<HomePage> {
     if (mounted) _load();
   }
 
+  /// 打开子页面,返回后刷新数据。
+  Future<void> _openPage(Widget page) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => page),
+    );
+    if (mounted) _load();
+  }
+
+  void _onMenuSelected(String value) {
+    switch (value) {
+      case 'inheritors':
+        _openPage(const InheritorsPage());
+      case 'templates':
+        _openPage(const ReminderTemplatesPage());
+      case 'categories':
+        _openPage(const CategoryPage());
+      case 'status':
+        _openPage(const InheritanceStatusPage());
+      case 'lock':
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const AppLockSetupPage()),
+        );
+      case 'logout':
+        _logout();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredAssets;
@@ -111,26 +149,25 @@ class _HomePageState extends State<HomePage> {
         title: const Text('托孤'),
         actions: [
           IconButton(
-            tooltip: '分类管理',
-            icon: const Icon(Icons.category_outlined),
-            onPressed: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const CategoryPage()),
-              );
-              if (mounted) _load();
-            },
-          ),
-          IconButton(
-            tooltip: '锁设置',
-            icon: const Icon(Icons.lock_outline),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const AppLockSetupPage()),
+            tooltip: '提醒',
+            icon: Badge.count(
+              count: _unreadReminders,
+              isLabelVisible: _unreadReminders > 0,
+              child: const Icon(Icons.notifications_outlined),
             ),
+            onPressed: () => _openPage(const RemindersPage()),
           ),
-          IconButton(
-            tooltip: '退出登录',
-            icon: const Icon(Icons.logout),
-            onPressed: _logout,
+          PopupMenuButton<String>(
+            tooltip: '更多',
+            onSelected: (value) => _onMenuSelected(value),
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'inheritors', child: Text('继承人管理')),
+              PopupMenuItem(value: 'templates', child: Text('提醒模板')),
+              PopupMenuItem(value: 'categories', child: Text('分类管理')),
+              PopupMenuItem(value: 'status', child: Text('继承状态')),
+              PopupMenuItem(value: 'lock', child: Text('锁设置')),
+              PopupMenuItem(value: 'logout', child: Text('退出登录')),
+            ],
           ),
         ],
       ),

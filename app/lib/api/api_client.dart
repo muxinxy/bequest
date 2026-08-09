@@ -89,6 +89,71 @@ class ApiClient {
     return _delete('/api/v1/assets/$id', jwt);
   }
 
+  /// GET /api/v1/inheritors
+  Future<List<Map<String, dynamic>>> listInheritors(String jwt) {
+    return _getList('/api/v1/inheritors', jwt);
+  }
+
+  /// POST /api/v1/inheritors
+  Future<Map<String, dynamic>> createInheritor(
+    String jwt,
+    Map<String, dynamic> body,
+  ) {
+    return _postAuth('/api/v1/inheritors', body, jwt);
+  }
+
+  /// DELETE /api/v1/inheritors/{id}
+  Future<void> deleteInheritor(String jwt, String id) {
+    return _delete('/api/v1/inheritors/$id', jwt);
+  }
+
+  /// GET /api/v1/reminder-templates
+  Future<List<Map<String, dynamic>>> listReminderTemplates(String jwt) {
+    return _getList('/api/v1/reminder-templates', jwt);
+  }
+
+  /// POST /api/v1/reminder-templates
+  Future<Map<String, dynamic>> createReminderTemplate(
+    String jwt,
+    Map<String, dynamic> body,
+  ) {
+    return _postAuth('/api/v1/reminder-templates', body, jwt);
+  }
+
+  /// PUT /api/v1/reminder-templates/{id}
+  Future<Map<String, dynamic>> updateReminderTemplate(
+    String jwt,
+    String id,
+    Map<String, dynamic> body,
+  ) {
+    return _put('/api/v1/reminder-templates/$id', body, jwt);
+  }
+
+  /// DELETE /api/v1/reminder-templates/{id}
+  Future<void> deleteReminderTemplate(String jwt, String id) {
+    return _delete('/api/v1/reminder-templates/$id', jwt);
+  }
+
+  /// GET /api/v1/reminders
+  Future<List<Map<String, dynamic>>> listReminders(String jwt) {
+    return _getList('/api/v1/reminders', jwt);
+  }
+
+  /// POST /api/v1/reminders/{id}/read
+  Future<Map<String, dynamic>> markReminderRead(String jwt, String id) {
+    return _postAuth('/api/v1/reminders/$id/read', const {}, jwt);
+  }
+
+  /// GET /api/v1/inheritance/status
+  Future<Map<String, dynamic>> getInheritanceStatus(String jwt) {
+    return _get('/api/v1/inheritance/status', jwt);
+  }
+
+  /// GET /api/v1/audit-log
+  Future<List<Map<String, dynamic>>> listAuditLog(String jwt) {
+    return _getList('/api/v1/audit-log', jwt);
+  }
+
   Future<Map<String, dynamic>> _post(
     String path,
     Map<String, dynamic> body,
