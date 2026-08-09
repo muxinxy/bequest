@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
@@ -214,28 +212,12 @@ class _HomePageState extends State<HomePage> {
   Future<void> _importFlow() async {
     final repo = _repo;
     if (repo == null) return;
-    final FilePickerResult? result;
+    // 用官方 file_selector(无自定义 Gradle 插件,CI 可编译;file_picker 有 KGP 兼容问题)。
+    const typeGroup = XTypeGroup(label: 'JSON 文件', extensions: ['json']);
     try {
-      result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json'],
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('选择文件失败')));
-      return;
-    }
-    if (result == null || result.files.isEmpty) return;
-    final path = result.files.single.path;
-    if (path == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('读取文件失败')));
-      return;
-    }
-    try {
-      final text = await File(path).readAsString();
+      final file = await openFile(acceptedTypeGroups: const [typeGroup]);
+      if (file == null) return;
+      final text = await file.readAsString();
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
