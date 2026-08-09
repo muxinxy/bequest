@@ -1,0 +1,32 @@
+# 托孤(bequest)服务器 docker compose 配置
+# 用法:
+#   1. 在 server/ 目录下创建 .env 文件(见下), 或用系统环境变量
+#   2. docker compose up -d --build
+#
+# 关于数据目录:
+#   镜像内 WORKDIR=/data, 服务器在 CWD 下打开 "data/bequest.db",
+#   因此相对路径落在 /data 上, 即宿主机 ./data 目录。
+#   config.json 同理: 服务器从 CWD 读取 config.json,
+#   把宿主机配置挂载到 ./config.json:/data/config.json 即可生效。
+services:
+  bequest:
+    build: .
+    image: ghcr.io/muxinxy/bequest:latest
+    container_name: bequest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+      # 可选: 使用宿主机配置文件(见 README-deploy.md 的 config.json 示例)
+      # - ./config.json:/data/config.json
+    environment:
+      # 必填, 未设置时 compose 会报错退出
+      JWT_SECRET: ${JWT_SECRET:?请在 .env 中设置 JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?请在 .env 中设置 ENCRYPTION_KEY}
+      # 可选: 单机 SMTP(旧机制, 多 SMTP 请用 config.json)
+      # SMTP_HOST: ${SMTP_HOST:-}
+      # SMTP_PORT: ${SMTP_PORT:-465}
+      # SMTP_USER: ${SMTP_USER:-}
+      # SMTP_PASS: ${SMTP_PASS:-}
+      # SMTP_FROM: ${SMTP_FROM:-}

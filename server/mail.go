@@ -3,39 +3,69 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/smtp"
-	"os"
+	"strconv"
 )
 
-// sendMail sends a UTF-8 text email via the SMTP server configured in env
-// (SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/SMTP_FROM). With no SMTP_HOST it
-// logs and returns — mail is optional.
+// sendMail is the SYSTEM sender (used by scheduler/notify), round-robining
+// over the servers loaded at startup. Kept as the same signature/behavior as
+// before: with no SMTP configured it logs and returns.
 func sendMail(to, subject, body string) {
-	host := os.Getenv("SMTP_HOST")
-	if host == "" {
+	sendMailSystem(to, subject, body)
+}
+
+// sendMailSystem tries each system SMTP server in turn, starting at the
+// round-robin position, and logs which one succeeded.
+func sendMailSystem(to, subject, body string) {
+	if len(systemServers) == 0 {
 		log.Printf("mail skipped (no SMTP config): to=%s subject=%s", to, subject)
 		return
 	}
-	port := os.Getenv("SMTP_PORT")
-	if port == "" {
-		port = "587"
+	n := len(systemServers)
+	start := rrIndex % n
+	for i := 0; i < n; i++ {
+		s := systemServers[(start+i)%n]
+		if err := sendViaServer(s, to, subject, body); err != nil {
+			log.Printf("send via %s: %v", s.Host, err)
+			continue
+		}
+		rrIndex = (start + i + 1) % n
+		log.Printf("mail sent via %s to=%s", s.Host, to)
+		return
 	}
-	user := os.Getenv("SMTP_USER")
-	pass := os.Getenv("SMTP_PASS")
-	from := os.Getenv("SMTP_FROM")
+	log.Printf("mail failed via all %d smtp servers: to=%s", n, to)
+}
+
+// sendMailCustom sends via one specific server (a user's own SMTP).
+func sendMailCustom(s smtpServer, to, subject, body string) {
+	if err := sendViaServer(s, to, subject, body); err != nil {
+		log.Printf("send custom mail via %s: %v", s.Host, err)
+	}
+}
+
+// sendViaServer performs the actual net/smtp send through one server. Empty
+// User -> no auth (plaintext relay); otherwise PLAIN auth over STARTTLS.
+func sendViaServer(s smtpServer, to, subject, body string) error {
+	if s.Host == "" {
+		return errors.New("empty smtp host")
+	}
+	port := s.Port
+	if port == 0 {
+		port = 587
+	}
+	from := s.FromAddr
 	if from == "" {
-		from = user
+		from = s.User
 	}
 	var auth smtp.Auth
-	if user != "" {
-		auth = smtp.PlainAuth("", user, pass, host)
+	if s.User != "" {
+		auth = smtp.PlainAuth("", s.User, s.Password, s.Host)
 	}
-	if err := smtp.SendMail(net.JoinHostPort(host, port), auth, from, []string{to}, []byte(buildMessage(from, to, subject, body))); err != nil {
-		log.Printf("send mail: %v", err)
-	}
+	return smtp.SendMail(net.JoinHostPort(s.Host, strconv.Itoa(port)), auth, from, []string{to}, []byte(buildMessage(from, to, subject, body)))
 }
 
 // buildMessage renders a minimal MIME message: RFC 2047-encoded UTF-8

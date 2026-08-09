@@ -1,0 +1,195 @@
+import 'package:flutter/material.dart';
+
+import '../api/api_client.dart';
+import '../storage/secure_store.dart';
+
+/// 邮箱发件设置页:调用后端 /api/v1/settings/smtp 保存自定义 SMTP 凭据。
+/// 凭据仅加密保存在服务端,邮件由用户自己的邮箱直接发送。
+class SmtpSettingsPage extends StatefulWidget {
+  const SmtpSettingsPage({super.key});
+
+  @override
+  State<SmtpSettingsPage> createState() => _SmtpSettingsPageState();
+}
+
+class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
+  final _store = SecureStore();
+  final _api = ApiClient();
+
+  final _host = TextEditingController();
+  final _port = TextEditingController(text: '587');
+  final _user = TextEditingController();
+  final _password = TextEditingController();
+  final _fromAddr = TextEditingController();
+  bool _enabled = false;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    for (final c in [_host, _port, _user, _password, _fromAddr]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final jwt = await _store.readJwt();
+    if (jwt == null) {
+      _snack('登录状态已失效,请重新登录');
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final cfg = await _api.getSmtpSettings(jwt);
+      if (!mounted) return;
+      setState(() {
+        _host.text = cfg['host']?.toString() ?? '';
+        final port = (cfg['port'] as num?)?.toInt();
+        if (port != null) _port.text = '$port';
+        _user.text = cfg['user']?.toString() ?? '';
+        _fromAddr.text = cfg['from_addr']?.toString() ?? '';
+        _enabled = cfg['enabled'] == true;
+        _loading = false;
+      });
+    } catch (_) {
+      // 后端未就绪或未配置:保留默认值,页面仍可编辑。
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    final jwt = await _store.readJwt();
+    if (jwt == null) {
+      _snack('登录状态已失效,请重新登录');
+      return;
+    }
+    final body = <String, dynamic>{
+      'host': _host.text.trim(),
+      'port': int.tryParse(_port.text.trim()) ?? 587,
+      'user': _user.text.trim(),
+      'from_addr': _fromAddr.text.trim(),
+      'enabled': _enabled,
+      // 密码留空 = 保持现有凭据。
+      if (_password.text.isNotEmpty) 'password': _password.text,
+    };
+    try {
+      await _api.updateSmtpSettings(jwt, body);
+      _snack('已保存');
+    } catch (_) {
+      _snack('保存失败,请检查网络后重试');
+    }
+  }
+
+  Future<void> _clear() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('清除发件设置'),
+        content: const Text('确定清除自定义 SMTP 设置吗?之后将恢复使用托孤服务端发送。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('清除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final jwt = await _store.readJwt();
+    if (jwt == null) {
+      _snack('登录状态已失效,请重新登录');
+      return;
+    }
+    try {
+      await _api.deleteSmtpSettings(jwt);
+      if (!mounted) return;
+      setState(() {
+        _host.clear();
+        _port.text = '587';
+        _user.clear();
+        _password.clear();
+        _fromAddr.clear();
+        _enabled = false;
+      });
+      _snack('已清除发件设置');
+    } catch (_) {
+      _snack('清除失败,请检查网络后重试');
+    }
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('邮箱发件设置')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                const Text(
+                  '提醒邮件将优先使用您自己的邮箱发送,不经过托孤服务端'
+                  '(服务端仅加密保存凭据)。',
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                _field(_host, '服务器', hint: 'smtp.example.com'),
+                _field(_port, '端口', hint: '587'),
+                _field(_user, '用户名'),
+                _field(_password, '密码', hint: '留空表示保持现有密码', obscure: true),
+                _field(_fromAddr, '发件地址', hint: 'noreply@example.com'),
+                SwitchListTile(
+                  title: const Text('启用'),
+                  subtitle: const Text('启用自定义邮箱发送提醒邮件'),
+                  value: _enabled,
+                  onChanged: (value) => setState(() => _enabled = value),
+                ),
+                const SizedBox(height: 8),
+                FilledButton(
+                  onPressed: _save,
+                  child: const Text('保存'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: _clear,
+                  child: const Text('清除设置'),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _field(
+    TextEditingController controller,
+    String label, {
+    String? hint,
+    bool obscure = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(
+        controller: controller,
+        obscureText: obscure,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          border: const OutlineInputBorder(),
+        ),
+      ),
+    );
+  }
+}

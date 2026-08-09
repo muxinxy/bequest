@@ -20,6 +20,8 @@ import 'inheritors_page.dart';
 import 'login_page.dart';
 import 'reminder_templates_page.dart';
 import 'reminders_page.dart';
+import 'smtp_settings_page.dart';
+import 'sync_settings_page.dart';
 
 /// 主页:按分类过滤展示资产列表,提供分类管理、锁设置与退出登录。
 class HomePage extends StatefulWidget {
@@ -201,6 +203,10 @@ class _HomePageState extends State<HomePage> {
         _importFlow();
       case 'audit':
         _openPage(const AuditPage());
+      case 'sync':
+        _openPage(const SyncSettingsPage());
+      case 'smtp':
+        _openPage(const SmtpSettingsPage());
       case 'lock':
         Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const AppLockSetupPage()),
@@ -237,6 +243,8 @@ class _HomePageState extends State<HomePage> {
               PopupMenuItem(value: 'export', child: Text('导出资产')),
               PopupMenuItem(value: 'import', child: Text('导入资产')),
               PopupMenuItem(value: 'audit', child: Text('审计日志')),
+              PopupMenuItem(value: 'sync', child: Text('同步设置')),
+              PopupMenuItem(value: 'smtp', child: Text('邮箱发件设置')),
               PopupMenuItem(value: 'lock', child: Text('锁设置')),
               PopupMenuItem(value: 'logout', child: Text('退出登录')),
             ],

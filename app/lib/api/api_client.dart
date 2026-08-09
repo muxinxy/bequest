@@ -154,6 +154,28 @@ class ApiClient {
     return _getList('/api/v1/audit-log', jwt);
   }
 
+  /// GET /api/v1/settings/smtp(不含密码,configured=false 表示未配置)。
+  Future<Map<String, dynamic>> getSmtpSettings(String jwt) {
+    return _get('/api/v1/settings/smtp', jwt);
+  }
+
+  /// PUT /api/v1/settings/smtp
+  Future<Map<String, dynamic>> updateSmtpSettings(
+    String jwt,
+    Map<String, dynamic> body,
+  ) {
+    return _put('/api/v1/settings/smtp', body, jwt);
+  }
+
+  /// DELETE /api/v1/settings/smtp → {"configured":false}
+  Future<Map<String, dynamic>> deleteSmtpSettings(String jwt) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/api/v1/settings/smtp'),
+      headers: _authHeaders(jwt),
+    );
+    return _decode(response);
+  }
+
   Future<Map<String, dynamic>> _post(
     String path,
     Map<String, dynamic> body,

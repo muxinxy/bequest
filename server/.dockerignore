@@ -1,0 +1,6 @@
+# 构建上下文排除项(机密不得进入镜像)
+.git
+data/
+*.exe
+*.db
+config.json

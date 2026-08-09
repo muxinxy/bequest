@@ -7,7 +7,12 @@ import (
 	"time"
 )
 
+// version is stamped at build time: go build -ldflags "-X main.version=1.2.3"
+var version = "dev"
+
 func main() {
+	loadConfig() // system SMTP/SMS/phone providers from config.json or env SMTP_*
+
 	db, err := openDB()
 	if err != nil {
 		log.Fatalf("open db: %v", err)
@@ -62,5 +67,9 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.HandleFunc("POST /api/v1/inheritance/claim", handleClaim(db))
 	mux.Handle("GET /api/v1/inheritance/status", requireAuth(handleInheritanceStatus(db)))
 	mux.Handle("GET /api/v1/audit-log", requireAuth(handleAuditLog(db)))
+	mux.Handle("GET /api/v1/settings/smtp", requireAuth(handleGetSMTP(db)))
+	mux.Handle("PUT /api/v1/settings/smtp", requireAuth(handlePutSMTP(db)))
+	mux.Handle("DELETE /api/v1/settings/smtp", requireAuth(handleDeleteSMTP(db)))
+	mux.HandleFunc("GET /api/v1/version", handleVersion)
 	return mux
 }

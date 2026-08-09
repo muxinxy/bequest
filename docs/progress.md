@@ -12,6 +12,7 @@
 | P1 | 资产 CRUD、分类、端到端加密备份/同步、APP 锁 | ✅ 完成 |
 | P2 | 过期提醒、不登录升级阶梯、继承状态机 + 三重取消窗口、继承人设置、密钥发放、审计日志 | ✅ 完成 |
 | P3 | JSON 导入导出、免费/会员权益、提醒渠道抽象（短信/电话接口预留）、审计日志页 | ✅ 完成 |
+| 后置 | 自托管同步（WebDAV/S3）、自定义 SMTP、多渠道负载均衡、Docker + Release | ✅ 完成 |
 | 后置 | 多继承人优先级、定时释放、生前共享、数字遗言、Excel 导出、Web/iOS/鸿蒙 | ⏳ |
 
 ## 当前状态（P1 完成，下一步 P2）
@@ -65,6 +66,20 @@
   - 新增 `export_format.dart`（纯函数契约层）+ `master_password.dart`；9 新测试 → 15 全绿
 
 **导出文件契约 v1**：`{"app":"bequest","version":1,"exported_at":"ISO8601","assets":[{"name","asset_type","category"?, "expiry_date"?,"credentials","notes","advance_days"?}]}`——纯客户端加解密，服务端永不见明文；Excel 导出留作会员权益（后置）
+
+## 当前状态（后置功能完成）
+
+**后置功能已交付**：
+- **用户自定义 SMTP**：迁移 003 `user_smtp` 表；`GET/PUT/DELETE /api/v1/settings/smtp`（密码 AES-256-GCM 加密存 BLOB，`ENCRYPTION_KEY` env，dev 默认密钥 + 一次性警告；GET 永不返回密码；空密码 PUT 保留旧值；首次设置必填密码）；调度器 `notifyUser` 优先用用户自己的 SMTP 发提醒邮件，未配置/禁用回退系统 SMTP；继承触发邮件（发给继承人）保持系统 SMTP
+- **多渠道负载均衡**：可选 `server/config.json`（`smtp_servers[]` 多 SMTP 轮询 + `sms_providers[]`/`phone_providers[]` 预留），缺失则回退 env `SMTP_*` 单服务器；`sendMailSystem` 轮询逐个尝试
+- **version 端点**：`GET /api/v1/version`（`-X main.version=` 注入，Release 时自动带上 tag 版本）
+- **自托管同步（隐私第一）**：同步配置**仅存本机**（secure_store），凭据绝不经过托孤服务端；WebDAV + S3 两个实现（**纯手写**：webdav_client 内部用 dio 无法注入 MockClient 测试、aws_s3 包无 null safety——SigV4 用 package:crypto 手写并用 AWS 官方测试向量锁定）；FTP/SFTP 界面预留"即将支持"
+- 备份 = 全量数据（资产密文 + 分类 + 模板 + 继承人）→ 主密钥 AES-GCM 加密单文件 → 上传用户自己的存储；恢复 = 下载 → 解密 → 逐条重建（分类按名解析：预设→null、自定义→匹配/创建）
+- **SMTP 设置页**：自定义发件服务器（提醒邮件走用户自己的邮箱）
+- **部署**：`server/Dockerfile`（多阶段 alpine，非 root，WORKDIR=/data 落卷）+ `docker-compose.yml` + `scripts/build.sh`（5 平台交叉编译）/`build.ps1` + `.github/workflows/release.yml`（tag v* 触发：矩阵构建 + buildx 双架构推 GHCR `ghcr.io/muxinxy/bequest` + softprops 发 Release 资产，`"on":` 加引号规避 YAML 1.1 布尔陷阱）
+- 验证：后端 22 测试全绿（+4：SMTP CRUD 加密存取、version、无配置轮询、用户 SMTP 优先不 panic）；前端 29 测试全绿（+14：备份 round-trip/篡改、WebDAV MockClient、SigV4 AWS 向量、SMTP 设置）；端到端实测 SMTP API 全链路（密码不泄露、空密码保留旧值、version dev）
+
+**仍后置**：FTP/SFTP 同步真实现、SMS/电话 API 真接入、网盘扩展（坚果云/百度云等走 WebDAV 即可）、Excel 导出、多继承人优先级、定时释放、生前共享、数字遗言、Web/iOS/鸿蒙、会员开通后台
 
 ## 如何运行（交接用）
 

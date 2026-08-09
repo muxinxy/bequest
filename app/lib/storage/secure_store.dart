@@ -13,6 +13,7 @@ class SecureStore {
   static const _pinSaltKey = 'bequest_pin_salt';
   static const _lockEnabledKey = 'bequest_lock_enabled';
   static const _lockBiometricKey = 'bequest_lock_biometric';
+  static const _syncConfigKey = 'bequest_sync_config';
 
   final FlutterSecureStorage _storage;
 
@@ -58,4 +59,10 @@ class SecureStore {
       await _storage.read(key: _lockBiometricKey) == 'true';
 
   Future<void> clearAll() => _storage.deleteAll();
+
+  // 同步配置仅保存在本机(隐私优先),绝不发送给托孤服务端。
+  Future<void> saveSyncConfig(String json) =>
+      _storage.write(key: _syncConfigKey, value: json);
+
+  Future<String?> readSyncConfig() => _storage.read(key: _syncConfigKey);
 }

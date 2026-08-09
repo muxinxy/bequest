@@ -67,6 +67,25 @@ bequest/
 - 权益门槛：导出格式（免费 JSON，Excel 会员后置）、自定义模板（当前免费开放，后续可收紧）
 - 会员开通方式：当前无管理后台，`UPDATE users SET tier='member'` 手动开通（文档记录）
 
+### ADR-8 自托管同步（隐私第一，客户端直连）
+
+- 用户因隐私顾虑可把加密备份同步到自己的 WebDAV/S3（FTP/SFTP 预留）
+- 同步凭据**仅存本机**（secure_store），绝不经过托孤服务端；同步动作客户端直连远端
+- 备份 = 全量数据（资产密文 + 分类 + 模板 + 继承人）打包后主密钥 AES-GCM 加密单文件
+- 实现为纯手写：`webdav_client` 内部用 dio（无法注入 http.Client/MockClient 测试）、`aws_s3` 无 null safety；SigV4 用 package:crypto 实现并以 AWS 官方测试向量锁定
+
+### ADR-9 自定义发件与多渠道负载均衡
+
+- 用户可配置自己的 SMTP（迁移 003 `user_smtp`），调度器 `notifyUser` 优先用户 SMTP，回退系统 SMTP——解决"怕产品方邮件服务"的隐私顾虑
+- SMTP 密码 AES-256-GCM 加密存储（`ENCRYPTION_KEY` env；dev 默认密钥仅限开发，生产必须设置）
+- 系统多渠道：可选 `server/config.json`（`smtp_servers[]` 轮询 + `sms_providers[]`/`phone_providers[]` 预留），缺失回退 env `SMTP_*`；`sendMailSystem` 轮询逐个尝试
+- 版本：`GET /api/v1/version`，Release 构建用 `-X main.version=<tag>` 注入
+
+### ADR-10 部署与发布
+
+- 二进制：`scripts/build.sh`（5 平台）/ `build.ps1`（本地 Windows）；Docker：多阶段 alpine 非 root，`WORKDIR=/data` 使相对路径 `data/bequest.db` 落在卷上
+- 发布：tag `v*` 触发 GitHub Actions——矩阵构建 + buildx 双架构推 `ghcr.io/muxinxy/bequest` + Release 资产；workflow 用 `"on":` 加引号规避 YAML 1.1 解析器布尔化问题
+
 ### ADR-7 导入导出（纯客户端 E2E）
 
 - 导出/导入完全在客户端完成：拉取密文 → 主密码验证（派生比对本地 MK，salt 于注册时保存 `bequest_master_salt`）→ 解密/加密 → JSON v1 文件
