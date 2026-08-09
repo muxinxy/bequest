@@ -124,5 +124,53 @@ void main() {
       expect(await store.readPatternSalt(), isNull);
       expect(await store.readPatternHash(), isNull);
     });
+
+    test('lockBiometricType 往返与非法值回落关闭', () async {
+      final store = SecureStore();
+      expect(await store.readLockBiometricType(), '');
+      await store.setLockBiometricType('fingerprint');
+      expect(await store.readLockBiometricType(), 'fingerprint');
+      await store.setLockBiometricType('face');
+      expect(await store.readLockBiometricType(), 'face');
+      await store.setLockBiometricType('');
+      expect(await store.readLockBiometricType(), '');
+      await store.setLockBiometricType('iris');
+      expect(await store.readLockBiometricType(), '');
+    });
+
+    test('迁移:仅旧布尔 true → fingerprint,并写回新键', () async {
+      FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(
+        {'bequest_lock_biometric': 'true'},
+      );
+      final store = SecureStore();
+      expect(await store.readLockBiometricType(), 'fingerprint');
+      // 兼容读法同步生效。
+      expect(await store.readLockBiometric(), isTrue);
+      // 再次读取仍稳定(写回后新键优先)。
+      expect(await store.readLockBiometricType(), 'fingerprint');
+    });
+
+    test('迁移:旧布尔 false → 关闭', () async {
+      FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(
+        {'bequest_lock_biometric': 'false'},
+      );
+      final store = SecureStore();
+      expect(await store.readLockBiometricType(), '');
+      expect(await store.readLockBiometric(), isFalse);
+    });
+
+    test('迁移:新键优先于旧布尔', () async {
+      FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(
+        {'bequest_lock_biometric': 'true', 'bequest_lock_biometric_type': 'face'},
+      );
+      final store = SecureStore();
+      expect(await store.readLockBiometricType(), 'face');
+    });
+
+    test('无任何键 → 关闭', () async {
+      final store = SecureStore();
+      expect(await store.readLockBiometricType(), '');
+      expect(await store.readLockBiometric(), isFalse);
+    });
   });
 }

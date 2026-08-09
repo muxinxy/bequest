@@ -13,6 +13,7 @@ class SecureStore {
   static const _pinSaltKey = 'bequest_pin_salt';
   static const _lockEnabledKey = 'bequest_lock_enabled';
   static const _lockBiometricKey = 'bequest_lock_biometric';
+  static const _lockBiometricTypeKey = 'bequest_lock_biometric_type';
   static const _lockTimingKey = 'bequest_lock_timing';
   static const _lockTimeoutKey = 'bequest_lock_timeout_minutes';
   static const _patternHashKey = 'bequest_lock_pattern';
@@ -76,11 +77,31 @@ class SecureStore {
   Future<bool> readLockEnabled() async =>
       await _storage.read(key: _lockEnabledKey) == 'true';
 
+  /// 生物识别解锁方式:''(关闭) | 'fingerprint'(指纹) | 'face'(人脸),三选一。
+  /// 旧布尔键 [readLockBiometric] 仅作迁移用:新键缺失且旧值为 true 时回落为 'fingerprint'。
+  Future<void> setLockBiometricType(String type) async {
+    final t = (type == 'fingerprint' || type == 'face') ? type : '';
+    await _storage.write(key: _lockBiometricTypeKey, value: t);
+  }
+
+  Future<String> readLockBiometricType() async {
+    final v = await _storage.read(key: _lockBiometricTypeKey);
+    if (v == 'fingerprint') return 'fingerprint';
+    if (v == 'face') return 'face';
+    // 新键缺失 → 读旧布尔迁移(首次读取时顺手写回新键)。
+    if (await _storage.read(key: _lockBiometricKey) == 'true') {
+      await _storage.write(key: _lockBiometricTypeKey, value: 'fingerprint');
+      return 'fingerprint';
+    }
+    return '';
+  }
+
+  // 兼容旧调用方:布尔 ↔ 类型映射('true' 默认指纹)。
   Future<void> setLockBiometric(bool value) =>
-      _storage.write(key: _lockBiometricKey, value: value ? 'true' : 'false');
+      setLockBiometricType(value ? 'fingerprint' : '');
 
   Future<bool> readLockBiometric() async =>
-      await _storage.read(key: _lockBiometricKey) == 'true';
+      (await readLockBiometricType()).isNotEmpty;
 
   /// 锁定时机:'exit'(退出时锁定,默认) | 'timeout'(退出且超时锁定)。
   Future<void> setLockTiming(String timing) =>

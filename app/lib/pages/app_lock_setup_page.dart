@@ -25,8 +25,9 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
   final _timeoutController = TextEditingController();
 
   String _timing = 'exit';
-  bool _biometric = false;
-  bool _biometricSupported = true;
+  /// 生物识别解锁方式:''(关闭) | 'fingerprint'(指纹) | 'face'(人脸)。
+  String _biometricType = '';
+  List<BiometricType> _availableBiometrics = [];
   bool _hasPin = false;
   bool _hasPattern = false;
   List<int>? _newPattern;
@@ -49,24 +50,25 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
 
   Future<void> _load() async {
     try {
-      final biometric = await _store.readLockBiometric();
+      final biometricType = await _store.readLockBiometricType();
       final timing = await _store.readLockTiming();
       final timeout = await _store.readLockTimeoutMinutes();
       final hasPin = (await _store.readPinHash()) != null;
       final hasPattern = (await _store.readPatternHash()) != null;
-      // 设备无生物识别能力时置灰开关并提示原因。
-      var supported = true;
+      // 查询设备实际注册的生物识别,用于支持提示与不匹配警告。
+      var available = <BiometricType>[];
       try {
         final auth = LocalAuthentication();
-        supported =
-            await auth.isDeviceSupported() && await auth.canCheckBiometrics;
+        if (await auth.isDeviceSupported() && await auth.canCheckBiometrics) {
+          available = await auth.getAvailableBiometrics();
+        }
       } catch (_) {
-        supported = false;
+        available = [];
       }
       if (mounted) {
         setState(() {
-          _biometric = biometric;
-          _biometricSupported = supported;
+          _biometricType = biometricType;
+          _availableBiometrics = available;
           _timing = timing;
           _hasPin = hasPin;
           _hasPattern = hasPattern;
@@ -76,6 +78,31 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
     } catch (_) {
       // 读取失败按默认处理。
     }
+  }
+
+  /// 所选方式是否落在设备可用类别上;未知类别(空数组)按不支持处理。
+  bool _typeSupported(String type) {
+    if (type.isEmpty) return true;
+    if (type == 'fingerprint') {
+      return _availableBiometrics.any(
+        (b) => b == BiometricType.fingerprint || b == BiometricType.strong,
+      );
+    }
+    return _availableBiometrics.any(
+      (b) => b == BiometricType.face || b == BiometricType.iris,
+    );
+  }
+
+  /// 设备可用类别的中文描述;iris 归入人脸类。
+  String _supportText() {
+    if (_availableBiometrics.isEmpty) return '当前设备未检测到生物识别';
+    final labels = _availableBiometrics.map((b) => switch (b) {
+      BiometricType.fingerprint => '指纹',
+      BiometricType.face || BiometricType.iris => '人脸',
+      BiometricType.strong => '指纹(强)',
+      BiometricType.weak => '弱生物识别',
+    }).toSet();
+    return '当前设备支持: ${labels.join(' / ')}';
   }
 
   /// 设置/重设图案:两次绘制一致才写入(此时只存内存,点保存落盘)。
@@ -118,7 +145,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
     }
     final patternSet = (_hasPattern && !_clearPattern) || _newPattern != null;
     final pinSet = _hasPin || _pinController.text.isNotEmpty;
-    if (!_biometric && !patternSet && !pinSet) {
+    if (_biometricType.isEmpty && !patternSet && !pinSet) {
       _snack('请至少设置一种解锁方式(PIN 或图案)');
       return;
     }
@@ -137,7 +164,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
       }
       if (_clearPattern) await _store.clearPattern();
       await _store.setLockEnabled(true);
-      await _store.setLockBiometric(_biometric);
+      await _store.setLockBiometricType(_biometricType);
       await _store.setLockTiming(_timing);
       await _store.setLockTimeoutMinutes(timeout ?? 5);
       if (!mounted) return;
@@ -213,18 +240,54 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
               ],
               const SizedBox(height: 8),
               const Divider(),
-              _sectionTitle('解锁方式'),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('生物识别解锁'),
-                subtitle: Text(
-                  _biometricSupported ? '支持指纹或面容解锁' : '当前设备不支持生物识别',
+              _sectionTitle('生物识别解锁方式'),
+              RadioGroup<String>(
+                groupValue: _biometricType,
+                onChanged: (value) =>
+                    setState(() => _biometricType = value ?? ''),
+                child: const Column(
+                  children: [
+                    RadioListTile<String>(
+                      value: 'fingerprint',
+                      title: Text('指纹'),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    RadioListTile<String>(
+                      value: 'face',
+                      title: Text('人脸'),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    RadioListTile<String>(
+                      value: '',
+                      title: Text('关闭'),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ],
                 ),
-                value: _biometric,
-                onChanged: _biometricSupported
-                    ? (value) => setState(() => _biometric = value)
-                    : null,
               ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  _supportText(),
+                  style: const TextStyle(fontSize: 13, color: Colors.grey),
+                ),
+              ),
+              // 平台限制:Android BiometricPrompt 无法强制仅指纹或仅人脸,
+              // 系统弹窗展示全部已注册生物识别。此处仅提示用户偏好可能不可用。
+              if (_biometricType.isNotEmpty && !_typeSupported(_biometricType))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    '当前设备不支持所选方式,可能无法解锁',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _pinController,

@@ -41,7 +41,8 @@ class _AppLockScreenState extends State<AppLockScreen> {
   Timer? _lockTimer;
   int _lockSeconds = 0;
 
-  bool _biometricAvailable = false;
+  /// 生物识别解锁方式:''(关闭) | 'fingerprint'(指纹) | 'face'(人脸)。
+  String _biometricType = '';
   bool _hasPin = false;
   bool _hasPattern = false;
   bool _hasMasterKey = false;
@@ -65,17 +66,12 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
   Future<void> _init() async {
     try {
-      final biometric = await _store.readLockBiometric();
+      final biometricType = await _store.readLockBiometricType();
       final hasPin = (await _store.readPinHash()) != null;
       final masterKey = await _store.readMasterKey();
       final patternHash = await _store.readPatternHash();
       final patternSalt = await _store.readPatternSalt();
-      var biometricAvailable = false;
-      if (biometric) {
-        final canCheck = await _auth.canCheckBiometrics;
-        final supported = await _auth.isDeviceSupported();
-        biometricAvailable = canCheck && supported;
-      }
+      final biometricEnabled = biometricType.isNotEmpty;
       if (mounted) {
         setState(() {
           _hasPin = hasPin;
@@ -83,15 +79,15 @@ class _AppLockScreenState extends State<AppLockScreen> {
           _hasMasterKey = masterKey != null && masterKey.isNotEmpty;
           _patternHash = patternHash ?? '';
           _patternSalt = patternSalt ?? '';
-          _biometricAvailable = biometricAvailable;
+          _biometricType = biometricType;
         });
       }
-      if (biometricAvailable) {
+      if (biometricEnabled) {
         await _tryBiometric();
       }
       // 未配置任何可校验方式(存储被清空等):视为解锁,避免被锁死。
       // 生物识别可用(含校验失败)时不自动解锁,防止失败后静默放行。
-      if (mounted && !_hasPin && !_hasPattern && !biometricAvailable) {
+      if (mounted && !_hasPin && !_hasPattern && !biometricEnabled) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) widget.onUnlocked();
         });
@@ -112,6 +108,35 @@ class _AppLockScreenState extends State<AppLockScreen> {
       _error = null;
     });
     try {
+      // 设备未录入任何生物识别:明确提示,不弹系统框。
+      List<BiometricType> available;
+      try {
+        available = await _auth.getAvailableBiometrics();
+      } catch (_) {
+        available = const [];
+      }
+      if (available.isEmpty) {
+        if (mounted) {
+          setState(() => _error = '设备未录入指纹或人脸,请先在系统设置中添加');
+        }
+        return;
+      }
+      // 平台限制:Android BiometricPrompt 无法强制仅指纹或仅人脸,系统弹窗会
+      // 展示全部已注册的生物识别。设置里记录的是用户偏好;只要设备上存在任意
+      // 生物识别就仍走系统弹窗,偏好类型不可用时仅记录日志。
+      final preferredOk = _biometricType == 'fingerprint'
+          ? available.any(
+              (b) => b == BiometricType.fingerprint || b == BiometricType.strong,
+            )
+          : _biometricType == 'face'
+              ? available.any((b) => b == BiometricType.face || b == BiometricType.iris)
+              : false;
+      if (!preferredOk) {
+        Logger.instance.d(
+          'preferred biometric ($_biometricType) not enrolled ($available); '
+          'falling back to system prompt',
+        );
+      }
       final ok = await _auth.authenticate(
         localizedReason: '请验证生物识别以解锁',
         options: const AuthenticationOptions(
@@ -351,7 +376,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                     ),
                   ),
                 ],
-                if (_biometricAvailable) ...[
+                if (_biometricType.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
                     onPressed: (_verifying || _lockSeconds > 0)
