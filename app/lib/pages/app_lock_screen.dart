@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 
+import '../crypto/pattern_hash.dart';
 import '../crypto/pin_hash.dart';
 import '../storage/secure_store.dart';
+import '../widgets/pattern_lock.dart';
 
-/// 锁屏:PIN 解锁,启用生物识别时提供指纹/面容解锁按钮。
+/// 锁屏:按已配置的解锁方式展示——图案、PIN、生物识别(可同时存在)。
 /// 解锁成功后回调 [onUnlocked]。
 class AppLockScreen extends StatefulWidget {
   const AppLockScreen({super.key, required this.onUnlocked});
@@ -21,6 +23,10 @@ class _AppLockScreenState extends State<AppLockScreen> {
   final _pinController = TextEditingController();
 
   bool _biometricAvailable = false;
+  bool _hasPin = false;
+  bool _hasPattern = false;
+  String _patternSalt = '';
+  String _patternHash = '';
   bool _verifying = false;
   String? _error;
 
@@ -39,6 +45,17 @@ class _AppLockScreenState extends State<AppLockScreen> {
   Future<void> _init() async {
     try {
       final biometric = await _store.readLockBiometric();
+      final hasPin = (await _store.readPinHash()) != null;
+      final patternHash = await _store.readPatternHash();
+      final patternSalt = await _store.readPatternSalt();
+      if (mounted) {
+        setState(() {
+          _hasPin = hasPin;
+          _hasPattern = patternHash != null && patternSalt != null;
+          _patternHash = patternHash ?? '';
+          _patternSalt = patternSalt ?? '';
+        });
+      }
       if (biometric) {
         final canCheck = await _auth.canCheckBiometrics;
         final supported = await _auth.isDeviceSupported();
@@ -47,8 +64,14 @@ class _AppLockScreenState extends State<AppLockScreen> {
           await _tryBiometric();
         }
       }
+      // 未配置任何可校验方式(存储被清空等):视为解锁,避免被锁死。
+      if (mounted && !_hasPin && !_hasPattern) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) widget.onUnlocked();
+        });
+      }
     } catch (_) {
-      // 模拟器/测试环境无生物识别能力,静默降级为仅 PIN。
+      // 模拟器/测试环境无生物识别能力,静默降级。
     }
   }
 
@@ -69,7 +92,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
       );
       if (ok && mounted) widget.onUnlocked();
     } catch (_) {
-      if (mounted) setState(() => _error = '生物识别失败,请使用 PIN 解锁');
+      if (mounted) setState(() => _error = '生物识别失败,请使用其他方式解锁');
     } finally {
       if (mounted) setState(() => _verifying = false);
     }
@@ -85,12 +108,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     try {
       final salt = await _store.readPinSalt();
       final hash = await _store.readPinHash();
-      if (salt == null || hash == null) {
-        // 无 PIN 记录(存储被清空):视为解锁。
-        if (mounted) widget.onUnlocked();
-        return;
-      }
-      if (hashPin(pin, salt) == hash) {
+      if (hashPin(pin, salt ?? '') == hash) {
         if (mounted) widget.onUnlocked();
       } else {
         if (mounted) {
@@ -102,6 +120,18 @@ class _AppLockScreenState extends State<AppLockScreen> {
       if (mounted) setState(() => _error = '解锁失败,请重试');
     } finally {
       if (mounted) setState(() => _verifying = false);
+    }
+  }
+
+  void _unlockWithPattern(List<int> dots) {
+    if (dots.length < 4) {
+      setState(() => _error = '图案错误,请重试');
+      return;
+    }
+    if (verifyPattern(dots, _patternSalt, _patternHash)) {
+      widget.onUnlocked();
+    } else {
+      setState(() => _error = '图案错误,请重试');
     }
   }
 
@@ -124,37 +154,59 @@ class _AppLockScreenState extends State<AppLockScreen> {
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  '请输入 PIN 码解锁',
+                Text(
+                  _hasPattern ? '请绘制图案解锁' : '请输入 PIN 码解锁',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey),
+                  style: const TextStyle(color: Colors.grey),
                 ),
-                const SizedBox(height: 24),
-                TextField(
-                  controller: _pinController,
-                  obscureText: true,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 24, letterSpacing: 12),
-                  decoration: InputDecoration(
-                    counterText: '',
-                    border: const OutlineInputBorder(),
-                    errorText: _error,
+                if (_hasPattern) ...[
+                  const SizedBox(height: 16),
+                  Center(
+                    child: SizedBox(
+                      width: 260,
+                      height: 260,
+                      child: PatternLock(onCompleted: _unlockWithPattern),
+                    ),
                   ),
-                  onSubmitted: (_) => _unlockWithPin(),
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: _verifying ? null : _unlockWithPin,
-                  child: _verifying
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('解锁'),
-                ),
+                ],
+                if (_hasPin) ...[
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _pinController,
+                    obscureText: true,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 24, letterSpacing: 12),
+                    decoration: InputDecoration(
+                      counterText: '',
+                      border: const OutlineInputBorder(),
+                      errorText: _error,
+                    ),
+                    onSubmitted: (_) => _unlockWithPin(),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: _verifying ? null : _unlockWithPin,
+                    child: _verifying
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('解锁'),
+                  ),
+                ],
+                if (_hasPattern && !_hasPin && _error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
                 if (_biometricAvailable) ...[
                   const SizedBox(height: 12),
                   OutlinedButton.icon(

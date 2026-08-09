@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'pages/app_lock_screen.dart';
@@ -43,6 +45,7 @@ class _LockGateState extends State<LockGate> {
 
   bool _checked = false;
   bool _locked = false;
+  Timer? _lockTimer;
 
   @override
   void initState() {
@@ -53,6 +56,7 @@ class _LockGateState extends State<LockGate> {
 
   @override
   void dispose() {
+    _lockTimer?.cancel();
     _lifecycleListener.dispose();
     super.dispose();
   }
@@ -75,14 +79,42 @@ class _LockGateState extends State<LockGate> {
   }
 
   void _onLifecycleState(AppLifecycleState state) {
-    // 应用进入后台即锁定,回到前台需解锁。
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
-      _lockNow();
+      _handleBackground();
+    } else if (state == AppLifecycleState.resumed) {
+      // 超时模式下提前回到前台:取消计时,保持解锁。
+      _cancelLockTimer();
     }
   }
 
+  /// 进入后台:退出时锁定 → 立即锁;退出且超时锁定 → 启动 N 分钟计时,到时再锁。
+  Future<void> _handleBackground() async {
+    if (_locked || !_checked) return;
+    try {
+      final jwt = await _store.readJwt();
+      final enabled = await _store.readLockEnabled();
+      if (!enabled || jwt == null || !mounted) return;
+      final timing = await _store.readLockTiming();
+      if (timing == 'timeout') {
+        final minutes = await _store.readLockTimeoutMinutes();
+        _cancelLockTimer();
+        _lockTimer = Timer(Duration(minutes: minutes), _lockNow);
+      } else {
+        await _lockNow();
+      }
+    } catch (_) {
+      // 读取失败保持当前状态。
+    }
+  }
+
+  void _cancelLockTimer() {
+    _lockTimer?.cancel();
+    _lockTimer = null;
+  }
+
   Future<void> _lockNow() async {
+    _cancelLockTimer();
     if (_locked || !_checked) return;
     try {
       final jwt = await _store.readJwt();

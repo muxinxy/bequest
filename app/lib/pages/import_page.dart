@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../crypto/asset_crypto.dart';
 import '../crypto/master_password.dart';
 import '../models/export_format.dart';
-import '../models/preset_categories.dart';
 import '../repository/asset_repository.dart';
 import '../storage/secure_store.dart';
 import 'local_unlock_page.dart';
@@ -146,20 +145,19 @@ class _ImportPageState extends State<ImportPage> {
     });
   }
 
-  /// 分类名 → 仓储分类 id;预设分类无对应记录,与 P1 决策一致返回 null。
+  /// 分类名 → 仓储分类 id;已存在(预设或自定义)复用,否则按名创建。
   Future<String?> _resolveCategoryId(
     Map<String, dynamic> item,
     Map<String, String> categoryNames,
   ) async {
     final category = item['category']?.toString().trim() ?? '';
     if (category.isEmpty) return null;
-    if (kPhysicalPresetCategories.contains(category) ||
-        kVirtualPresetCategories.contains(category)) {
-      return null;
-    }
     final existingId = categoryNames[category];
     if (existingId != null) return existingId;
-    final created = await widget.repository.createCategory(category);
+    final created = await widget.repository.createCategory(
+      category,
+      assetType: item['asset_type']?.toString() ?? 'physical',
+    );
     final newId = created['id']?.toString();
     if (newId != null && newId.isNotEmpty) categoryNames[category] = newId;
     return newId;

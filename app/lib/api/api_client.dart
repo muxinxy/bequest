@@ -50,8 +50,21 @@ class ApiClient {
   }
 
   /// POST /api/v1/categories
-  Future<Map<String, dynamic>> createCategory(String jwt, String name) {
-    return _postAuth('/api/v1/categories', {'name': name}, jwt);
+  Future<Map<String, dynamic>> createCategory(
+    String jwt,
+    String name, {
+    String assetType = 'physical',
+  }) {
+    return _postAuth('/api/v1/categories', {'name': name, 'asset_type': assetType}, jwt);
+  }
+
+  /// PUT /api/v1/categories/{id}
+  Future<Map<String, dynamic>> updateCategory(
+    String jwt,
+    String id,
+    Map<String, dynamic> body,
+  ) {
+    return _put('/api/v1/categories/$id', body, jwt);
   }
 
   /// DELETE /api/v1/categories/{id}

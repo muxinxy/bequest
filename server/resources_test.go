@@ -47,8 +47,8 @@ func TestCategoryAssetFlow(t *testing.T) {
 	ts, _ := newTestServer(t)
 	token := registerUser(t, ts, "alice")
 
-	// create category
-	cat := doReq(t, ts, http.MethodPost, "/api/v1/categories", `{"name":"房产"}`, token)
+	// create category (name avoids the seeded presets; explicit asset_type covers the new field)
+	cat := doReq(t, ts, http.MethodPost, "/api/v1/categories", `{"name":"保险","asset_type":"physical"}`, token)
 	if cat.Code != http.StatusCreated {
 		t.Fatalf("create category: status=%d body=%s", cat.Code, cat.Body.String())
 	}
@@ -56,12 +56,12 @@ func TestCategoryAssetFlow(t *testing.T) {
 	if err := json.Unmarshal(cat.Body.Bytes(), &createdCat); err != nil {
 		t.Fatalf("parse category: %v", err)
 	}
-	if createdCat.Name != "房产" || createdCat.ID == 0 {
+	if createdCat.Name != "保险" || createdCat.ID == 0 {
 		t.Fatalf("unexpected category: %+v", createdCat)
 	}
 
 	// duplicate category -> 409
-	dup := doReq(t, ts, http.MethodPost, "/api/v1/categories", `{"name":"房产"}`, token)
+	dup := doReq(t, ts, http.MethodPost, "/api/v1/categories", `{"name":"保险"}`, token)
 	if dup.Code != http.StatusConflict {
 		t.Fatalf("duplicate category: status=%d want 409 body=%s", dup.Code, dup.Body.String())
 	}
@@ -179,8 +179,8 @@ func TestResourceIsolation(t *testing.T) {
 	tokenA := registerUser(t, ts, "alice")
 	tokenB := registerUser(t, ts, "bob")
 
-	// A: category + asset
-	cat := doReq(t, ts, http.MethodPost, "/api/v1/categories", `{"name":"房产"}`, tokenA)
+	// A: category + asset (name avoids the seeded presets)
+	cat := doReq(t, ts, http.MethodPost, "/api/v1/categories", `{"name":"保险"}`, tokenA)
 	var createdCat catResp
 	if err := json.Unmarshal(cat.Body.Bytes(), &createdCat); err != nil {
 		t.Fatalf("parse A category: %v", err)
@@ -220,9 +220,22 @@ func TestResourceIsolation(t *testing.T) {
 	if rr.Code != http.StatusOK || strings.TrimSpace(rr.Body.String()) != "[]" {
 		t.Fatalf("B asset list should be empty: status=%d body=%s", rr.Code, rr.Body.String())
 	}
+	// B's category list holds only B's seeded presets, never A's category
 	rr = doReq(t, ts, http.MethodGet, "/api/v1/categories", "", tokenB)
-	if rr.Code != http.StatusOK || strings.TrimSpace(rr.Body.String()) != "[]" {
-		t.Fatalf("B category list should be empty: status=%d body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK {
+		t.Fatalf("B list categories: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var bCats []map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &bCats); err != nil {
+		t.Fatalf("parse B category list: %v body=%s", err, rr.Body.String())
+	}
+	if len(bCats) != 10 {
+		t.Fatalf("B category list len=%d want 10 presets body=%s", len(bCats), rr.Body.String())
+	}
+	for _, c := range bCats {
+		if c["id"] == float64(createdCat.ID) {
+			t.Fatalf("B category list leaks A's category: %s", rr.Body.String())
+		}
 	}
 	// B referencing A's category -> 400 invalid category
 	badCatBody := fmt.Sprintf(`{"name":"x","asset_type":"physical","category_id":%d,"encrypted_data":"AAAA"}`, createdCat.ID)

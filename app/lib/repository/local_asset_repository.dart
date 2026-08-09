@@ -50,16 +50,46 @@ class LocalAssetRepository implements AssetRepository {
       _asMaps((await _load())['categories']);
 
   @override
-  Future<Map<String, dynamic>> createCategory(String name) async {
+  Future<Map<String, dynamic>> createCategory(
+    String name, {
+    String assetType = 'physical',
+  }) async {
     final data = await _load();
     final category = <String, dynamic>{
       'id': _newId(),
       'name': name,
+      'asset_type': assetType,
+      'is_preset': 0,
       'created_at': _nowString(),
     };
     (data['categories'] as List).add(category);
     await _save(data);
     return category;
+  }
+
+  @override
+  Future<Map<String, dynamic>> updateCategory(
+    String id,
+    Map<String, dynamic> body,
+  ) async {
+    final data = await _load();
+    final categories = data['categories'] as List;
+    final index = categories.indexWhere((c) => '${(c as Map)['id']}' == id);
+    if (index < 0) throw StateError('分类不存在(id: $id)');
+    final old = categories[index] as Map<String, dynamic>;
+    // 服务器形状:name/asset_type,保留 id/created_at。
+    final updated = <String, dynamic>{
+      'id': id,
+      'name': body['name']?.toString() ?? old['name']?.toString() ?? '',
+      'asset_type': body['asset_type']?.toString() ??
+          old['asset_type']?.toString() ??
+          'physical',
+      'is_preset': old['is_preset'] ?? 0,
+      'created_at': old['created_at']?.toString(),
+    };
+    categories[index] = updated;
+    await _save(data);
+    return updated;
   }
 
   @override

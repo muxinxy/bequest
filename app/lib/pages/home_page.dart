@@ -1,32 +1,21 @@
 import 'dart:async';
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../models/asset.dart';
+import '../models/asset_filter.dart';
 import '../models/category.dart';
 import '../models/entitlements.dart';
-import '../models/preset_categories.dart';
 import '../models/reminder.dart';
 import '../repository/asset_repository.dart';
 import '../repository/repository_factory.dart';
 import '../storage/secure_store.dart';
 import '../sync/backup.dart';
-import 'app_lock_setup_page.dart';
 import 'asset_edit_page.dart';
-import 'audit_page.dart';
-import 'category_page.dart';
-import 'export_page.dart';
-import 'import_page.dart';
-import 'inheritance_status_page.dart';
-import 'inheritors_page.dart';
 import 'login_page.dart';
-import 'reminder_templates_page.dart';
 import 'reminders_page.dart';
-import 'server_settings_page.dart';
-import 'smtp_settings_page.dart';
-import 'sync_settings_page.dart';
+import 'settings_page.dart';
 
 /// 主页:按分类过滤展示资产列表,提供分类管理、锁设置与退出登录。
 /// 云端模式经 ApiClient 访问后端;本地模式经 LocalAssetRepository 读加密库。
@@ -39,6 +28,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final _store = SecureStore();
+  final _searchController = TextEditingController();
 
   AssetRepository? _repo;
   List<Asset> _assets = const [];
@@ -46,8 +36,12 @@ class _HomePageState extends State<HomePage> {
   Map<String, String> _categoryNames = const {};
   int _unreadReminders = 0;
 
-  /// 过滤值:null = 全部;自定义分类 id;'未分类' 或预设名 → 无分类资产。
+  /// 过滤值:null = 全部;自定义/预设分类 id;'未分类' → 无分类资产。
   String? _filterCategoryId;
+
+  /// 类型过滤:null = 全部,'physical'/'virtual'。
+  String? _typeFilter;
+  String _search = '';
   bool _loading = true;
   bool _isLocal = false;
   bool _hasJwt = false;
@@ -56,6 +50,12 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -77,8 +77,10 @@ class _HomePageState extends State<HomePage> {
           return;
         }
       }
-      final repo =
-          await RepositoryFactory.resolve(jwt: jwt, masterKeyB64: mk ?? '');
+      final repo = await RepositoryFactory.resolve(
+        jwt: jwt,
+        masterKeyB64: mk ?? '',
+      );
       _repo = repo;
       final categories = await repo.listCategories();
       final assets = await repo.listAssets();
@@ -88,8 +90,10 @@ class _HomePageState extends State<HomePage> {
         final api = await ApiConfig.client();
         await api.me(jwt!);
         final reminders = await api.listReminders(jwt);
-        unread =
-            reminders.map(Reminder.fromJson).where((r) => r.isUnread).length;
+        unread = reminders
+            .map(Reminder.fromJson)
+            .where((r) => r.isUnread)
+            .length;
         _refreshLocalVault(jwt, api);
       }
       if (!mounted) return;
@@ -104,9 +108,9 @@ class _HomePageState extends State<HomePage> {
       });
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('加载失败,请检查网络后重试')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -148,21 +152,15 @@ class _HomePageState extends State<HomePage> {
     return _categoryNames[id] ?? '未分类';
   }
 
-  /// 预设分类与'未分类'同属无服务器分类的桶。
-  /// (const 不可用:物理/虚拟预设均含'其他',需运行时去重)
-  static final _uncategorizedFilters = <String>{
-    '未分类',
-    ...kPhysicalPresetCategories,
-    ...kVirtualPresetCategories,
-  };
-
+  /// 预设分类与'未分类'同为分类表中的真实行,过滤直接按 id 精确匹配。
   List<Asset> get _filteredAssets {
-    final filter = _filterCategoryId;
-    if (filter == null) return _assets;
-    if (_uncategorizedFilters.contains(filter)) {
-      return _assets.where((a) => a.categoryId == null).toList();
-    }
-    return _assets.where((a) => a.categoryId == filter).toList();
+    final maps = filterAssets(
+      assets: _assets.map((a) => a.toJson()).toList(growable: false),
+      typeFilter: _typeFilter,
+      categoryFilter: _filterCategoryId,
+      search: _search,
+    );
+    return maps.map(Asset.fromJson).toList(growable: false);
   }
 
   Future<void> _openEditor([Asset? asset]) async {
@@ -178,98 +176,10 @@ class _HomePageState extends State<HomePage> {
 
   /// 打开子页面,返回后刷新数据。
   Future<void> _openPage(Widget page) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => page),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => page));
     if (mounted) _load();
-  }
-
-  /// 导出流程:先选范围,再交给导出页(验证主密码 + 解密 + 分享)。
-  Future<void> _exportFlow() async {
-    final repo = _repo;
-    if (repo == null) return;
-    if (_assets.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('暂无资产可导出')));
-      return;
-    }
-    final scope = await showDialog<String>(
-      context: context,
-      builder: (context) => _ExportScopeDialog(hasFilter: _filterCategoryId != null),
-    );
-    if (scope == null) return;
-    final assets = scope == 'filter' ? _filteredAssets : _assets;
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ExportPage(assets: assets, repository: repo),
-      ),
-    );
-    if (mounted) _load();
-  }
-
-  /// 导入流程:选 JSON 文件后交给导入页(验证主密码 + 逐条创建)。
-  Future<void> _importFlow() async {
-    final repo = _repo;
-    if (repo == null) return;
-    // 用官方 file_selector(无自定义 Gradle 插件,CI 可编译;file_picker 有 KGP 兼容问题)。
-    const typeGroup = XTypeGroup(label: 'JSON 文件', extensions: ['json']);
-    try {
-      final file = await openFile(acceptedTypeGroups: const [typeGroup]);
-      if (file == null) return;
-      final text = await file.readAsString();
-      if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => ImportPage(fileText: text, repository: repo),
-        ),
-      );
-      // 导入完成后刷新资产列表。
-      if (mounted) _load();
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('读取文件失败')));
-    }
-  }
-
-  void _onMenuSelected(String value) {
-    switch (value) {
-      case 'inheritors':
-        _openPage(const InheritorsPage());
-      case 'templates':
-        _openPage(const ReminderTemplatesPage());
-      case 'categories':
-        final repo = _repo;
-        if (repo == null) return;
-        _openPage(CategoryPage(repository: repo));
-      case 'status':
-        _openPage(const InheritanceStatusPage());
-      case 'export':
-        _exportFlow();
-      case 'import':
-        _importFlow();
-      case 'audit':
-        _openPage(const AuditPage());
-      case 'sync':
-        _openPage(const SyncSettingsPage());
-      case 'smtp':
-        _openPage(const SmtpSettingsPage());
-      case 'server':
-        _openPage(const ServerSettingsPage());
-      case 'mode':
-        _openPage(const ServerSettingsPage());
-      case 'lock':
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const AppLockSetupPage()),
-        );
-      case 'logout':
-        if (_isLocal) {
-          _exitLocal();
-        } else {
-          _logout();
-        }
-    }
   }
 
   Widget _tierBadge() {
@@ -310,27 +220,18 @@ class _HomePageState extends State<HomePage> {
             ),
             onPressed: () => _openPage(const RemindersPage()),
           ),
-          PopupMenuButton<String>(
-            tooltip: '更多',
-            onSelected: (value) => _onMenuSelected(value),
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'inheritors', child: Text('继承人管理')),
-              const PopupMenuItem(value: 'templates', child: Text('提醒模板')),
-              const PopupMenuItem(value: 'categories', child: Text('分类管理')),
-              const PopupMenuItem(value: 'status', child: Text('继承状态')),
-              const PopupMenuItem(value: 'export', child: Text('导出资产')),
-              const PopupMenuItem(value: 'import', child: Text('导入资产')),
-              const PopupMenuItem(value: 'audit', child: Text('审计日志')),
-              const PopupMenuItem(value: 'sync', child: Text('同步设置')),
-              const PopupMenuItem(value: 'smtp', child: Text('邮箱发件设置')),
-              const PopupMenuItem(value: 'server', child: Text('服务器设置')),
-              const PopupMenuItem(value: 'mode', child: Text('本地/云端模式切换')),
-              const PopupMenuItem(value: 'lock', child: Text('锁设置')),
-              PopupMenuItem(
-                value: 'logout',
-                child: Text(_isLocal ? '退出本地模式' : '退出登录'),
-              ),
-            ],
+          IconButton(
+            tooltip: '设置',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () {
+              final repo = _repo;
+              if (repo == null) return;
+              _openPage(SettingsPage(repository: repo));
+            },
+          ),
+          TextButton(
+            onPressed: _isLocal ? _exitLocal : _logout,
+            child: Text(_isLocal ? '退出本地模式' : '退出登录'),
           ),
         ],
       ),
@@ -347,7 +248,35 @@ class _HomePageState extends State<HomePage> {
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: Row(
                     children: [
-                      const Text('分类筛选', style: TextStyle(color: Colors.grey)),
+                      const Text('类型', style: TextStyle(color: Colors.grey)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: SegmentedButton<String?>(
+                          style: const ButtonStyle(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          segments: const [
+                            ButtonSegment(value: null, label: Text('全部')),
+                            ButtonSegment(
+                              value: 'physical',
+                              label: Text('实体'),
+                            ),
+                            ButtonSegment(value: 'virtual', label: Text('虚拟')),
+                          ],
+                          selected: {_typeFilter},
+                          onSelectionChanged: (selection) => setState(() {
+                            _typeFilter = selection.first;
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Row(
+                    children: [
+                      const Text('分类', style: TextStyle(color: Colors.grey)),
                       const SizedBox(width: 12),
                       Expanded(
                         child: DropdownButton<String>(
@@ -355,23 +284,54 @@ class _HomePageState extends State<HomePage> {
                           value: _filterCategoryId ?? '全部',
                           items: _filterItems(),
                           onChanged: (value) => setState(() {
-                            _filterCategoryId =
-                                (value == null || value == '全部') ? null : value;
+                            _filterCategoryId = (value == null ||
+                                    value == '全部')
+                                ? null
+                                : value;
                           }),
                         ),
                       ),
                     ],
                   ),
                 ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search),
+                      hintText: '搜索资产名称',
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                      suffixIcon: _search.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: '清空',
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _search = '');
+                              },
+                            ),
+                    ),
+                    onChanged: (value) => setState(() => _search = value),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Expanded(
                   child: filtered.isEmpty
-                      ? const Center(child: Text('暂无资产,点击右下角 + 添加'))
+                      ? Center(
+                          child: Text(
+                            _assets.isEmpty ? '暂无资产,点击右下角 + 添加' : '没有匹配的资产',
+                          ),
+                        )
                       : RefreshIndicator(
                           onRefresh: _load,
                           child: ListView.separated(
                             physics: const AlwaysScrollableScrollPhysics(),
                             itemCount: filtered.length,
-                            separatorBuilder: (_, _) => const Divider(height: 1),
+                            separatorBuilder: (_, _) =>
+                                const Divider(height: 1),
                             itemBuilder: (context, index) {
                               final asset = filtered[index];
                               return ListTile(
@@ -398,66 +358,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<DropdownMenuItem<String>> _filterItems() {
-    final presetNames = <String>{
-      ...kPhysicalPresetCategories,
-      ...kVirtualPresetCategories,
-    };
     return [
       const DropdownMenuItem(value: '全部', child: Text('全部')),
       const DropdownMenuItem(value: '未分类', child: Text('未分类')),
-      ...presetNames.map((n) => DropdownMenuItem(value: n, child: Text(n))),
       ..._categories.map(
         (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
       ),
     ];
-  }
-}
-
-/// 导出范围选择对话框:全部资产 / 当前筛选分类。
-class _ExportScopeDialog extends StatefulWidget {
-  const _ExportScopeDialog({required this.hasFilter});
-
-  final bool hasFilter;
-
-  @override
-  State<_ExportScopeDialog> createState() => _ExportScopeDialogState();
-}
-
-class _ExportScopeDialogState extends State<_ExportScopeDialog> {
-  String _scope = 'all';
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('导出资产'),
-      content: RadioGroup<String>(
-        groupValue: _scope,
-        onChanged: (value) => setState(() => _scope = value ?? 'all'),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RadioListTile<String>(
-              value: 'all',
-              title: const Text('全部资产'),
-            ),
-            RadioListTile<String>(
-              value: 'filter',
-              title: const Text('当前筛选分类'),
-              enabled: widget.hasFilter,
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(_scope),
-          child: const Text('确定'),
-        ),
-      ],
-    );
   }
 }

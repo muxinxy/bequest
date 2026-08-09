@@ -32,8 +32,13 @@ class CloudAssetRepository implements AssetRepository {
       _api.listCategories(jwt);
 
   @override
-  Future<Map<String, dynamic>> createCategory(String name) =>
-      _api.createCategory(jwt, name);
+  Future<Map<String, dynamic>> createCategory(String name, {String assetType = 'physical'}) =>
+      _api.createCategory(jwt, name, assetType: assetType);
+
+  @override
+  Future<Map<String, dynamic>> updateCategory(
+          String id, Map<String, dynamic> body) =>
+      _api.updateCategory(jwt, id, body);
 
   @override
   Future<void> deleteCategory(String id) => _api.deleteCategory(jwt, id);

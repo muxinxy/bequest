@@ -7,7 +7,6 @@ import '../crypto/asset_crypto.dart';
 import '../models/asset.dart';
 import '../models/category.dart';
 import '../models/entitlements.dart';
-import '../models/preset_categories.dart';
 import '../repository/asset_repository.dart';
 import '../storage/secure_store.dart';
 
@@ -34,7 +33,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
   String _assetType = 'physical';
   List<Category> _categories = const [];
 
-  /// 分类下拉值:'' = 未分类,'preset:名称' = 预设分类,其他 = 自定义分类 id。
+  /// 分类下拉值:'' = 未分类,其他 = 分类 id(预设与自定义同表)。
   String _categoryValue = '';
   String? _expiryDate;
 
@@ -146,8 +145,38 @@ class _AssetEditPageState extends State<AssetEditPage> {
 
   String? _categoryIdToSubmit() {
     final value = _categoryValue;
-    if (value.isEmpty || value.startsWith('preset:')) return null;
+    if (value.isEmpty) return null;
     return value;
+  }
+
+  Future<void> _deleteAsset() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除资产'),
+        content: const Text('确定删除该资产?此操作不可恢复'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.repository.deleteAsset(widget.asset!.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已删除')));
+      Navigator.of(context).pop();
+    } catch (_) {
+      _showError('删除失败,请检查网络后重试');
+    }
   }
 
   Future<void> _save() async {
@@ -211,7 +240,17 @@ class _AssetEditPageState extends State<AssetEditPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? '编辑资产' : '添加资产')),
+      appBar: AppBar(
+        title: Text(_isEdit ? '编辑资产' : '添加资产'),
+        actions: [
+          if (_isEdit)
+            IconButton(
+              tooltip: '删除资产',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: _deleteAsset,
+            ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -246,10 +285,15 @@ class _AssetEditPageState extends State<AssetEditPage> {
                       ],
                       selected: {_assetType},
                       onSelectionChanged: (selection) => setState(() {
-                        if (_categoryValue.startsWith('preset:')) {
+                        final next = selection.first;
+                        // 切换类型后,原分类类型不匹配则回到未分类。
+                        if (_categoryValue.isNotEmpty &&
+                            !_categories.any((c) =>
+                                c.id == _categoryValue &&
+                                c.assetType == next)) {
                           _categoryValue = '';
                         }
-                        _assetType = selection.first;
+                        _assetType = next;
                       }),
                     ),
                     const SizedBox(height: 16),
@@ -344,12 +388,17 @@ class _AssetEditPageState extends State<AssetEditPage> {
   }
 
   List<DropdownMenuItem<String>> _categoryItems() {
+    // 只展示与当前资产类型匹配的分类(预设与自定义同表)。
+    final matches = _categories
+        .where((c) => c.assetType == _assetType)
+        .toList(growable: false);
     return [
       const DropdownMenuItem(value: '', child: Text('未分类')),
-      ...presetCategoriesFor(_assetType)
-          .map((n) => DropdownMenuItem(value: 'preset:$n', child: Text(n))),
-      ..._categories.map(
-        (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
+      ...matches.map(
+        (c) => DropdownMenuItem(
+          value: c.id,
+          child: Text(c.isPreset ? '${c.name}(预设)' : c.name),
+        ),
       ),
     ];
   }

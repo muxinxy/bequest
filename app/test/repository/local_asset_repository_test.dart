@@ -45,6 +45,33 @@ void main() {
     expect((await r.getAsset('${asset['id']}'))['category_id'], isNull);
   });
 
+  test('分类:更新改名与改类型,id/created_at 保留', () async {
+    final r = repo();
+    final cat = await r.createCategory('房产');
+    final id = '${cat['id']}';
+    expect(cat['asset_type'], 'physical');
+
+    final updated = await r.updateCategory(id, {
+      'name': '不动产',
+      'asset_type': 'virtual',
+    });
+    expect(updated['id'], id);
+    expect(updated['name'], '不动产');
+    expect(updated['asset_type'], 'virtual');
+    expect(updated['created_at'], cat['created_at']);
+
+    final list = await r.listCategories();
+    expect(list, hasLength(1));
+    expect(list.first['name'], '不动产');
+    expect(list.first['asset_type'], 'virtual');
+
+    // 仅改名不改类型:原类型保留。
+    await r.updateCategory(id, {'name': '还是不动产'});
+    expect((await r.listCategories()).first['asset_type'], 'virtual');
+
+    expect(() => r.updateCategory('L999', {'name': 'x'}), throwsStateError);
+  });
+
   test('资产:创建/读取/列表/更新/删除 往返', () async {
     final r = repo();
     final created = await r.createAsset({

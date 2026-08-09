@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../crypto/key_derivation.dart';
-import '../crypto/master_password.dart';
 import '../storage/secure_store.dart';
 import '../sync/local_vault.dart';
 import 'home_page.dart';
@@ -10,12 +9,13 @@ import 'sync_settings_page.dart';
 /// 本地模式入口形态。
 enum LocalUnlockStep { setup, unlock }
 
-/// 本地模式入口判定:已有主密钥 → 解锁;否则 → 设置主密码。
-/// (抽成纯函数便于单元测试)
+/// 本地模式入口判定:已有主密钥 → 直接进入(设备已受应用锁保护);
+/// 否则 → 设置主密码。(抽成纯函数便于单元测试)
 LocalUnlockStep localUnlockStep({required bool hasMasterKey}) =>
     hasMasterKey ? LocalUnlockStep.unlock : LocalUnlockStep.setup;
 
-/// 进入本地模式(无需登录):首次设置主密码,之后用主密码解锁。
+/// 进入本地模式(无需登录):首次设置主密码;之后由应用锁(PIN/图案/生物识别)
+/// 保护本机,不再重复校验主密码,直接进入。
 class LocalUnlockPage extends StatefulWidget {
   const LocalUnlockPage({super.key});
 
@@ -48,9 +48,14 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
   Future<void> _init() async {
     final mk = await _store.readMasterKey();
     if (!mounted) return;
-    setState(() {
-      _step = localUnlockStep(hasMasterKey: mk != null && mk.isNotEmpty);
-    });
+    final step = localUnlockStep(hasMasterKey: mk != null && mk.isNotEmpty);
+    setState(() => _step = step);
+    if (step == LocalUnlockStep.unlock) {
+      // 已有主密钥:本机受应用锁保护,主密码重复校验冗余,直接进入。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _enterLocalHome();
+      });
+    }
   }
 
   Future<void> _setupMasterPassword() async {
@@ -80,16 +85,9 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
     }
   }
 
-  Future<void> _unlock() async {
-    if (!await verifyMasterPassword(_passwordController.text)) {
-      _showError('主密码错误');
-      return;
-    }
+  Future<void> _enterLocalHome() async {
+    if (!mounted) return;
     await _store.saveStorageMode('local');
-    _enterLocalHome();
-  }
-
-  void _enterLocalHome() {
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(builder: (_) => const HomePage()),
@@ -97,21 +95,40 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
   }
 
   Future<void> _goRestore() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const SyncSettingsPage()),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const SyncSettingsPage()));
     // 恢复流程可能已写入主密钥,重新判定入口形态。
     await _init();
   }
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
-    final isSetup = _step == LocalUnlockStep.setup;
+    if (_step == LocalUnlockStep.unlock) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('进入本地模式')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('本机已设置主密码,直接进入本地模式'),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('进入本地模式')),
       body: SingleChildScrollView(
@@ -123,10 +140,10 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
             children: [
               const Icon(Icons.offline_pin_outlined, size: 64),
               const SizedBox(height: 8),
-              Text(
-                isSetup ? '设置主密码' : '输入主密码解锁',
+              const Text(
+                '设置主密码',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleLarge,
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
               ),
               const SizedBox(height: 4),
               const Text(
@@ -138,51 +155,44 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
               TextFormField(
                 controller: _passwordController,
                 obscureText: true,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: '主密码',
-                  helperText: isSetup ? '至少 8 位,用于加密本地数据' : null,
-                  border: const OutlineInputBorder(),
+                  helperText: '至少 8 位,用于加密本地数据',
+                  border: OutlineInputBorder(),
                 ),
                 validator: (value) =>
                     (value == null || value.length < 8) ? '主密码至少 8 位' : null,
               ),
-              if (isSetup) ...[
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _confirmController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: '确认主密码',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) => value != _passwordController.text
-                      ? '两次输入的主密码不一致'
-                      : null,
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _confirmController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: '确认主密码',
+                  border: OutlineInputBorder(),
                 ),
-              ],
+                validator: (value) =>
+                    value != _passwordController.text ? '两次输入的主密码不一致' : null,
+              ),
               const SizedBox(height: 24),
               FilledButton(
-                onPressed: _submitting
-                    ? null
-                    : (isSetup ? _setupMasterPassword : _unlock),
+                onPressed: _submitting ? null : _setupMasterPassword,
                 child: _submitting
                     ? const SizedBox(
                         height: 20,
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Text(isSetup ? '设置并进入' : '解锁'),
+                    : const Text('设置并进入'),
               ),
-              if (isSetup) ...[
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: _submitting ? null : _goRestore,
-                  child: const Text(
-                    '从备份恢复(需主密码)',
-                    style: TextStyle(color: Colors.grey),
-                  ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: _submitting ? null : _goRestore,
+                child: const Text(
+                  '从备份恢复(需主密码)',
+                  style: TextStyle(color: Colors.grey),
                 ),
-              ],
+              ),
             ],
           ),
         ),

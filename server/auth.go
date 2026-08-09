@@ -189,9 +189,16 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		res, err := db.Exec(`INSERT INTO users (username, email, password_hash, master_key_wrapped) VALUES (?, ?, ?, ?)`,
+		tx, err := db.Begin()
+		if err != nil {
+			log.Printf("begin register: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		res, err := tx.Exec(`INSERT INTO users (username, email, password_hash, master_key_wrapped) VALUES (?, ?, ?, ?)`,
 			req.Username, req.Email, hash, mkw)
 		if err != nil {
+			tx.Rollback()
 			if isUniqueViolation(err) {
 				writeError(w, http.StatusConflict, "username or email already taken")
 				return
@@ -201,6 +208,22 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		id, _ := res.LastInsertId()
+		// Seed per-user preset categories (editable/deletable). Names are
+		// distinct across types to satisfy UNIQUE(user_id, name).
+		if _, err := tx.Exec(`INSERT INTO categories (user_id, name, asset_type, is_preset) VALUES
+			(?, '房产','physical',1),(?, '车辆','physical',1),(?, '贵金属','physical',1),(?, '收藏品','physical',1),(?, '实体其他','physical',1),
+			(?, '银行账户','virtual',1),(?, '证券投资','virtual',1),(?, '加密货币','virtual',1),(?, '数字账户','virtual',1),(?, '虚拟其他','virtual',1)`,
+			id, id, id, id, id, id, id, id, id, id); err != nil {
+			tx.Rollback()
+			log.Printf("seed preset categories: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			log.Printf("commit register: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"token": mustSign(id),
 			"user":  userJSON{ID: id, Username: req.Username, Email: req.Email, Tier: "free"},

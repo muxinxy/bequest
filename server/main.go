@@ -49,6 +49,7 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("GET /api/v1/categories", requireAuth(handleListCategories(db)))
 	mux.Handle("POST /api/v1/categories", requireAuth(handleCreateCategory(db)))
 	mux.Handle("DELETE /api/v1/categories/{id}", requireAuth(handleDeleteCategory(db)))
+	mux.Handle("PUT /api/v1/categories/{id}", requireAuth(handleUpdateCategory(db)))
 	mux.Handle("GET /api/v1/assets", requireAuth(handleListAssets(db)))
 	mux.Handle("GET /api/v1/assets/{id}", requireAuth(handleGetAsset(db)))
 	mux.Handle("POST /api/v1/assets", requireAuth(handleCreateAsset(db)))

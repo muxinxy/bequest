@@ -3,14 +3,8 @@ import 'dart:convert';
 import '../api/api_client.dart';
 import '../crypto/asset_crypto.dart';
 import '../crypto/key_derivation.dart';
-import '../models/preset_categories.dart';
 import '../storage/secure_store.dart';
 import 'local_vault.dart';
-
-final Set<String> _presetCategoryNames = {
-  ...kPhysicalPresetCategories,
-  ...kVirtualPresetCategories,
-};
 
 /// 校验备份 JSON。非法(非备份/版本不符/缺 assets)返回 null。
 Map<String, dynamic>? parseBackupJson(String text) {
@@ -174,11 +168,17 @@ Future<({int ok, int fail})> restoreAssets(
   final assets = (backup['assets'] as List)
       .whereType<Map<String, dynamic>>()
       .toList();
-  // 备份内分类 id → 名字(服务端 id 每次部署不同,只能按名对应)。
+  // 备份内分类 id → 名字/类型(服务端 id 每次部署不同,只能按名对应)。
   final backupCatNames = <String, String>{
     for (final c
         in (backup['categories'] as List).whereType<Map<String, dynamic>>())
       if (c['id'] != null && c['name'] != null) '${c['id']}': '${c['name']}',
+  };
+  final backupCatTypes = <String, String>{
+    for (final c
+        in (backup['categories'] as List).whereType<Map<String, dynamic>>())
+      if (c['id'] != null && c['name'] != null)
+        '${c['id']}': c['asset_type']?.toString() ?? 'physical',
   };
   final serverCatIdByName = <String, String>{
     for (final c in await api.listCategories(jwt))
@@ -191,7 +191,9 @@ Future<({int ok, int fail})> restoreAssets(
       final categoryId = await _resolveCategoryId(
         asset['category_id']?.toString(),
         backupCatNames,
+        backupCatTypes,
         serverCatIdByName,
+        asset['asset_type']?.toString() ?? 'physical',
         jwt,
         api,
       );
@@ -210,23 +212,27 @@ Future<({int ok, int fail})> restoreAssets(
   return (ok: ok, fail: fail);
 }
 
-/// 按备份的分类名解析目标分类 id:预设名/未知 → null(未分类);
-/// 自定义分类已存在 → 复用;否则创建并缓存。
+/// 按备份的分类名解析目标分类 id:已存在(预设或自定义)→ 复用;
+/// 否则按名创建(用备份分类的类型,缺省取资产的类型)并缓存。
 Future<String?> _resolveCategoryId(
   String? categoryId,
   Map<String, String> backupCatNames,
+  Map<String, String> backupCatTypes,
   Map<String, String> serverCatIdByName,
+  String fallbackType,
   String jwt,
   ApiClient api,
 ) async {
   if (categoryId == null || categoryId.isEmpty) return null;
   final name = backupCatNames[categoryId];
-  if (name == null || name.isEmpty || _presetCategoryNames.contains(name)) {
-    return null;
-  }
+  if (name == null || name.isEmpty) return null;
   final existing = serverCatIdByName[name];
   if (existing != null) return existing;
-  final created = await api.createCategory(jwt, name);
+  final created = await api.createCategory(
+    jwt,
+    name,
+    assetType: backupCatTypes[categoryId] ?? fallbackType,
+  );
   final id = '${created['id']}';
   serverCatIdByName[name] = id;
   return id;

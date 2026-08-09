@@ -205,7 +205,7 @@ void main() {
     expect(await extractBackupJson('{"blob":""}', key), isNull);
   });
 
-  test('restoreAssets 解析分类(复用/新建/预设→null)并统计成功失败', () async {
+  test('restoreAssets 解析分类(复用/新建/预设按名创建)并统计成功失败', () async {
     final backup = jsonEncode({
       'app': 'bequest',
       'type': 'backup',
@@ -258,7 +258,7 @@ void main() {
     };
     expect(byName['房产A']!['category_id'], '10'); // 已存在分类:复用
     expect(byName['证券B']!['category_id'], '99'); // 新分类:创建后复用
-    expect(byName['收藏C']!['category_id'], isNull); // 预设分类:未分类
+    expect(byName['收藏C']!['category_id'], '99'); // 预设名服务端无此分类:按名创建后复用
     expect(byName['房产A']!['encrypted_data'], 'blob-1'); // 密文原样
   });
 }
