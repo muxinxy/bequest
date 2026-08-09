@@ -60,11 +60,12 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
+    var isLocal = false;
     try {
       final jwt = await _store.readJwt();
       final mk = await _store.readMasterKey();
       final mode = await _store.readStorageMode();
-      final isLocal = mode == 'local';
+      isLocal = mode == 'local';
       if (isLocal) {
         if (mk == null || mk.isEmpty) {
           // 本地模式但无主密钥(理论不可达,本地入口会保证):回登录页。
@@ -108,9 +109,12 @@ class _HomePageState extends State<HomePage> {
       });
     } catch (_) {
       if (!mounted) return;
+      // 本地模式读取加密库失败与网络无关,提示语要准确。
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+      ).showSnackBar(SnackBar(
+        content: Text(isLocal ? '加载失败,本地数据读取异常' : '加载失败,请检查网络后重试'),
+      ));
       if (mounted) setState(() => _loading = false);
     }
   }

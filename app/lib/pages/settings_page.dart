@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/asset.dart';
 import '../repository/asset_repository.dart';
+import 'about_page.dart';
 import 'app_lock_setup_page.dart';
 import 'audit_page.dart';
 import 'category_page.dart';
@@ -134,6 +135,12 @@ class SettingsPage extends StatelessWidget {
             Icons.sync_outlined,
             '同步设置',
             () => _push(context, const SyncSettingsPage()),
+          ),
+          _section(context, '关于'),
+          _entry(
+            Icons.info_outline,
+            '关于本应用',
+            () => _push(context, const AboutPage()),
           ),
           const SizedBox(height: 24),
         ],

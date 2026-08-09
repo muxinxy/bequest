@@ -6,6 +6,7 @@ import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../crypto/key_derivation.dart';
 import '../crypto/master_password.dart';
+import '../logger.dart';
 import '../storage/secure_store.dart';
 import '../sync/backup.dart';
 import '../sync/local_vault.dart';
@@ -78,8 +79,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       _s3Prefix.text = cfg['prefix']?.toString() ?? 'bequest/';
       _restoreName.text = cfg['restore_name']?.toString() ?? '';
       if (mounted) setState(() {});
-    } catch (_) {
+    } catch (e) {
       // 配置损坏:忽略,从空白开始。
+      Logger.instance.e('sync loadConfig corrupt: $e');
     }
   }
 
@@ -123,7 +125,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     try {
       final ok = await provider.testConnection();
       _snack(ok ? '连接成功' : '连接失败');
-    } catch (_) {
+    } catch (e) {
+      Logger.instance.e('sync testConnection failed: $e');
       _snack('连接失败');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -157,8 +160,10 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       _restoreName.text = name;
       _snack('同步完成');
     } on StateError catch (e) {
+      Logger.instance.e('sync failed: ${e.message}');
       _snack(e.message);
-    } catch (_) {
+    } catch (e) {
+      Logger.instance.e('sync failed: $e');
       _snack('同步失败,请检查网络与连接配置');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -217,7 +222,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         await restoreToLocal(backupJson, masterKey);
         _snack('已恢复,可在本地模式使用');
       }
-    } catch (_) {
+    } catch (e) {
+      Logger.instance.e('restore failed: $e');
       _snack('恢复失败,请检查网络与备份文件');
     } finally {
       if (mounted) setState(() => _busy = false);

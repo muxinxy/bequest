@@ -83,4 +83,38 @@ void main() {
 
     expect(completed, isEmpty);
   });
+
+  testWidgets('快速斜向拖动一步跨过圆点,线段检测完整捕获点序', (tester) async {
+    final completed = <List<int>>[];
+    await tester.pumpWidget(host(completed.add));
+
+    final rect = tester.getRect(find.byType(PatternLock));
+    // 0 → 2 一步到位:手指从未经过点 1,但拖动线段穿过点 1 中心,
+    // 段检测应补上 [0, 1, 2] 完整序列。
+    final gesture = await tester.startGesture(dotOffset(rect, 0));
+    await tester.pump();
+    await gesture.moveTo(dotOffset(rect, 2));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+
+    expect(completed, hasLength(1));
+    expect(completed.first, [0, 1, 2]);
+  });
+
+  testWidgets('快速斜对角拖动一步跨过中心点,捕获 [0,4,8]', (tester) async {
+    final completed = <List<int>>[];
+    await tester.pumpWidget(host(completed.add));
+
+    final rect = tester.getRect(find.byType(PatternLock));
+    final gesture = await tester.startGesture(dotOffset(rect, 0));
+    await tester.pump();
+    await gesture.moveTo(dotOffset(rect, 8));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+
+    expect(completed, hasLength(1));
+    expect(completed.first, [0, 4, 8]);
+  });
 }

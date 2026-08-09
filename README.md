@@ -46,10 +46,10 @@ docker compose up -d --build
 
 ```bash
 # Windows（PowerShell, 默认走 goproxy.cn 镜像）
-.\scripts\build.ps1            # → dist\bequest-server-windows-amd64.exe 等
+.\scripts\build.ps1            # → dist\bequest-server-dev-windows-amd64.exe 等
 
 # Linux/macOS（交叉编译 5 平台）
-VERSION=1.0.0 ./scripts/build.sh   # → dist/bequest-server-<os>-<arch>
+VERSION=1.0.0 ./scripts/build.sh   # → dist/bequest-server-1.0.0-<os>-<arch>
 ```
 
 ### 环境变量
@@ -73,9 +73,38 @@ git push origin v0.1.0
 
 流水线（`.github/workflows/release.yml`）产出：
 
-- **二进制**：GitHub Release 页 assets——`bequest-server-{linux,windows,darwin}-{amd64,arm64}`
+- **二进制**：GitHub Release 页 assets——`bequest-server-<版本>-{linux,windows,darwin}-{amd64,arm64}`
+- **Android APK**：GitHub Release 页 assets——`bequest-v<版本>-{arm64-v8a,armeabi-v7a,x86_64}.apk`（release 签名，可直接覆盖升级安装）
 - **Docker 镜像**：`ghcr.io/muxinxy/bequest:<版本>` 与 `:latest`（linux/amd64 + arm64，多架构）
 - **版本注入**：`GET /api/v1/version` 返回 tag 版本（`-X main.version=`）
+
+## 发布签名（Secrets）
+
+Android APK 使用固定 release keystore 签名，保证版本升级时无需卸载重装（否则报"签名不一致"）。CI 在构建时从 GitHub Secrets 还原签名文件，**不会**提交 keystore/密码到仓库。
+
+需要在仓库 **Settings → Secrets and variables → Actions** 配置 4 个 Secret：
+
+| Secret | 说明 |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | keystore 文件的 base64（见下方生成步骤） |
+| `KEYSTORE_PASSWORD` | keystore 口令 |
+| `KEY_ALIAS` | 别名（如 `bequest`） |
+| `KEY_PASSWORD` | 密钥口令 |
+
+本地生成 keystore（JDK 自带 keytool）：
+
+```bash
+keytool -genkeypair -v -keystore bequest-release.jks -storetype JKS -alias bequest \
+  -keyalg RSA -keysize 2048 -validity 10000 \
+  -storepass '<KEYSTORE_PASSWORD>' -keypass '<KEY_PASSWORD>' \
+  -dname 'CN=bequest, OU=bequest, O=bequest, L=Beijing, ST=Beijing, C=CN'
+
+# 导出 base64 填入 ANDROID_KEYSTORE_BASE64(注意保留完整一行):
+#   base64 -w 0 bequest-release.jks    # Linux/macOS
+#   [Convert]::ToBase64String([IO.File]::ReadAllBytes('bequest-release.jks'))  # Windows
+```
+
+> 务必妥善备份 keystore 与密码：一旦丢失或更换，用户无法覆盖升级，只能卸载重装。keystore 生成后请删除本机临时副本。
 
 ## 设计要点
 

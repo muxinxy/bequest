@@ -20,7 +20,7 @@ $env:VERSION = "1.0.0"
 
 - 默认构建 `windows/amd64` 与 `linux/amd64` 两个平台;
 - 默认 `GOPROXY=https://goproxy.cn,direct`(国内网络), 可用 `$env:GOPROXY` 覆盖;
-- 产物: `dist\bequest-server-windows-amd64.exe`、`dist\bequest-server-linux-amd64`。
+- 产物: `dist\bequest-server-<版本>-windows-amd64.exe`、`dist\bequest-server-<版本>-linux-amd64`(版本默认 `dev`, 可用 `$env:VERSION` 指定)。
 
 ### Linux / macOS
 
@@ -31,7 +31,7 @@ VERSION=1.0.0 ./scripts/build.sh   # 版本为 1.0.0
 GOPROXY=https://goproxy.cn,direct ./scripts/build.sh   # 国内网络可覆盖代理
 ```
 
-交叉编译 5 个平台: `linux/amd64`、`linux/arm64`、`windows/amd64`(带 `.exe`)、`darwin/amd64`、`darwin/arm64`, 产物在 `dist/`。
+交叉编译 5 个平台: `linux/amd64`、`linux/arm64`、`windows/amd64`(带 `.exe`)、`darwin/amd64`、`darwin/arm64`, 产物在 `dist/`(文件名含版本, 如 `bequest-server-1.0.0-linux-amd64`)。
 
 ---
 
@@ -115,6 +115,15 @@ git push origin v1.0.0
 
 1. **build** — 在 `ubuntu-latest` 上交叉编译 5 平台二进制(版本号取自标签, 去掉 `v` 前缀, 通过 `-X main.version=1.0.0` 注入), 产物上传为 workflow artifact;
 2. **docker** — `docker/build-push-action` 构建 `linux/amd64` + `linux/arm64` 多架构镜像, 推送到 `ghcr.io/muxinxy/bequest`, 标签为 `1.0.0`(semver)与 `latest`;
-3. **release** — `softprops/action-gh-release` 将二进制产物附加到 GitHub Release(draft: false, 自动生成发布说明)。
+3. **android** — 构建 3 个 ABI 的 release 签名 APK(文件名含版本, 如 `bequest-v1.0.0-arm64-v8a.apk`);
+4. **release** — `softprops/action-gh-release` 将二进制与 APK 产物附加到 GitHub Release(draft: false, 自动生成发布说明)。
 
 也可以在工作流页面手动触发(workflow_dispatch), 此时版本为 `dev`, 仅构建并推送镜像, 不创建 Release。
+
+---
+
+## 6. Android 发布签名(Secrets)
+
+APK 使用固定 release keystore 签名(保证版本升级无需卸载重装)。CI 构建时从 GitHub Secrets 还原签名文件, 仓库不保存 keystore/密码。
+
+需在仓库 **Settings → Secrets and variables → Actions** 配置 4 个 Secret: `ANDROID_KEYSTORE_BASE64`(keystore 文件 base64)、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`。本地生成 keystore 的方法见根目录 [`README.md`](../README.md#发布签名secrets)。

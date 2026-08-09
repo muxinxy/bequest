@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # 托孤(bequest)服务器交叉编译脚本(仓库根目录执行: ./scripts/build.sh)
-# 产物输出到 dist/bequest-server-<os>-<arch>[.exe]
+# 产物输出到 dist/bequest-server-<VERSION>-<os>-<arch>[.exe]
 #
 # 用法:
 #   ./scripts/build.sh                 # 版本 dev
@@ -26,7 +26,7 @@ build() {
   arch="$2"
   ext=""
   [ "$os" = "windows" ] && ext=".exe"
-  out="$DIST_DIR/bequest-server-$os-$arch$ext"
+  out="$DIST_DIR/bequest-server-$VERSION-$os-$arch$ext"
   echo "==> $out"
   (cd "$SERVER_DIR" && GOOS="$os" GOARCH="$arch" \
     go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "$out" .)

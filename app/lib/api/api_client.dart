@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../logger.dart';
+
 /// 后端接口客户端。后端运行在开发机 8080 端口,
 /// Android 模拟器通过 http://10.0.2.2:8080 访问。
 class ApiClient {
@@ -270,6 +272,10 @@ class ApiClient {
     final map = body is Map<String, dynamic> ? body : const <String, dynamic>{};
     final message =
         map['message'] ?? map['error'] ?? '请求失败(${response.statusCode})';
+    Logger.instance.e(
+      'api ${response.request?.url.path ?? ''} error '
+      '${response.statusCode}: $message',
+    );
     throw ApiException(message.toString(), statusCode: response.statusCode);
   }
 
@@ -282,6 +288,10 @@ class ApiClient {
       return map;
     }
     final message = map['message'] ?? map['error'] ?? '请求失败(${response.statusCode})';
+    Logger.instance.e(
+      'api ${response.request?.url.path ?? ''} error '
+      '${response.statusCode}: $message',
+    );
     throw ApiException(message.toString(), statusCode: response.statusCode);
   }
 }

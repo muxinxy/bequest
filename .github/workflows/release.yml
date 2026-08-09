@@ -109,8 +109,28 @@ jobs:
           channel: stable
           cache: true
 
+      - name: 确定版本号
+        id: version
+        run: |
+          REF="${GITHUB_REF#refs/tags/}"
+          if [ "$REF" = "$GITHUB_REF" ]; then
+            echo "version=dev" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 安装依赖
         run: cd app && flutter pub get
+
+      # 从 GitHub Secrets 还原 release keystore 与 key.properties(不落日志, 不提交仓库)
+      - name: 配置 release 签名
+        run: |
+          mkdir -p app/android
+          printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > app/android/bequest-release.jks
+          printf 'storeFile=bequest-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "${{ secrets.KEYSTORE_PASSWORD }}" "${{ secrets.KEY_ALIAS }}" "${{ secrets.KEY_PASSWORD }}" \
+            > app/android/key.properties
+          ls -l app/android/bequest-release.jks app/android/key.properties
 
       - name: 构建 APK
         run: cd app && flutter build apk --release --split-per-abi
@@ -118,7 +138,13 @@ jobs:
       - name: 汇总 APK
         run: |
           mkdir -p android-dist
-          cp app/build/app/outputs/flutter-apk/*.apk android-dist/
+          VERSION="${{ steps.version.outputs.version }}"
+          for src in app/build/app/outputs/flutter-apk/app-*-release.apk; do
+            [ -e "$src" ] || continue
+            abi="$(basename "$src" | sed -E 's/^app-(.*)-release\.apk$/\1/')"
+            cp "$src" "android-dist/bequest-v${VERSION}-${abi}.apk"
+          done
+          ls -l android-dist/
 
       - uses: actions/upload-artifact@v4
         with:

@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../crypto/asset_crypto.dart';
 import '../crypto/master_password.dart';
+import '../logger.dart';
 import '../models/asset.dart';
 import '../models/export_format.dart';
 import '../repository/asset_repository.dart';
@@ -69,7 +70,8 @@ class _ExportPageState extends State<ExportPage> {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('导出成功')));
       _finish();
-    } catch (_) {
+    } catch (e) {
+      Logger.instance.e('export failed: $e');
       _showError('导出失败,请检查网络后重试');
       _finish();
     }

@@ -48,24 +48,27 @@ class _AppLockScreenState extends State<AppLockScreen> {
       final hasPin = (await _store.readPinHash()) != null;
       final patternHash = await _store.readPatternHash();
       final patternSalt = await _store.readPatternSalt();
+      var biometricAvailable = false;
+      if (biometric) {
+        final canCheck = await _auth.canCheckBiometrics;
+        final supported = await _auth.isDeviceSupported();
+        biometricAvailable = canCheck && supported;
+      }
       if (mounted) {
         setState(() {
           _hasPin = hasPin;
           _hasPattern = patternHash != null && patternSalt != null;
           _patternHash = patternHash ?? '';
           _patternSalt = patternSalt ?? '';
+          _biometricAvailable = biometricAvailable;
         });
       }
-      if (biometric) {
-        final canCheck = await _auth.canCheckBiometrics;
-        final supported = await _auth.isDeviceSupported();
-        if (canCheck && supported && mounted) {
-          setState(() => _biometricAvailable = true);
-          await _tryBiometric();
-        }
+      if (biometricAvailable) {
+        await _tryBiometric();
       }
       // 未配置任何可校验方式(存储被清空等):视为解锁,避免被锁死。
-      if (mounted && !_hasPin && !_hasPattern) {
+      // 生物识别可用(含校验失败)时不自动解锁,防止失败后静默放行。
+      if (mounted && !_hasPin && !_hasPattern && !biometricAvailable) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) widget.onUnlocked();
         });

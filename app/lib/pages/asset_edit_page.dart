@@ -8,6 +8,7 @@ import '../models/asset.dart';
 import '../models/category.dart';
 import '../models/entitlements.dart';
 import '../repository/asset_repository.dart';
+import '../repository/local_asset_repository.dart';
 import '../storage/secure_store.dart';
 
 /// 资产编辑页:新建(asset 为 null)或编辑(asset 非空)。
@@ -44,6 +45,9 @@ class _AssetEditPageState extends State<AssetEditPage> {
   bool _saving = false;
   bool _decryptFailed = false;
   bool get _isEdit => widget.asset != null;
+
+  /// 本地模式(注入的是 LocalAssetRepository)下失败与网络无关,提示语要准确。
+  bool get _isLocalRepo => widget.repository is LocalAssetRepository;
 
   @override
   void initState() {
@@ -113,10 +117,13 @@ class _AssetEditPageState extends State<AssetEditPage> {
           _loading = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
+      final message = _isLocalRepo
+          ? (e is StateError ? '资产不存在或本地数据异常' : '加载失败,本地数据读取异常')
+          : '加载失败,请检查网络后重试';
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+          .showSnackBar(SnackBar(content: Text(message)));
       Navigator.of(context).pop();
     }
   }
@@ -175,7 +182,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
           .showSnackBar(const SnackBar(content: Text('已删除')));
       Navigator.of(context).pop();
     } catch (_) {
-      _showError('删除失败,请检查网络后重试');
+      _showError(_isLocalRepo ? '删除失败,请重试' : '删除失败,请检查网络后重试');
     }
   }
 
@@ -226,7 +233,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
     } on ApiException catch (e) {
       _showError(e.message);
     } catch (_) {
-      _showError('保存失败,请检查网络后重试');
+      _showError(_isLocalRepo ? '保存失败,请重试' : '保存失败,请检查网络后重试');
     } finally {
       if (mounted) setState(() => _saving = false);
     }

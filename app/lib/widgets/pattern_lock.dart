@@ -1,8 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// 3x3 图案锁控件:拖动连接圆点,松手时按顺序回调已选点索引(0..8,行优先)。
 ///
 /// 自包含:绘制、命中与手势全在此处;校验由调用方负责。
+/// 拖动时按"上一已选点 → 手指位置"线段做圆点命中检测,快速拖过也能完整捕获点序。
 class PatternLock extends StatefulWidget {
   const PatternLock({
     super.key,
@@ -27,6 +30,12 @@ class _PatternLockState extends State<PatternLock> {
 
   int get _count => widget.dotsPerRow * widget.dotsPerRow;
 
+  /// 命中半径:不小于 28px,且随控件尺寸缩放,拖动更跟手。
+  double _hitRadius(double size) {
+    final dotRadius = size / (widget.dotsPerRow * 8);
+    return math.max(dotRadius * 3.5, 28);
+  }
+
   Offset _center(int index, double size) {
     final per = widget.dotsPerRow;
     return Offset(
@@ -36,17 +45,56 @@ class _PatternLockState extends State<PatternLock> {
   }
 
   int? _dotAt(Offset pos, double size) {
-    final hitRadius = size / (widget.dotsPerRow * 3.2); // 略大于半格距,选中更顺手
+    final hitRadius = _hitRadius(size);
     for (var i = 0; i < _count; i++) {
       if ((_center(i, size) - pos).distance <= hitRadius) return i;
     }
     return null;
   }
 
+  /// 点 [p] 在线段 a→b 上的投影参数 t(0..1),越靠近 a 越小。
+  double _projT(Offset p, Offset a, Offset b) {
+    final ab = b - a;
+    final len2 = ab.distanceSquared;
+    if (len2 == 0) return 0;
+    return ((p - a).dx * ab.dx + (p - a).dy * ab.dy) / len2;
+  }
+
+  /// 点 [p] 到线段 a→b 的最短距离。
+  double _distToSegment(Offset p, Offset a, Offset b) {
+    final t = _projT(p, a, b).clamp(0.0, 1.0);
+    return (p - (a + (b - a) * t)).distance;
+  }
+
   void _addDot(Offset pos, double size) {
     final i = _dotAt(pos, size);
     if (i == null || _selected.contains(i)) return;
     setState(() => _selected.add(i));
+  }
+
+  /// 拖动:手指所在点直接命中 → 选中;同时检查"上一已选点 → 手指"线段
+  /// 穿过的所有未选点(按沿线段顺序),快速斜向拖动也能完整捕获。
+  void _onDrag(Offset pos, double size) {
+    setState(() => _current = pos);
+    if (_selected.isEmpty) {
+      _addDot(pos, size);
+      return;
+    }
+    final hitRadius = _hitRadius(size);
+    final from = _center(_selected.last, size);
+    final candidates = <int>[
+      for (var i = 0; i < _count; i++)
+        if (!_selected.contains(i) && _distToSegment(_center(i, size), from, pos) <= hitRadius)
+          i,
+    ];
+    if (candidates.isEmpty) return;
+    // 手指位置是线段终点,终点附近的点(直接命中)投影 t≈1,自然排在最后。
+    candidates.sort(
+      (a, b) => _projT(_center(a, size), from, pos).compareTo(
+        _projT(_center(b, size), from, pos),
+      ),
+    );
+    setState(() => _selected.addAll(candidates));
   }
 
   void _complete() {
@@ -68,10 +116,7 @@ class _PatternLockState extends State<PatternLock> {
           behavior: HitTestBehavior.opaque,
           onPanDown: (d) => _addDot(d.localPosition, size),
           onPanStart: (d) => _addDot(d.localPosition, size),
-          onPanUpdate: (d) {
-            setState(() => _current = d.localPosition);
-            _addDot(d.localPosition, size);
-          },
+          onPanUpdate: (d) => _onDrag(d.localPosition, size),
           onPanEnd: (_) => _complete(),
           onPanCancel: _complete,
           child: CustomPaint(

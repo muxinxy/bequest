@@ -1,5 +1,6 @@
 # 托孤(bequest)服务器 Windows 构建脚本(在仓库根目录执行: .\scripts\build.ps1)
 # 默认构建 windows/amd64 + linux/amd64, 产物输出到 dist\
+# 产物名: dist\bequest-server-<VERSION>-<os>-<arch>[.exe]
 #
 # 用法:
 #   .\scripts\build.ps1                        # 版本 dev, 默认 goproxy.cn
@@ -27,7 +28,7 @@ try {
     foreach ($t in @(@("windows", "amd64"), @("linux", "amd64"))) {
         $os, $arch = $t
         $ext  = if ($os -eq "windows") { ".exe" } else { "" }
-        $out  = Join-Path $DistDir "bequest-server-$os-$arch$ext"
+        $out  = Join-Path $DistDir "bequest-server-$Version-$os-$arch$ext"
         Write-Host "==> $out"
         $env:GOOS   = $os
         $env:GOARCH = $arch

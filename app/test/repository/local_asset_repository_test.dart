@@ -118,6 +118,41 @@ void main() {
     expect((await r2.getAsset('${a['id']}'))['name'], 'BTC');
   });
 
+  test('编辑流程端到端:新实例 listCategories+getAsset 往返,全程无网络', () async {
+    // 模拟本地模式编辑资产:写入(建分类+建资产)→ 新实例读列表与详情 → 更新 → 再读。
+    final r1 = repo();
+    final cat = await r1.createCategory('房产');
+    final a = await r1.createAsset({
+      'name': '房产证',
+      'asset_type': 'physical',
+      'category_id': cat['id'],
+      'encrypted_data': '本地加密内容',
+      'expiry_date': '2030-01-01',
+    });
+
+    final r2 = repo(); // 编辑页视角:全新实例。
+    final categories = await r2.listCategories();
+    expect(categories, hasLength(1));
+    expect(categories.first['name'], '房产');
+    final full = await r2.getAsset('${a['id']}');
+    expect(full['name'], '房产证');
+    expect(full['category_id'], cat['id']);
+    expect(full['encrypted_data'], '本地加密内容');
+    expect(full['expiry_date'], '2030-01-01');
+
+    // 保存编辑结果后,再用第三个实例读回。
+    await r2.updateAsset('${a['id']}', {
+      'name': '房产证(更新)',
+      'encrypted_data': 'v2',
+    });
+    final r3 = repo();
+    final saved = await r3.getAsset('${a['id']}');
+    expect(saved['name'], '房产证(更新)');
+    expect(saved['encrypted_data'], 'v2');
+    // 未覆盖字段保留。
+    expect(saved['category_id'], cat['id']);
+  });
+
   test('旧版纯备份串 vault:不崩溃,按空库处理', () async {
     await vault.saveVault(
       '{"app":"bequest","type":"backup","version":1,"assets":[]}',

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../crypto/asset_crypto.dart';
 import '../crypto/master_password.dart';
+import '../logger.dart';
 import '../models/export_format.dart';
 import '../repository/asset_repository.dart';
 import '../storage/secure_store.dart';
@@ -84,7 +85,8 @@ class _ImportPageState extends State<ImportPage> {
         SnackBar(content: Text('导入完成: 成功 $success 条,失败 $failed 条')),
       );
       _finish();
-    } catch (_) {
+    } catch (e) {
+      Logger.instance.e('import failed: $e');
       _showError('导入失败,请检查网络后重试');
       _finish();
     }

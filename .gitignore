@@ -12,6 +12,9 @@ app/.flutter-plugins-dependencies
 app/android/.gradle/
 app/android/local.properties
 app/android/app/.cxx/
+# release 签名(CI 构建时从 Secrets 生成, 绝不提交)
+app/android/key.properties
+app/android/*.jks
 app/*.iml
 
 # IDE / OS

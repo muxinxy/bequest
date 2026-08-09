@@ -2,11 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'logger.dart';
 import 'pages/app_lock_screen.dart';
 import 'pages/login_page.dart';
 import 'storage/secure_store.dart';
+import 'app_lock_policy.dart';
 
 void main() {
+  Logger.instance.d('app start');
   runApp(const BequestApp());
 }
 
@@ -65,8 +68,13 @@ class _LockGateState extends State<LockGate> {
     bool locked = false;
     try {
       final jwt = await _store.readJwt();
+      final mk = await _store.readMasterKey();
       final enabled = await _store.readLockEnabled();
-      locked = enabled && jwt != null;
+      // 本地模式无 jwt 但有主密钥,同样要锁;只按 jwt 判断会漏锁。
+      locked = shouldLockOnColdStart(
+        lockEnabled: enabled,
+        hasCredential: jwt != null || (mk != null && mk.isNotEmpty),
+      );
     } catch (_) {
       locked = false;
     }
@@ -90,11 +98,18 @@ class _LockGateState extends State<LockGate> {
 
   /// 进入后台:退出时锁定 → 立即锁;退出且超时锁定 → 启动 N 分钟计时,到时再锁。
   Future<void> _handleBackground() async {
-    if (_locked || !_checked) return;
+    if (_locked) return;
     try {
       final jwt = await _store.readJwt();
+      final mk = await _store.readMasterKey();
       final enabled = await _store.readLockEnabled();
-      if (!enabled || jwt == null || !mounted) return;
+      if (!shouldLockOnColdStart(
+            lockEnabled: enabled,
+            hasCredential: jwt != null || (mk != null && mk.isNotEmpty),
+          ) ||
+          !mounted) {
+        return;
+      }
       final timing = await _store.readLockTiming();
       if (timing == 'timeout') {
         final minutes = await _store.readLockTimeoutMinutes();
@@ -115,11 +130,16 @@ class _LockGateState extends State<LockGate> {
 
   Future<void> _lockNow() async {
     _cancelLockTimer();
-    if (_locked || !_checked) return;
+    if (_locked) return;
     try {
       final jwt = await _store.readJwt();
+      final mk = await _store.readMasterKey();
       final enabled = await _store.readLockEnabled();
-      if (enabled && jwt != null && mounted) {
+      if (shouldLockOnColdStart(
+            lockEnabled: enabled,
+            hasCredential: jwt != null || (mk != null && mk.isNotEmpty),
+          ) &&
+          mounted) {
         setState(() => _locked = true);
       }
     } catch (_) {
