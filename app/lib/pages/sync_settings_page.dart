@@ -132,15 +132,15 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       _snack('请先填写完整的连接信息');
       return;
     }
-    final jwt = await _store.readJwt();
     final masterKey = await _store.readMasterKey();
-    if (jwt == null || masterKey == null) {
-      _snack('登录状态已失效,请重新登录');
+    if (masterKey == null) {
+      _snack('请先注册并设置主密码');
       return;
     }
+    final jwt = await _store.readJwt();
     setState(() => _busy = true);
     try {
-      final backupJson = await buildBackupJson(jwt, _api);
+      final backupJson = await buildBackupJson(jwt, _api, masterKey);
       final payload = await buildSyncPayload(backupJson, masterKey);
       final name = 'bequest_backup_${_timestamp()}.json';
       await provider.upload(name, jsonEncode(payload));
@@ -149,6 +149,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       );
       _restoreName.text = name;
       _snack('同步完成');
+    } on StateError catch (e) {
+      _snack(e.message);
     } catch (_) {
       _snack('同步失败,请检查网络与连接配置');
     } finally {
@@ -167,12 +169,12 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       _snack('请先执行一次同步,或填写备份文件名');
       return;
     }
-    final jwt = await _store.readJwt();
     final masterKey = await _store.readMasterKey();
-    if (jwt == null || masterKey == null) {
-      _snack('登录状态已失效,请重新登录');
+    if (masterKey == null) {
+      _snack('请先注册并设置主密码');
       return;
     }
+    final jwt = await _store.readJwt();
     setState(() => _busy = true);
     try {
       final payloadJson = await provider.download(name);
@@ -181,8 +183,13 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         _snack('解密失败(主密钥不匹配或数据被篡改)');
         return;
       }
-      final result = await restoreAssets(backupJson, jwt, _api);
-      _snack('恢复完成: 成功 ${result.ok} 失败 ${result.fail}');
+      if (jwt != null) {
+        final result = await restoreAssets(backupJson, jwt, _api);
+        _snack('恢复完成: 成功 ${result.ok} 失败 ${result.fail}');
+      } else {
+        await restoreToLocal(backupJson, masterKey);
+        _snack('已保存到本机,登录后可从本地数据同步到云端');
+      }
     } catch (_) {
       _snack('恢复失败,请检查网络与备份文件');
     } finally {
@@ -212,8 +219,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
               padding: const EdgeInsets.all(16),
               children: [
                 const Text(
-                  '同步配置仅保存在本机,不会发送到托孤服务端;'
-                  '备份使用主密钥加密,无需再次输入主密码。',
+                  '无需登录:备份与恢复均在本地完成,数据只存在您的存储中;'
+                  '同步配置仅保存在本机,不会发送到托孤服务端,备份使用主密钥加密。',
                   style: TextStyle(color: Colors.grey, fontSize: 12),
                 ),
                 const SizedBox(height: 16),

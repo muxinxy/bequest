@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../storage/secure_store.dart';
 import 'home_page.dart';
 import 'register_page.dart';
+import 'sync_settings_page.dart';
 
 /// 登录页:提交用户名与密码,成功后进入主页。
 class LoginPage extends StatefulWidget {
@@ -138,6 +139,21 @@ class _LoginPageState extends State<LoginPage> {
                         );
                       },
                 child: const Text('还没有账号?去注册'),
+              ),
+              TextButton(
+                onPressed: _submitting
+                    ? null
+                    : () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const SyncSettingsPage(),
+                          ),
+                        );
+                      },
+                child: const Text(
+                  '自托管同步(无需登录)',
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
             ],
           ),

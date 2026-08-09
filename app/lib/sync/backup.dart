@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../api/api_client.dart';
 import '../crypto/asset_crypto.dart';
 import '../models/preset_categories.dart';
+import 'local_vault.dart';
 
 final Set<String> _presetCategoryNames = {
   ...kPhysicalPresetCategories,
@@ -26,7 +27,7 @@ Map<String, dynamic>? parseBackupJson(String text) {
 
 /// 拉取服务器全部数据(资产含 encrypted_data,分类/模板/继承人原样),构建备份 JSON。
 /// 单条资产详情拉取失败时跳过,不阻断整体备份。
-Future<String> buildBackupJson(String jwt, ApiClient api) async {
+Future<String> _fetchAll(String jwt, ApiClient api) async {
   final assets = await api.listAssets(jwt);
   final fullAssets = <Map<String, dynamic>>[];
   for (final asset in assets) {
@@ -46,6 +47,49 @@ Future<String> buildBackupJson(String jwt, ApiClient api) async {
     'reminder_templates': await api.listReminderTemplates(jwt),
     'inheritors': await api.listInheritors(jwt),
   });
+}
+
+/// 构建备份 JSON:优先读取本地加密快照(无需登录);
+/// 无快照且已登录则从服务器拉取并写入本地快照后返回;
+/// 两者皆无则抛 StateError。
+Future<String> buildBackupJson(
+  String? jwt,
+  ApiClient api,
+  String masterKeyB64, {
+  LocalVault? vault,
+}) async {
+  final local = vault ?? LocalVault();
+  final cached = await local.loadVault(masterKeyB64);
+  if (cached != null) return cached;
+  if (jwt == null) throw StateError('无本地数据且未登录');
+  final backup = await _fetchAll(jwt, api);
+  try {
+    await local.saveVault(backup, masterKeyB64);
+  } catch (_) {
+    // 本地快照缓存失败不影响本次同步。
+  }
+  return backup;
+}
+
+/// 强制刷新本地加密快照:从服务器拉取全量数据并覆盖保存。
+/// 登录成功后调用,保证本地快照与云端一致。
+Future<void> refreshLocalVault(
+  String jwt,
+  ApiClient api,
+  String masterKeyB64, {
+  LocalVault? vault,
+}) async {
+  final backup = await _fetchAll(jwt, api);
+  await (vault ?? LocalVault()).saveVault(backup, masterKeyB64);
+}
+
+/// 将备份写入本地加密快照(未登录时恢复的落点)。
+Future<void> restoreToLocal(
+  String backupJson,
+  String masterKeyB64, {
+  LocalVault? vault,
+}) async {
+  await (vault ?? LocalVault()).saveVault(backupJson, masterKeyB64);
 }
 
 /// 将备份 JSON 用主密钥加密为上传负载。

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -6,6 +7,7 @@ import 'package:http/testing.dart';
 
 import 'package:bequest/api/api_client.dart';
 import 'package:bequest/sync/backup.dart';
+import 'package:bequest/sync/local_vault.dart';
 
 /// 用 MockClient 伪造后端,验证备份构建/解析/加密/恢复逻辑。
 void main() {
@@ -105,7 +107,10 @@ void main() {
   });
 
   test('buildBackupJson 产出含全部数据键的备份 JSON', () async {
-    final json = await buildBackupJson('jwt', fakeApi());
+    final tempDir = Directory.systemTemp.createTempSync('bequest_backup_main');
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final vault = LocalVault(directory: tempDir.path);
+    final json = await buildBackupJson('jwt', fakeApi(), key, vault: vault);
     final backup = jsonDecode(json) as Map<String, dynamic>;
     expect(backup['app'], 'bequest');
     expect(backup['type'], 'backup');
@@ -118,6 +123,46 @@ void main() {
     expect(backup['categories'], hasLength(1));
     expect(backup['reminder_templates'], hasLength(1));
     expect(backup['inheritors'], hasLength(1));
+    // 服务器拉取后本地快照已写入,可用主密钥读回。
+    expect(await vault.loadVault(key), json);
+  });
+
+  test('buildBackupJson jwt=null 时读本地快照,不请求服务器', () async {
+    final tempDir = Directory.systemTemp.createTempSync('bequest_backup_offline');
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final vault = LocalVault(directory: tempDir.path);
+    const cached =
+        '{"app":"bequest","type":"backup","version":1,"assets":[],'
+        '"categories":[],"reminder_templates":[],"inheritors":[]}';
+    await vault.saveVault(cached, key);
+
+    // 任何服务器请求都会抛错;成功返回即证明全程未走网络。
+    final api = ApiClient(
+      client: MockClient((_) async => throw StateError('不应请求服务器')),
+    );
+    final json = await buildBackupJson(null, api, key, vault: vault);
+    expect(json, cached);
+  });
+
+  test('buildBackupJson jwt=null 且无本地快照 → StateError', () async {
+    final tempDir = Directory.systemTemp.createTempSync('bequest_backup_empty');
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final vault = LocalVault(directory: tempDir.path);
+    expect(
+      () => buildBackupJson(null, fakeApi(), key, vault: vault),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('restoreToLocal 写入的本地快照可被 loadVault 读回', () async {
+    final tempDir = Directory.systemTemp.createTempSync('bequest_backup_restore');
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final vault = LocalVault(directory: tempDir.path);
+    const backup =
+        '{"app":"bequest","type":"backup","version":1,"assets":[],'
+        '"categories":[],"reminder_templates":[],"inheritors":[]}';
+    await restoreToLocal(backup, key, vault: vault);
+    expect(await vault.loadVault(key), backup);
   });
 
   test('parseBackupJson 校验通过与拒绝非法输入', () {

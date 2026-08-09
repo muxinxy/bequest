@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -9,6 +10,7 @@ import '../models/category.dart';
 import '../models/preset_categories.dart';
 import '../models/reminder.dart';
 import '../storage/secure_store.dart';
+import '../sync/backup.dart';
 import 'app_lock_setup_page.dart';
 import 'asset_edit_page.dart';
 import 'audit_page.dart';
@@ -74,6 +76,7 @@ class _HomePageState extends State<HomePage> {
             .length;
         _loading = false;
       });
+      _refreshLocalVault(jwt);
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -81,6 +84,19 @@ class _HomePageState extends State<HomePage> {
       );
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// 后台刷新本地加密快照(登录后数据加载成功时调用),失败不影响主页。
+  void _refreshLocalVault(String jwt) {
+    unawaited(() async {
+      try {
+        final mk = await _store.readMasterKey();
+        if (mk == null) return;
+        await refreshLocalVault(jwt, _api, mk);
+      } catch (_) {
+        // 本地快照刷新失败可忽略,下次加载再试。
+      }
+    }());
   }
 
   Future<void> _logout() async {
