@@ -100,3 +100,5 @@ flutter run                 # Android 模拟器访问后端用 http://10.0.2.2:8
 - 2026-08-09：锁定方案 A（继承时发放密钥）、免费继承保证送达、MVP 仅 Android
 - 2026-08-09：产品定名「托孤」（英文 bequest），monorepo 结构（app/ + server/）
 - 2026-08-09：P0 完成——账号注册/登录、JWT + argon2id、主密码派生 + 密钥安全存储、SQLite 自动迁移
+- 2026-08-09：**自托管同步无需登录**——新增 LocalVault（本地加密快照 `vault.bq`，主密钥 AES-GCM）；同步优先读本地快照、恢复未登录时落本地；登录页新增「自托管同步(无需登录)」入口；README 补齐部署/Release 文档
+- 2026-08-09：**发布 v0.1.0**——tag 推送触发 GitHub Actions（5 平台二进制 + GHCR 双架构镜像 + Release 资产）
