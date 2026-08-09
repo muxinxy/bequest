@@ -145,6 +145,22 @@ jobs:
           name: bequest-android
           path: android-dist
 
+      - name: 提取更新说明
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          # 提取 CHANGELOG.md 中 "## v<版本> " 到下一个 "## " 之间的内容作为发布说明
+          awk -v v="v$VERSION" '
+            $0 ~ "^## " v " " { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > release_body.md
+          # 无手动说明时给出占位提示(仍会附加 GitHub 自动生成的提交记录)
+          if [ ! -s release_body.md ]; then
+            printf '本版本暂无手动更新说明,详见下方自动生成的提交记录。\n' > release_body.md
+          fi
+          echo "body_lines=$(wc -l < release_body.md)"
+
       - name: 发布 Release
         uses: softprops/action-gh-release@v2
         with:
@@ -153,3 +169,4 @@ jobs:
             android-dist/*
           draft: false
           generate_release_notes: true
+          body_path: release_body.md
