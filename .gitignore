@@ -1,0 +1,22 @@
+# Go
+server/bequest-server
+server/bequest-server.exe
+server/server.exe
+server/data/
+
+# Flutter
+app/.dart_tool/
+app/build/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/android/.gradle/
+app/android/local.properties
+app/android/app/.cxx/
+app/*.iml
+
+# IDE / OS
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db
