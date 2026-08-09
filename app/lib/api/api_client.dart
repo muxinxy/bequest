@@ -193,6 +193,19 @@ class ApiClient {
     return _decode(response);
   }
 
+  /// PUT /api/v1/settings/master-key,修改主密码后更新云端继承密钥包装。
+  /// [accountPassword] 为账户登录密码(服务端校验);401 = 账户密码错误。
+  Future<Map<String, dynamic>> updateMasterKeyWrapped(
+    String jwt,
+    String accountPassword,
+    String wrappedB64,
+  ) {
+    return _put('/api/v1/settings/master-key', {
+      'password': accountPassword,
+      'master_key_wrapped': wrappedB64,
+    }, jwt);
+  }
+
   Future<Map<String, dynamic>> _post(
     String path,
     Map<String, dynamic> body,

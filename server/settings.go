@@ -6,8 +6,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -206,4 +208,51 @@ func handleDeleteSMTP(db *sql.DB) http.HandlerFunc {
 // handleVersion: GET /api/v1/version -> 200 {"version": version} (no auth)
 func handleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"version": version})
+}
+
+// ---------- /api/v1/settings/master-key ----------
+
+type masterKeyPutRequest struct {
+	Password         string `json:"password"`
+	MasterKeyWrapped string `json:"master_key_wrapped"`
+}
+
+// handlePutMasterKey: PUT /api/v1/settings/master-key -> 200 {"ok":true}.
+// Client re-wraps the master key after a password change; we require proof of
+// the account password so a stolen JWT alone cannot break the handover.
+func handlePutMasterKey(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		var req masterKeyPutRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		var hash string
+		if err := db.QueryRow(`SELECT password_hash FROM users WHERE id = ?`, uid).Scan(&hash); err != nil {
+			log.Printf("query user password hash: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		ok, err := verifyPassword(hash, req.Password)
+		if err != nil || !ok {
+			writeError(w, http.StatusUnauthorized, "invalid password")
+			return
+		}
+		decoded, err := base64.StdEncoding.DecodeString(req.MasterKeyWrapped)
+		if err != nil || len(decoded) == 0 {
+			writeError(w, http.StatusBadRequest, "master_key_wrapped must be base64")
+			return
+		}
+		if _, err := db.Exec(`UPDATE users SET master_key_wrapped = ?, updated_at = datetime('now') WHERE id = ?`, decoded, uid); err != nil {
+			log.Printf("update master key: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if _, err := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'owner', 'master_key_updated', ?)`,
+			uid, fmt.Sprintf("bytes:%d", len(decoded))); err != nil {
+			log.Printf("audit master key update: %v", err)
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	}
 }

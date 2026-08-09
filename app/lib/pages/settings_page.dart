@@ -7,6 +7,7 @@ import 'about_page.dart';
 import 'app_lock_setup_page.dart';
 import 'audit_page.dart';
 import 'category_page.dart';
+import 'change_master_password_page.dart';
 import 'export_page.dart';
 import 'import_page.dart';
 import 'inheritance_status_page.dart';
@@ -109,6 +110,11 @@ class SettingsPage extends StatelessWidget {
             Icons.lock_outline,
             '应用锁',
             () => _push(context, const AppLockSetupPage()),
+          ),
+          _entry(
+            Icons.password_outlined,
+            '修改主密码',
+            () => _push(context, const ChangeMasterPasswordPage()),
           ),
           _entry(
             Icons.mail_outline,

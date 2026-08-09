@@ -71,6 +71,7 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("GET /api/v1/settings/smtp", requireAuth(handleGetSMTP(db)))
 	mux.Handle("PUT /api/v1/settings/smtp", requireAuth(handlePutSMTP(db)))
 	mux.Handle("DELETE /api/v1/settings/smtp", requireAuth(handleDeleteSMTP(db)))
+	mux.Handle("PUT /api/v1/settings/master-key", requireAuth(handlePutMasterKey(db)))
 	mux.HandleFunc("GET /api/v1/version", handleVersion)
 	return mux
 }

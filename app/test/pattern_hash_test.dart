@@ -35,6 +35,55 @@ void main() {
     });
   });
 
+  group('shouldRecordPatternFailure(限流接线判定)', () {
+    const salt = 'saltA';
+    final hash = hashPattern([0, 1, 2, 5], salt);
+
+    test('正确图案 → false(记成功)', () {
+      expect(
+        shouldRecordPatternFailure(salt: salt, hash: hash, dots: [0, 1, 2, 5]),
+        isFalse,
+      );
+    });
+
+    test('错误图案(≥4 点)→ true(记失败)', () {
+      expect(
+        shouldRecordPatternFailure(salt: salt, hash: hash, dots: [0, 1, 2, 8]),
+        isTrue,
+      );
+    });
+
+    test('短图案(<4 点)即使与哈希无关也记失败', () {
+      expect(
+        shouldRecordPatternFailure(salt: salt, hash: hash, dots: [0, 1, 2]),
+        isTrue,
+      );
+      expect(
+        shouldRecordPatternFailure(salt: salt, hash: hash, dots: [0]),
+        isTrue,
+      );
+    });
+
+    test('盐或哈希缺失(损坏状态)一律记失败,不崩溃', () {
+      expect(
+        shouldRecordPatternFailure(salt: null, hash: hash, dots: [0, 1, 2, 5]),
+        isTrue,
+      );
+      expect(
+        shouldRecordPatternFailure(salt: salt, hash: null, dots: [0, 1, 2, 5]),
+        isTrue,
+      );
+      expect(
+        shouldRecordPatternFailure(
+          salt: '',
+          hash: '',
+          dots: [0, 1, 2, 5],
+        ),
+        isTrue,
+      );
+    });
+  });
+
   group('secure_store 锁定时钟与图案键', () {
     setUp(() {
       FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(

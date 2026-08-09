@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../crypto/attempt_guard.dart';
+import '../crypto/master_password.dart';
 import '../crypto/pattern_hash.dart';
 import '../crypto/pin_hash.dart';
 import '../logger.dart';
@@ -32,12 +33,18 @@ class _AppLockScreenState extends State<AppLockScreen> {
     store: _store,
     prefix: 'lock',
   );
+  /// 主密码解锁独立限流(主密码是最强凭据,可绕过 PIN/图案/生物识别)。
+  late final AttemptGuard _masterGuard = AttemptGuard(
+    store: _store,
+    prefix: 'master',
+  );
   Timer? _lockTimer;
   int _lockSeconds = 0;
 
   bool _biometricAvailable = false;
   bool _hasPin = false;
   bool _hasPattern = false;
+  bool _hasMasterKey = false;
   String _patternSalt = '';
   String _patternHash = '';
   bool _verifying = false;
@@ -60,6 +67,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     try {
       final biometric = await _store.readLockBiometric();
       final hasPin = (await _store.readPinHash()) != null;
+      final masterKey = await _store.readMasterKey();
       final patternHash = await _store.readPatternHash();
       final patternSalt = await _store.readPatternSalt();
       var biometricAvailable = false;
@@ -72,6 +80,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
         setState(() {
           _hasPin = hasPin;
           _hasPattern = patternHash != null && patternSalt != null;
+          _hasMasterKey = masterKey != null && masterKey.isNotEmpty;
           _patternHash = patternHash ?? '';
           _patternSalt = patternSalt ?? '';
           _biometricAvailable = biometricAvailable;
@@ -182,19 +191,43 @@ class _AppLockScreenState extends State<AppLockScreen> {
       await _startLockCountdown();
       return;
     }
-    if (dots.length < 4) {
-      setState(() => _error = '图案错误,请重试');
-      return;
-    }
-    if (verifyPattern(dots, _patternSalt, _patternHash)) {
-      await _lockGuard.recordSuccess();
-      if (mounted) widget.onUnlocked();
-    } else {
+    // 任何未通过校验的尝试(含 <4 点短图案、盐/哈希缺失的损坏状态)都计失败,
+    // 与 PIN 路径一致;否则解锁并清零计数。
+    if (shouldRecordPatternFailure(
+      salt: _patternSalt,
+      hash: _patternHash,
+      dots: dots,
+    )) {
       await _recordWrongAttempt();
       // 进入锁定时由倒计时文案提示,不再叠加"错误"提示。
       if (mounted && _lockSeconds == 0) {
         setState(() => _error = '图案错误,请重试');
       }
+    } else {
+      await _lockGuard.recordSuccess();
+      if (mounted) widget.onUnlocked();
+    }
+  }
+
+  /// 用主密码解锁:主密码是最强凭据,验证通过即绕过 PIN/图案/生物识别。
+  Future<void> _unlockWithMasterPassword() async {
+    if (_verifying) return;
+    final password = await showMasterPasswordDialog(context);
+    if (password == null || password.isEmpty) return;
+    if (!mounted) return;
+    setState(() => _verifying = true);
+    try {
+      final ok = await guardedVerifyMasterPassword(
+        context,
+        _masterGuard,
+        password,
+      );
+      if (!ok || !mounted) return;
+      // 同时清零应用锁(PIN/图案)计数,与正常解锁一致。
+      await _lockGuard.recordSuccess();
+      widget.onUnlocked();
+    } finally {
+      if (mounted) setState(() => _verifying = false);
     }
   }
 
@@ -326,6 +359,13 @@ class _AppLockScreenState extends State<AppLockScreen> {
                         : _tryBiometric,
                     icon: const Icon(Icons.fingerprint),
                     label: const Text('生物识别解锁'),
+                  ),
+                ],
+                if (_hasMasterKey) ...[
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: _verifying ? null : _unlockWithMasterPassword,
+                    child: const Text('用主密码解锁'),
                   ),
                 ],
               ],
