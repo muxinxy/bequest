@@ -14,6 +14,8 @@ class SecureStore {
   static const _lockEnabledKey = 'bequest_lock_enabled';
   static const _lockBiometricKey = 'bequest_lock_biometric';
   static const _syncConfigKey = 'bequest_sync_config';
+  static const _serverUrlKey = 'bequest_server_url';
+  static const _storageModeKey = 'bequest_storage_mode';
 
   final FlutterSecureStorage _storage;
 
@@ -65,4 +67,16 @@ class SecureStore {
       _storage.write(key: _syncConfigKey, value: json);
 
   Future<String?> readSyncConfig() => _storage.read(key: _syncConfigKey);
+
+  /// 服务器地址覆盖(设置页写入;为空则用 ApiConfig.defaultBaseUrl)。
+  Future<String?> readServerUrl() => _storage.read(key: _serverUrlKey);
+
+  Future<void> saveServerUrl(String url) =>
+      _storage.write(key: _serverUrlKey, value: url);
+
+  /// 存储模式:'cloud' | 'local' | null(默认 cloud)。
+  Future<String?> readStorageMode() => _storage.read(key: _storageModeKey);
+
+  Future<void> saveStorageMode(String mode) =>
+      _storage.write(key: _storageModeKey, value: mode);
 }

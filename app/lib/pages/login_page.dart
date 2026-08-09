@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../api/api_config.dart';
 import '../storage/secure_store.dart';
 import 'home_page.dart';
+import 'local_unlock_page.dart';
 import 'register_page.dart';
+import 'server_settings_page.dart';
 import 'sync_settings_page.dart';
 
 /// 登录页:提交用户名与密码,成功后进入主页。
@@ -16,7 +19,7 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
-  final _api = ApiClient();
+  late final Future<ApiClient> _api = ApiConfig.client();
   final _store = SecureStore();
 
   final _usernameController = TextEditingController();
@@ -35,12 +38,14 @@ class _LoginPageState extends State<LoginPage> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _submitting = true);
     try {
-      final response = await _api.login(
+      final response = await (await _api).login(
         username: _usernameController.text.trim(),
         password: _passwordController.text,
       );
       final token = _extractJwt(response);
       await _store.saveJwt(token);
+      // 登录即云端模式:避免沿用上次的本地模式设置。
+      await _store.saveStorageMode('cloud');
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -152,6 +157,35 @@ class _LoginPageState extends State<LoginPage> {
                       },
                 child: const Text(
                   '自托管同步(无需登录)',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilledButton.tonal(
+                onPressed: _submitting
+                    ? null
+                    : () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const LocalUnlockPage(),
+                          ),
+                        );
+                      },
+                child: const Text('进入本地模式'),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: _submitting
+                    ? null
+                    : () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ServerSettingsPage(),
+                          ),
+                        );
+                      },
+                child: const Text(
+                  '服务器设置',
                   style: TextStyle(color: Colors.grey),
                 ),
               ),

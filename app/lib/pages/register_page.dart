@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../api/api_config.dart';
 import '../crypto/key_derivation.dart';
 import '../storage/secure_store.dart';
 import 'home_page.dart';
@@ -15,7 +16,7 @@ class RegisterPage extends StatefulWidget {
 
 class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
-  final _api = ApiClient();
+  late final Future<ApiClient> _api = ApiConfig.client();
   final _store = SecureStore();
 
   final _usernameController = TextEditingController();
@@ -48,7 +49,7 @@ class _RegisterPageState extends State<RegisterPage> {
       final wrappingKey = generateWrappingKey();
       final wrapped = wrapMasterKey(masterKey, wrappingKey);
 
-      final response = await _api.register(
+      final response = await (await _api).register(
         username: _usernameController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text,
@@ -60,6 +61,8 @@ class _RegisterPageState extends State<RegisterPage> {
       // 盐必须随主密钥一起保存,导出/导入时需用它重新派生并校验主密码。
       await _store.saveMasterSalt(salt);
       await _store.saveWrappingKey(wrappingKey);
+      // 注册即云端模式:避免沿用上次的本地模式设置。
+      await _store.saveStorageMode('cloud');
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(

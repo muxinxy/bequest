@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../api/api_config.dart';
 import '../models/inheritance_status.dart';
 import '../storage/secure_store.dart';
 
@@ -13,7 +14,7 @@ class InheritanceStatusPage extends StatefulWidget {
 }
 
 class _InheritanceStatusPageState extends State<InheritanceStatusPage> {
-  final _api = ApiClient();
+  late final Future<ApiClient> _api = ApiConfig.client();
   final _store = SecureStore();
 
   InheritanceStatus? _status;
@@ -29,7 +30,7 @@ class _InheritanceStatusPageState extends State<InheritanceStatusPage> {
     try {
       final jwt = await _store.readJwt();
       if (jwt == null) throw ApiException('未登录');
-      final json = await _api.getInheritanceStatus(jwt);
+      final json = await (await _api).getInheritanceStatus(jwt);
       if (!mounted) return;
       setState(() {
         _status = InheritanceStatus.fromJson(json);

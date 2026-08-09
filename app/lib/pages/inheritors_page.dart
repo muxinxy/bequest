@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../api/api_config.dart';
 import '../models/inheritor.dart';
 import '../storage/secure_store.dart';
 
@@ -15,7 +16,7 @@ class InheritorsPage extends StatefulWidget {
 }
 
 class _InheritorsPageState extends State<InheritorsPage> {
-  final _api = ApiClient();
+  late final Future<ApiClient> _api = ApiConfig.client();
   final _store = SecureStore();
 
   List<Inheritor> _inheritors = const [];
@@ -31,7 +32,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
     try {
       final jwt = await _store.readJwt();
       if (jwt == null) throw ApiException('未登录');
-      final list = await _api.listInheritors(jwt);
+      final list = await (await _api).listInheritors(jwt);
       if (!mounted) return;
       setState(() {
         _inheritors = list.map(Inheritor.fromJson).toList(growable: false);
@@ -159,7 +160,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
     try {
       final jwt = await _store.readJwt();
       if (jwt == null) throw ApiException('未登录');
-      await _api.createInheritor(jwt, {
+      await (await _api).createInheritor(jwt, {
         'name': result.name,
         'email': result.email,
         'access_code': result.accessCode,
@@ -198,7 +199,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
     try {
       final jwt = await _store.readJwt();
       if (jwt == null) throw ApiException('未登录');
-      await _api.deleteInheritor(jwt, inheritor.id);
+      await (await _api).deleteInheritor(jwt, inheritor.id);
       await _load();
     } on ApiException catch (e) {
       _showError(e.message);

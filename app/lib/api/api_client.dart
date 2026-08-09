@@ -5,11 +5,13 @@ import 'package:http/http.dart' as http;
 /// 后端接口客户端。后端运行在开发机 8080 端口,
 /// Android 模拟器通过 http://10.0.2.2:8080 访问。
 class ApiClient {
-  ApiClient({http.Client? client}) : _client = client ?? http.Client();
-
-  static const String baseUrl = 'http://10.0.2.2:8080';
+  /// 默认本机后端;构造时可注入覆盖(见 ApiConfig,设置页可持久化覆盖)。
+  ApiClient({http.Client? client, String? baseUrl})
+      : _client = client ?? http.Client(),
+        baseUrl = baseUrl ?? 'http://10.0.2.2:8080';
 
   final http.Client _client;
+  final String baseUrl;
 
   /// POST /api/v1/auth/register
   Future<Map<String, dynamic>> register({

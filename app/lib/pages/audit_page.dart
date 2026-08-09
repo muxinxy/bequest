@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../api/api_config.dart';
 import '../storage/secure_store.dart';
 
 /// 审计日志:只读展示后端记录的操作流水。
@@ -12,7 +13,7 @@ class AuditPage extends StatefulWidget {
 }
 
 class _AuditPageState extends State<AuditPage> {
-  final _api = ApiClient();
+  late final Future<ApiClient> _api = ApiConfig.client();
   final _store = SecureStore();
 
   List<Map<String, dynamic>> _logs = const [];
@@ -28,7 +29,7 @@ class _AuditPageState extends State<AuditPage> {
     try {
       final jwt = await _store.readJwt();
       if (jwt == null) throw ApiException('未登录');
-      final logs = await _api.listAuditLog(jwt);
+      final logs = await (await _api).listAuditLog(jwt);
       if (!mounted) return;
       setState(() {
         _logs = logs;

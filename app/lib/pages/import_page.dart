@@ -2,26 +2,27 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
-import '../api/api_client.dart';
 import '../crypto/asset_crypto.dart';
 import '../crypto/master_password.dart';
 import '../models/export_format.dart';
 import '../models/preset_categories.dart';
+import '../repository/asset_repository.dart';
 import '../storage/secure_store.dart';
+import 'local_unlock_page.dart';
 
-/// 导入页:验证主密码后解析导出文件,逐条创建资产并显示进度。
-/// 导入文件为用户提供,逐条做防御性校验,失败项计入失败数。
+/// 导入页:验证主密码后解析导出文件,经仓储逐条创建资产并显示进度。
+/// 云端模式写入服务器;本地模式写入本地加密库(jwt 为空时)。
 class ImportPage extends StatefulWidget {
-  const ImportPage({super.key, required this.fileText});
+  const ImportPage({super.key, required this.fileText, required this.repository});
 
   final String fileText;
+  final AssetRepository repository;
 
   @override
   State<ImportPage> createState() => _ImportPageState();
 }
 
 class _ImportPageState extends State<ImportPage> {
-  final _api = ApiClient();
   final _store = SecureStore();
 
   String _status = '准备导入...';
@@ -38,8 +39,21 @@ class _ImportPageState extends State<ImportPage> {
       _finish();
       return;
     }
+    final salt = await _store.readMasterSalt();
+    if (salt == null || salt.isEmpty) {
+      // 本机无盐:无法校验主密码,引导走与本地模式一致的设置主密码流程。
+      await _guideSetMasterPassword();
+      _finish();
+      return;
+    }
     if (!await verifyMasterPassword(password)) {
       _showError('主密码错误');
+      _finish();
+      return;
+    }
+    final masterKey = await _store.readMasterKey();
+    if (masterKey == null) {
+      _showError('未找到主密钥,请重新登录或进入本地模式');
       _finish();
       return;
     }
@@ -50,15 +64,8 @@ class _ImportPageState extends State<ImportPage> {
       return;
     }
     try {
-      final jwt = await _store.readJwt();
-      final masterKey = await _store.readMasterKey();
-      if (jwt == null || masterKey == null) {
-        _showError('登录状态已失效,请重新登录');
-        _finish();
-        return;
-      }
       final categoryNames = <String, String>{
-        for (final c in await _api.listCategories(jwt))
+        for (final c in await widget.repository.listCategories())
           if (c['name'] != null && c['id'] != null) '${c['name']}': '${c['id']}',
       };
       var success = 0;
@@ -67,7 +74,7 @@ class _ImportPageState extends State<ImportPage> {
         if (!mounted) return;
         setState(() => _status = '导入中 ${i + 1}/${items.length}');
         try {
-          await _createOne(jwt, masterKey, items[i], categoryNames);
+          await _createOne(masterKey, items[i], categoryNames);
           success++;
         } catch (_) {
           failed++;
@@ -84,8 +91,34 @@ class _ImportPageState extends State<ImportPage> {
     }
   }
 
+  /// 引导设置主密码(与本地模式相同的流程),设置后用户可重新进入导入。
+  Future<void> _guideSetMasterPassword() async {
+    if (!mounted) return;
+    final goSetup = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('未设置主密码'),
+        content: const Text('导入资产需要主密码。是否前往设置主密码?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('去设置'),
+          ),
+        ],
+      ),
+    );
+    if (goSetup == true && mounted) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const LocalUnlockPage()),
+      );
+    }
+  }
+
   Future<void> _createOne(
-    String jwt,
     String masterKey,
     Map<String, dynamic> item,
     Map<String, String> categoryNames,
@@ -96,7 +129,7 @@ class _ImportPageState extends State<ImportPage> {
       // 导入文件是用户提供的信任边界:缺名称/类型按失败计。
       throw const FormatException('缺少名称或类型');
     }
-    final categoryId = await _resolveCategoryId(jwt, item, categoryNames);
+    final categoryId = await _resolveCategoryId(item, categoryNames);
     final payload = <String, dynamic>{
       'credentials': item['credentials']?.toString() ?? '',
       'notes': item['notes']?.toString() ?? '',
@@ -104,7 +137,7 @@ class _ImportPageState extends State<ImportPage> {
     final advanceDays = (item['advance_days'] as num?)?.toInt();
     if (advanceDays != null) payload['advance_days'] = advanceDays;
     final expiry = item['expiry_date']?.toString().trim() ?? '';
-    await _api.createAsset(jwt, {
+    await widget.repository.createAsset({
       'name': name,
       'asset_type': assetType,
       'category_id': categoryId,
@@ -113,9 +146,8 @@ class _ImportPageState extends State<ImportPage> {
     });
   }
 
-  /// 分类名 → 服务器分类 id;预设分类无服务器 id,与 P1 决策一致返回 null。
+  /// 分类名 → 仓储分类 id;预设分类无对应记录,与 P1 决策一致返回 null。
   Future<String?> _resolveCategoryId(
-    String jwt,
     Map<String, dynamic> item,
     Map<String, String> categoryNames,
   ) async {
@@ -127,7 +159,7 @@ class _ImportPageState extends State<ImportPage> {
     }
     final existingId = categoryNames[category];
     if (existingId != null) return existingId;
-    final created = await _api.createCategory(jwt, category);
+    final created = await widget.repository.createCategory(category);
     final newId = created['id']?.toString();
     if (newId != null && newId.isNotEmpty) categoryNames[category] = newId;
     return newId;

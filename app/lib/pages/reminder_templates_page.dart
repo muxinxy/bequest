@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../api/api_config.dart';
 import '../models/reminder_template.dart';
 import '../storage/secure_store.dart';
 
@@ -13,7 +14,7 @@ class ReminderTemplatesPage extends StatefulWidget {
 }
 
 class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
-  final _api = ApiClient();
+  late final Future<ApiClient> _api = ApiConfig.client();
   final _store = SecureStore();
 
   List<ReminderTemplate> _templates = const [];
@@ -29,7 +30,7 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
     try {
       final jwt = await _store.readJwt();
       if (jwt == null) throw ApiException('未登录');
-      final list = await _api.listReminderTemplates(jwt);
+      final list = await (await _api).listReminderTemplates(jwt);
       if (!mounted) return;
       setState(() {
         _templates = list.map(ReminderTemplate.fromJson).toList(growable: false);
@@ -120,9 +121,9 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
       final jwt = await _store.readJwt();
       if (jwt == null) throw ApiException('未登录');
       if (isEdit) {
-        await _api.updateReminderTemplate(jwt, template.id, body);
+        await (await _api).updateReminderTemplate(jwt, template.id, body);
       } else {
-        await _api.createReminderTemplate(jwt, body);
+        await (await _api).createReminderTemplate(jwt, body);
       }
       await _load();
     } on ApiException catch (e) {
@@ -154,7 +155,7 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
     try {
       final jwt = await _store.readJwt();
       if (jwt == null) throw ApiException('未登录');
-      await _api.deleteReminderTemplate(jwt, template.id);
+      await (await _api).deleteReminderTemplate(jwt, template.id);
       await _load();
     } on ApiException catch (e) {
       _showError(e.message);

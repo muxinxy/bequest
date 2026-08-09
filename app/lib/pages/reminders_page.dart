@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../api/api_config.dart';
 import '../models/reminder.dart';
 import '../storage/secure_store.dart';
 
@@ -13,7 +14,7 @@ class RemindersPage extends StatefulWidget {
 }
 
 class _RemindersPageState extends State<RemindersPage> {
-  final _api = ApiClient();
+  late final Future<ApiClient> _api = ApiConfig.client();
   final _store = SecureStore();
 
   List<Reminder> _reminders = const [];
@@ -29,7 +30,7 @@ class _RemindersPageState extends State<RemindersPage> {
     try {
       final jwt = await _store.readJwt();
       if (jwt == null) throw ApiException('未登录');
-      final list = await _api.listReminders(jwt);
+      final list = await (await _api).listReminders(jwt);
       if (!mounted) return;
       setState(() {
         _reminders = list.map(Reminder.fromJson).toList(growable: false);
@@ -48,7 +49,7 @@ class _RemindersPageState extends State<RemindersPage> {
       try {
         final jwt = await _store.readJwt();
         if (jwt == null) throw ApiException('未登录');
-        await _api.markReminderRead(jwt, reminder.id);
+        await (await _api).markReminderRead(jwt, reminder.id);
         if (!mounted) return;
         setState(() {
           _reminders = [

@@ -5,10 +5,14 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../api/api_config.dart';
 import '../models/asset.dart';
 import '../models/category.dart';
+import '../models/entitlements.dart';
 import '../models/preset_categories.dart';
 import '../models/reminder.dart';
+import '../repository/asset_repository.dart';
+import '../repository/repository_factory.dart';
 import '../storage/secure_store.dart';
 import '../sync/backup.dart';
 import 'app_lock_setup_page.dart';
@@ -22,10 +26,12 @@ import 'inheritors_page.dart';
 import 'login_page.dart';
 import 'reminder_templates_page.dart';
 import 'reminders_page.dart';
+import 'server_settings_page.dart';
 import 'smtp_settings_page.dart';
 import 'sync_settings_page.dart';
 
 /// 主页:按分类过滤展示资产列表,提供分类管理、锁设置与退出登录。
+/// 云端模式经 ApiClient 访问后端;本地模式经 LocalAssetRepository 读加密库。
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -34,9 +40,9 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final _api = ApiClient();
   final _store = SecureStore();
 
+  AssetRepository? _repo;
   List<Asset> _assets = const [];
   List<Category> _categories = const [];
   Map<String, String> _categoryNames = const {};
@@ -45,6 +51,8 @@ class _HomePageState extends State<HomePage> {
   /// 过滤值:null = 全部;自定义分类 id;'未分类' 或预设名 → 无分类资产。
   String? _filterCategoryId;
   bool _loading = true;
+  bool _isLocal = false;
+  bool _hasJwt = false;
 
   @override
   void initState() {
@@ -56,27 +64,46 @@ class _HomePageState extends State<HomePage> {
     setState(() => _loading = true);
     try {
       final jwt = await _store.readJwt();
-      if (jwt == null) {
-        await _logout();
-        return;
+      final mk = await _store.readMasterKey();
+      final mode = await _store.readStorageMode();
+      final isLocal = mode == 'local';
+      if (isLocal) {
+        if (mk == null || mk.isEmpty) {
+          // 本地模式但无主密钥(理论不可达,本地入口会保证):回登录页。
+          await _exitLocal();
+          return;
+        }
+      } else {
+        if (jwt == null) {
+          await _logout();
+          return;
+        }
       }
-      // 校验会话并获取用户名;分类与资产用于列表展示。
-      await _api.me(jwt);
-      final categories = await _api.listCategories(jwt);
-      final assets = await _api.listAssets(jwt);
-      final reminders = await _api.listReminders(jwt);
+      final repo =
+          await RepositoryFactory.resolve(jwt: jwt, masterKeyB64: mk ?? '');
+      _repo = repo;
+      final categories = await repo.listCategories();
+      final assets = await repo.listAssets();
+      var unread = 0;
+      if (!isLocal) {
+        // 会话校验与站内提醒仅云端有;ApiClient 走配置的服务器地址。
+        final api = await ApiConfig.client();
+        await api.me(jwt!);
+        final reminders = await api.listReminders(jwt);
+        unread =
+            reminders.map(Reminder.fromJson).where((r) => r.isUnread).length;
+        _refreshLocalVault(jwt, api);
+      }
       if (!mounted) return;
       setState(() {
         _categories = categories.map(Category.fromJson).toList(growable: false);
         _categoryNames = {for (final c in _categories) c.id: c.name};
         _assets = assets.map(Asset.fromJson).toList(growable: false);
-        _unreadReminders = reminders
-            .map(Reminder.fromJson)
-            .where((r) => r.isUnread)
-            .length;
+        _unreadReminders = unread;
+        _isLocal = isLocal;
+        _hasJwt = !isLocal && jwt != null;
         _loading = false;
       });
-      _refreshLocalVault(jwt);
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -87,12 +114,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// 后台刷新本地加密快照(登录后数据加载成功时调用),失败不影响主页。
-  void _refreshLocalVault(String jwt) {
+  void _refreshLocalVault(String jwt, ApiClient api) {
     unawaited(() async {
       try {
         final mk = await _store.readMasterKey();
         if (mk == null) return;
-        await refreshLocalVault(jwt, _api, mk);
+        await refreshLocalVault(jwt, api, mk);
       } catch (_) {
         // 本地快照刷新失败可忽略,下次加载再试。
       }
@@ -101,6 +128,15 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _logout() async {
     await _store.clearAll();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => const LoginPage()),
+      (route) => false,
+    );
+  }
+
+  /// 本地模式退出:不清空本机数据,仅返回登录页。
+  Future<void> _exitLocal() async {
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(builder: (_) => const LoginPage()),
@@ -132,8 +168,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _openEditor([Asset? asset]) async {
+    final repo = _repo;
+    if (repo == null) return;
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => AssetEditPage(asset: asset)),
+      MaterialPageRoute<void>(
+        builder: (_) => AssetEditPage(asset: asset, repository: repo),
+      ),
     );
     if (mounted) _load();
   }
@@ -148,6 +188,8 @@ class _HomePageState extends State<HomePage> {
 
   /// 导出流程:先选范围,再交给导出页(验证主密码 + 解密 + 分享)。
   Future<void> _exportFlow() async {
+    final repo = _repo;
+    if (repo == null) return;
     if (_assets.isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('暂无资产可导出')));
@@ -161,13 +203,17 @@ class _HomePageState extends State<HomePage> {
     final assets = scope == 'filter' ? _filteredAssets : _assets;
     if (!mounted) return;
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => ExportPage(assets: assets)),
+      MaterialPageRoute<void>(
+        builder: (_) => ExportPage(assets: assets, repository: repo),
+      ),
     );
     if (mounted) _load();
   }
 
   /// 导入流程:选 JSON 文件后交给导入页(验证主密码 + 逐条创建)。
   Future<void> _importFlow() async {
+    final repo = _repo;
+    if (repo == null) return;
     final FilePickerResult? result;
     try {
       result = await FilePicker.pickFiles(
@@ -192,7 +238,9 @@ class _HomePageState extends State<HomePage> {
       final text = await File(path).readAsString();
       if (!mounted) return;
       await Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => ImportPage(fileText: text)),
+        MaterialPageRoute<void>(
+          builder: (_) => ImportPage(fileText: text, repository: repo),
+        ),
       );
       // 导入完成后刷新资产列表。
       if (mounted) _load();
@@ -210,7 +258,9 @@ class _HomePageState extends State<HomePage> {
       case 'templates':
         _openPage(const ReminderTemplatesPage());
       case 'categories':
-        _openPage(const CategoryPage());
+        final repo = _repo;
+        if (repo == null) return;
+        _openPage(CategoryPage(repository: repo));
       case 'status':
         _openPage(const InheritanceStatusPage());
       case 'export':
@@ -223,13 +273,39 @@ class _HomePageState extends State<HomePage> {
         _openPage(const SyncSettingsPage());
       case 'smtp':
         _openPage(const SmtpSettingsPage());
+      case 'server':
+        _openPage(const ServerSettingsPage());
+      case 'mode':
+        _openPage(const ServerSettingsPage());
       case 'lock':
         Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const AppLockSetupPage()),
         );
       case 'logout':
-        _logout();
+        if (_isLocal) {
+          _exitLocal();
+        } else {
+          _logout();
+        }
     }
+  }
+
+  Widget _tierBadge() {
+    final ent = Entitlements.forJwtAndTier(hasJwt: _hasJwt, tier: null);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        ent.label,
+        style: TextStyle(
+          fontSize: 12,
+          color: Theme.of(context).colorScheme.onSecondaryContainer,
+        ),
+      ),
+    );
   }
 
   @override
@@ -239,6 +315,10 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('托孤'),
         actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: _tierBadge(),
+          ),
           IconButton(
             tooltip: '提醒',
             icon: Badge.count(
@@ -251,18 +331,23 @@ class _HomePageState extends State<HomePage> {
           PopupMenuButton<String>(
             tooltip: '更多',
             onSelected: (value) => _onMenuSelected(value),
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'inheritors', child: Text('继承人管理')),
-              PopupMenuItem(value: 'templates', child: Text('提醒模板')),
-              PopupMenuItem(value: 'categories', child: Text('分类管理')),
-              PopupMenuItem(value: 'status', child: Text('继承状态')),
-              PopupMenuItem(value: 'export', child: Text('导出资产')),
-              PopupMenuItem(value: 'import', child: Text('导入资产')),
-              PopupMenuItem(value: 'audit', child: Text('审计日志')),
-              PopupMenuItem(value: 'sync', child: Text('同步设置')),
-              PopupMenuItem(value: 'smtp', child: Text('邮箱发件设置')),
-              PopupMenuItem(value: 'lock', child: Text('锁设置')),
-              PopupMenuItem(value: 'logout', child: Text('退出登录')),
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'inheritors', child: Text('继承人管理')),
+              const PopupMenuItem(value: 'templates', child: Text('提醒模板')),
+              const PopupMenuItem(value: 'categories', child: Text('分类管理')),
+              const PopupMenuItem(value: 'status', child: Text('继承状态')),
+              const PopupMenuItem(value: 'export', child: Text('导出资产')),
+              const PopupMenuItem(value: 'import', child: Text('导入资产')),
+              const PopupMenuItem(value: 'audit', child: Text('审计日志')),
+              const PopupMenuItem(value: 'sync', child: Text('同步设置')),
+              const PopupMenuItem(value: 'smtp', child: Text('邮箱发件设置')),
+              const PopupMenuItem(value: 'server', child: Text('服务器设置')),
+              const PopupMenuItem(value: 'mode', child: Text('本地/云端模式切换')),
+              const PopupMenuItem(value: 'lock', child: Text('锁设置')),
+              PopupMenuItem(
+                value: 'logout',
+                child: Text(_isLocal ? '退出本地模式' : '退出登录'),
+              ),
             ],
           ),
         ],

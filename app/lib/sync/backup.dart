@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import '../api/api_client.dart';
 import '../crypto/asset_crypto.dart';
+import '../crypto/key_derivation.dart';
 import '../models/preset_categories.dart';
+import '../storage/secure_store.dart';
 import 'local_vault.dart';
 
 final Set<String> _presetCategoryNames = {
@@ -93,15 +95,54 @@ Future<void> restoreToLocal(
 }
 
 /// 将备份 JSON 用主密钥加密为上传负载。
-/// 上传文件内容即此负载 JSON:{"blob": base64(nonce||ct||tag), "created_at": ISO}。
+/// 上传文件内容即此负载 JSON:{"blob": base64(nonce||ct||tag), "salt"?, "created_at": ISO}。
+/// [salt] 为派生主密钥用的盐(base64),随负载上传以便跨设备用主密码恢复。
 Future<Map<String, dynamic>> buildSyncPayload(
   String backupJson,
-  String masterKeyB64,
-) async {
+  String masterKeyB64, {
+  String? salt,
+}) async {
   return {
     'blob': encryptSensitiveData(backupJson, masterKeyB64),
+    if (salt != null && salt.isNotEmpty) 'salt': salt,
     'created_at': DateTime.now().toUtc().toIso8601String(),
   };
+}
+
+/// 同步负载中的盐(base64);无则返回 null。
+String? payloadSalt(String payloadJson) {
+  try {
+    final decoded = jsonDecode(payloadJson);
+    if (decoded is Map<String, dynamic>) {
+      final salt = decoded['salt']?.toString();
+      if (salt != null && salt.isNotEmpty) return salt;
+    }
+  } catch (_) {
+    // 非 JSON / 缺字段:无盐。
+  }
+  return null;
+}
+
+/// 解密上传负载:优先用本机已存主密钥;失败且提供主密码时,
+/// 用负载内 salt 派生密钥再试。全部失败返回 null。
+Future<String?> extractBackupJsonAny(
+  String payloadJson, {
+  String? password,
+  SecureStore? store,
+}) async {
+  final s = store ?? SecureStore();
+  final mk = await s.readMasterKey();
+  if (mk != null && mk.isNotEmpty) {
+    final result = await extractBackupJson(payloadJson, mk);
+    if (result != null) return result;
+  }
+  final salt = payloadSalt(payloadJson);
+  if (password != null && password.isNotEmpty && salt != null) {
+    final result =
+        await extractBackupJson(payloadJson, deriveMasterKey(password, salt));
+    if (result != null) return result;
+  }
+  return null;
 }
 
 /// 解密上传负载,取回备份 JSON;密钥错误/数据被篡改返回 null。

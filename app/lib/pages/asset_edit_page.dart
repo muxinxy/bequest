@@ -6,15 +6,18 @@ import '../api/api_client.dart';
 import '../crypto/asset_crypto.dart';
 import '../models/asset.dart';
 import '../models/category.dart';
+import '../models/entitlements.dart';
 import '../models/preset_categories.dart';
+import '../repository/asset_repository.dart';
 import '../storage/secure_store.dart';
 
 /// 资产编辑页:新建(asset 为 null)或编辑(asset 非空)。
-/// 凭据与备注用主密钥加密后提交服务器。
+/// 凭据与备注用主密钥加密后经仓储写入(云端或本地库)。
 class AssetEditPage extends StatefulWidget {
-  const AssetEditPage({super.key, this.asset});
+  const AssetEditPage({super.key, this.asset, required this.repository});
 
   final Asset? asset;
+  final AssetRepository repository;
 
   @override
   State<AssetEditPage> createState() => _AssetEditPageState();
@@ -22,7 +25,6 @@ class AssetEditPage extends StatefulWidget {
 
 class _AssetEditPageState extends State<AssetEditPage> {
   final _formKey = GlobalKey<FormState>();
-  final _api = ApiClient();
   final _store = SecureStore();
 
   final _nameController = TextEditingController();
@@ -60,15 +62,11 @@ class _AssetEditPageState extends State<AssetEditPage> {
 
   Future<void> _load() async {
     try {
-      final jwt = await _store.readJwt();
-      if (jwt == null) {
-        throw ApiException('未登录');
-      }
-      final categories = (await _api.listCategories(jwt))
+      final categories = (await widget.repository.listCategories())
           .map(Category.fromJson)
           .toList(growable: false);
       if (_isEdit) {
-        final full = await _api.getAsset(jwt, widget.asset!.id);
+        final full = await widget.repository.getAsset(widget.asset!.id);
         final asset = Asset.fromJson(full);
         String? credentials;
         String? notes;
@@ -154,12 +152,24 @@ class _AssetEditPageState extends State<AssetEditPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    if (!_isEdit) {
+      // 权益上限:新建时校验(访客 20 / 免费用户 50,会员不限)。
+      final jwt = await _store.readJwt();
+      final ent = Entitlements.forJwtAndTier(hasJwt: jwt != null, tier: null);
+      final limit = ent.assetLimit;
+      if (limit != null) {
+        final count = (await widget.repository.listAssets()).length;
+        if (count >= limit) {
+          _showError('已达资产上限 $limit 条,升级会员可解锁');
+          return;
+        }
+      }
+    }
     setState(() => _saving = true);
     try {
-      final jwt = await _store.readJwt();
       final masterKey = await _store.readMasterKey();
-      if (jwt == null || masterKey == null) {
-        throw ApiException('登录状态已失效,请重新登录');
+      if (masterKey == null) {
+        throw ApiException('未找到主密钥,请重新登录或进入本地模式');
       }
       final payload = <String, dynamic>{
         'credentials': _credentialsController.text.trim(),
@@ -176,9 +186,9 @@ class _AssetEditPageState extends State<AssetEditPage> {
         'expiry_date': _expiryDate,
       };
       if (_isEdit) {
-        await _api.updateAsset(jwt, widget.asset!.id, body);
+        await widget.repository.updateAsset(widget.asset!.id, body);
       } else {
-        await _api.createAsset(jwt, body);
+        await widget.repository.createAsset(body);
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context)

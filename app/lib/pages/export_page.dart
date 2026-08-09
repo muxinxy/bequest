@@ -5,26 +5,26 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../api/api_client.dart';
 import '../crypto/asset_crypto.dart';
 import '../crypto/master_password.dart';
 import '../models/asset.dart';
 import '../models/export_format.dart';
+import '../repository/asset_repository.dart';
 import '../storage/secure_store.dart';
 
-/// 导出页:验证主密码后拉取资产详情、解密并构建 JSON,写入临时文件分享。
-/// 全程客户端解密,服务器只见密文。
+/// 导出页:验证主密码后经仓储拉取资产详情、解密并构建 JSON,写入临时文件分享。
+/// 全程客户端解密,云端只见密文;本地模式同样适用(读本地加密库)。
 class ExportPage extends StatefulWidget {
-  const ExportPage({super.key, required this.assets});
+  const ExportPage({super.key, required this.assets, required this.repository});
 
   final List<Asset> assets;
+  final AssetRepository repository;
 
   @override
   State<ExportPage> createState() => _ExportPageState();
 }
 
 class _ExportPageState extends State<ExportPage> {
-  final _api = ApiClient();
   final _store = SecureStore();
 
   String _status = '准备导出...';
@@ -47,15 +47,14 @@ class _ExportPageState extends State<ExportPage> {
       return;
     }
     try {
-      final jwt = await _store.readJwt();
       final masterKey = await _store.readMasterKey();
-      if (jwt == null || masterKey == null) {
-        _showError('登录状态已失效,请重新登录');
+      if (masterKey == null) {
+        _showError('未找到主密钥,请重新登录或进入本地模式');
         _finish();
         return;
       }
       setState(() => _status = '正在导出资产...');
-      final items = await _collectItems(jwt, masterKey);
+      final items = await _collectItems(masterKey);
       final exportJson = buildExportJson(items, DateTime.now());
       final file = await _writeTempFile(exportJson);
       // 分享面板失败不影响导出文件已生成;测试环境无原生实现,忽略异常。
@@ -76,15 +75,15 @@ class _ExportPageState extends State<ExportPage> {
     }
   }
 
-  Future<List<ExportItem>> _collectItems(String jwt, String masterKey) async {
-    final categories = await _api.listCategories(jwt);
+  Future<List<ExportItem>> _collectItems(String masterKey) async {
+    final categories = await widget.repository.listCategories();
     final categoryNames = <String, String>{
       for (final c in categories)
         if (c['id'] != null && c['name'] != null) '${c['id']}': '${c['name']}',
     };
     final items = <ExportItem>[];
     for (final asset in widget.assets) {
-      final full = await _api.getAsset(jwt, asset.id);
+      final full = await widget.repository.getAsset(asset.id);
       String credentials = '';
       String notes = '';
       int? advanceDays;

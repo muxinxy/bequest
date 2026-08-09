@@ -1,21 +1,19 @@
 import 'package:flutter/material.dart';
 
-import '../api/api_client.dart';
 import '../models/category.dart';
-import '../storage/secure_store.dart';
+import '../repository/asset_repository.dart';
 
 /// 自定义分类管理:列表、新增、删除。
 class CategoryPage extends StatefulWidget {
-  const CategoryPage({super.key});
+  const CategoryPage({super.key, required this.repository});
+
+  final AssetRepository repository;
 
   @override
   State<CategoryPage> createState() => _CategoryPageState();
 }
 
 class _CategoryPageState extends State<CategoryPage> {
-  final _api = ApiClient();
-  final _store = SecureStore();
-
   List<Category> _categories = const [];
   bool _loading = true;
 
@@ -27,9 +25,7 @@ class _CategoryPageState extends State<CategoryPage> {
 
   Future<void> _load() async {
     try {
-      final jwt = await _store.readJwt();
-      if (jwt == null) throw ApiException('未登录');
-      final list = await _api.listCategories(jwt);
+      final list = await widget.repository.listCategories();
       if (!mounted) return;
       setState(() {
         _categories = list.map(Category.fromJson).toList(growable: false);
@@ -81,12 +77,8 @@ class _CategoryPageState extends State<CategoryPage> {
     controller.dispose();
     if (name == null) return;
     try {
-      final jwt = await _store.readJwt();
-      if (jwt == null) throw ApiException('未登录');
-      await _api.createCategory(jwt, name);
+      await widget.repository.createCategory(name);
       await _load();
-    } on ApiException catch (e) {
-      _showError(e.message);
     } catch (_) {
       _showError('新增失败,请检查网络后重试');
     }
@@ -112,12 +104,8 @@ class _CategoryPageState extends State<CategoryPage> {
     );
     if (confirmed != true) return;
     try {
-      final jwt = await _store.readJwt();
-      if (jwt == null) throw ApiException('未登录');
-      await _api.deleteCategory(jwt, category.id);
+      await widget.repository.deleteCategory(category.id);
       await _load();
-    } on ApiException catch (e) {
-      _showError(e.message);
     } catch (_) {
       _showError('删除失败,请检查网络后重试');
     }

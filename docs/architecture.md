@@ -81,7 +81,14 @@ bequest/
 - 系统多渠道：可选 `server/config.json`（`smtp_servers[]` 轮询 + `sms_providers[]`/`phone_providers[]` 预留），缺失回退 env `SMTP_*`；`sendMailSystem` 轮询逐个尝试
 - 版本：`GET /api/v1/version`，Release 构建用 `-X main.version=<tag>` 注入
 
-### ADR-10 部署与发布
+### ADR-11 云/本地双模存储与权益
+
+- **存储抽象**：`AssetRepository`（8 个 CRUD 方法）——`CloudAssetRepository`（ApiClient，jwt）+ `LocalAssetRepository`（LocalVault 加密本地库，主密钥）；`RepositoryFactory.resolve(jwt, masterKeyB64)` 按存储模式选择；页面一律走仓储，服务端地址可配置（`ApiConfig.baseUrl()`，设置页保存/测试）
+- **不登录本地模式**：登录页「进入本地模式」→ 首次设置主密码（salt 派生 MK 存 secure_store + 初始化 vault）→ 本地全量 CRUD；退出本地模式不清空本机数据
+- **跨设备恢复**：同步负载含 `salt`（明文，不敏感）；`extractBackupJsonAny` 先试本机 MK、失败用「主密码 + 负载盐」派生重试；恢复后可设置本机主密钥
+- **三层权益**：访客（20 条、无云同步/继承、本地可用）/ 免费（50 条、云同步+继承）/ 会员（不限）；UI 徽章 + 创建时资产上限拦截
+- **模式切换**：云→本地（拉取全量写 vault）/ 本地→云（需登录，逐条上传，分类按名去重）——复制式迁移，非连续同步（ponytail: 后续可升级为双向增量）
+- **发布**：Release 含 Android APK（`flutter build apk --release --split-per-abi`，三 ABI 上传 assets）
 
 - 二进制：`scripts/build.sh`（5 平台）/ `build.ps1`（本地 Windows）；Docker：多阶段 alpine 非 root，`WORKDIR=/data` 使相对路径 `data/bequest.db` 落在卷上
 - 发布：tag `v*` 触发 GitHub Actions——矩阵构建 + buildx 双架构推 `ghcr.io/muxinxy/bequest` + Release 资产；workflow 用 `"on":` 加引号规避 YAML 1.1 解析器布尔化问题

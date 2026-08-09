@@ -3,8 +3,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../api/api_config.dart';
+import '../crypto/key_derivation.dart';
+import '../crypto/master_password.dart';
 import '../storage/secure_store.dart';
 import '../sync/backup.dart';
+import '../sync/local_vault.dart';
 import '../sync/sync_provider.dart';
 
 /// 同步设置页:配置 WebDAV/S3 备份目标并执行同步/恢复。
@@ -18,7 +22,7 @@ class SyncSettingsPage extends StatefulWidget {
 
 class _SyncSettingsPageState extends State<SyncSettingsPage> {
   final _store = SecureStore();
-  final _api = ApiClient();
+  late final Future<ApiClient> _api = ApiConfig.client();
 
   String _protocol = 'webdav';
   bool _busy = false;
@@ -140,8 +144,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     final jwt = await _store.readJwt();
     setState(() => _busy = true);
     try {
-      final backupJson = await buildBackupJson(jwt, _api, masterKey);
-      final payload = await buildSyncPayload(backupJson, masterKey);
+      final backupJson = await buildBackupJson(jwt, await _api, masterKey);
+      // 盐随负载上传,供跨设备用主密码恢复。
+      final salt =
+          await LocalVault().readSalt(masterKey) ?? await _store.readMasterSalt();
+      final payload = await buildSyncPayload(backupJson, masterKey, salt: salt);
       final name = 'bequest_backup_${_timestamp()}.json';
       await provider.upload(name, jsonEncode(payload));
       await _store.saveSyncConfig(
@@ -169,26 +176,46 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       _snack('请先执行一次同步,或填写备份文件名');
       return;
     }
-    final masterKey = await _store.readMasterKey();
-    if (masterKey == null) {
-      _snack('请先注册并设置主密码');
-      return;
-    }
     final jwt = await _store.readJwt();
     setState(() => _busy = true);
     try {
       final payloadJson = await provider.download(name);
-      final backupJson = await extractBackupJson(payloadJson, masterKey);
+      // 优先用本机主密钥;未登录或解密失败时改用主密码 + 负载盐。
+      var backupJson = await extractBackupJsonAny(payloadJson);
+      String? usedPassword;
+      if (jwt == null || backupJson == null) {
+        if (!mounted) return;
+        final password = await showMasterPasswordDialog(context);
+        if (password == null) return;
+        backupJson = await extractBackupJsonAny(payloadJson, password: password);
+        usedPassword = password;
+      }
       if (backupJson == null) {
-        _snack('解密失败(主密钥不匹配或数据被篡改)');
+        _snack('解密失败(主密码错误或数据被篡改)');
         return;
       }
+      if (usedPassword != null) {
+        // 本机尚无主密钥时,用负载盐派生并保存,本地模式即可解锁。
+        final mk = await _store.readMasterKey();
+        if (mk == null || mk.isEmpty) {
+          final salt = payloadSalt(payloadJson);
+          if (salt != null) {
+            await _store.saveMasterSalt(salt);
+            await _store.saveMasterKey(deriveMasterKey(usedPassword, salt));
+          }
+        }
+      }
       if (jwt != null) {
-        final result = await restoreAssets(backupJson, jwt, _api);
+        final result = await restoreAssets(backupJson, jwt, await _api);
         _snack('恢复完成: 成功 ${result.ok} 失败 ${result.fail}');
       } else {
+        final masterKey = await _store.readMasterKey();
+        if (masterKey == null) {
+          _snack('未找到主密钥,无法写入本机');
+          return;
+        }
         await restoreToLocal(backupJson, masterKey);
-        _snack('已保存到本机,登录后可从本地数据同步到云端');
+        _snack('已恢复,可在本地模式使用');
       }
     } catch (_) {
       _snack('恢复失败,请检查网络与备份文件');
