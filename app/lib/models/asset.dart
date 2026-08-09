@@ -33,12 +33,17 @@ class Asset {
   final String? notes; // 解密后的备注,仅本地
   final String? updatedAt;
 
-  /// 提交给服务器的请求体。
+  /// 序列化。与 [Asset.fromJson] 互为逆:id/updated_at 一并保留,
+  /// 否则主页列表经 toJson→fromJson 往返后 id 变为空串,
+  /// 编辑页 getAsset('') 会抛 StateError("资产不存在")。
+  /// 服务端请求体不依赖本方法(资产编辑页内联构建 body)。
   Map<String, dynamic> toJson() => {
+        'id': id,
         'name': name,
         'asset_type': assetType,
         'category_id': categoryId,
         'encrypted_data': encryptedData,
         'expiry_date': expiryDate,
+        'updated_at': updatedAt,
       };
 }

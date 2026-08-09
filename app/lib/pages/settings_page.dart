@@ -107,7 +107,7 @@ class SettingsPage extends StatelessWidget {
           _section(context, '账户与安全'),
           _entry(
             Icons.lock_outline,
-            '锁设置',
+            '应用锁',
             () => _push(context, const AppLockSetupPage()),
           ),
           _entry(

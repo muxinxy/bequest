@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../crypto/asset_crypto.dart';
+import '../crypto/attempt_guard.dart';
 import '../crypto/master_password.dart';
 import '../logger.dart';
 import '../models/asset.dart';
@@ -42,8 +43,10 @@ class _ExportPageState extends State<ExportPage> {
       _finish();
       return;
     }
-    if (!await verifyMasterPassword(password)) {
-      _showError('主密码错误');
+    // 失败限流:连续 5 次错误 → 锁定 60 秒,防暴力尝试。
+    if (!mounted) return;
+    final guard = AttemptGuard(store: _store, prefix: 'master');
+    if (!await guardedVerifyMasterPassword(context, guard, password)) {
       _finish();
       return;
     }

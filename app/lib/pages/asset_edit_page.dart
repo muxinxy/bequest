@@ -31,7 +31,6 @@ class _AssetEditPageState extends State<AssetEditPage> {
   final _credentialsController = TextEditingController();
   final _notesController = TextEditingController();
 
-  String _assetType = 'physical';
   List<Category> _categories = const [];
 
   /// 分类下拉值:'' = 未分类,其他 = 分类 id(预设与自定义同表)。
@@ -92,7 +91,6 @@ class _AssetEditPageState extends State<AssetEditPage> {
         }
         if (!mounted) return;
         setState(() {
-          _assetType = asset.assetType;
           _expiryDate = asset.expiryDate;
           _categoryValue = categories.any((c) => c.id == asset.categoryId)
               ? (asset.categoryId ?? '')
@@ -216,7 +214,8 @@ class _AssetEditPageState extends State<AssetEditPage> {
       if (_advanceDays != null) payload['advance_days'] = _advanceDays;
       final body = {
         'name': _nameController.text.trim(),
-        'asset_type': _assetType,
+        // 兼容保留:UI 不再区分实体/虚拟,统一按后端默认 physical 提交。
+        'asset_type': 'physical',
         'category_id': _categoryIdToSubmit(),
         'encrypted_data': encryptSensitiveData(jsonEncode(payload), masterKey),
         'expiry_date': _expiryDate,
@@ -277,35 +276,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
                           (value == null || value.trim().isEmpty) ? '请输入名称' : null,
                     ),
                     const SizedBox(height: 16),
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(
-                          value: 'physical',
-                          label: Text('实体'),
-                          icon: Icon(Icons.inventory_2_outlined),
-                        ),
-                        ButtonSegment(
-                          value: 'virtual',
-                          label: Text('虚拟'),
-                          icon: Icon(Icons.cloud_outlined),
-                        ),
-                      ],
-                      selected: {_assetType},
-                      onSelectionChanged: (selection) => setState(() {
-                        final next = selection.first;
-                        // 切换类型后,原分类类型不匹配则回到未分类。
-                        if (_categoryValue.isNotEmpty &&
-                            !_categories.any((c) =>
-                                c.id == _categoryValue &&
-                                c.assetType == next)) {
-                          _categoryValue = '';
-                        }
-                        _assetType = next;
-                      }),
-                    ),
-                    const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      key: ValueKey('category-$_assetType'),
                       initialValue: _categoryValue,
                       decoration: const InputDecoration(
                         labelText: '分类',
@@ -395,13 +366,10 @@ class _AssetEditPageState extends State<AssetEditPage> {
   }
 
   List<DropdownMenuItem<String>> _categoryItems() {
-    // 只展示与当前资产类型匹配的分类(预设与自定义同表)。
-    final matches = _categories
-        .where((c) => c.assetType == _assetType)
-        .toList(growable: false);
+    // 分类不区分类型,展示全部(预设与自定义同表)。
     return [
       const DropdownMenuItem(value: '', child: Text('未分类')),
-      ...matches.map(
+      ..._categories.map(
         (c) => DropdownMenuItem(
           value: c.id,
           child: Text(c.isPreset ? '${c.name}(预设)' : c.name),

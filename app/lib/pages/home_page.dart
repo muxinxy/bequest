@@ -17,7 +17,7 @@ import 'login_page.dart';
 import 'reminders_page.dart';
 import 'settings_page.dart';
 
-/// 主页:按分类过滤展示资产列表,提供分类管理、锁设置与退出登录。
+/// 主页:按分类过滤展示资产列表,提供分类管理、应用锁与退出登录。
 /// 云端模式经 ApiClient 访问后端;本地模式经 LocalAssetRepository 读加密库。
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -38,9 +38,6 @@ class _HomePageState extends State<HomePage> {
 
   /// 过滤值:null = 全部;自定义/预设分类 id;'未分类' → 无分类资产。
   String? _filterCategoryId;
-
-  /// 类型过滤:null = 全部,'physical'/'virtual'。
-  String? _typeFilter;
   String _search = '';
   bool _loading = true;
   bool _isLocal = false;
@@ -160,7 +157,7 @@ class _HomePageState extends State<HomePage> {
   List<Asset> get _filteredAssets {
     final maps = filterAssets(
       assets: _assets.map((a) => a.toJson()).toList(growable: false),
-      typeFilter: _typeFilter,
+      typeFilter: null,
       categoryFilter: _filterCategoryId,
       search: _search,
     );
@@ -252,34 +249,6 @@ class _HomePageState extends State<HomePage> {
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: Row(
                     children: [
-                      const Text('类型', style: TextStyle(color: Colors.grey)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: SegmentedButton<String?>(
-                          style: const ButtonStyle(
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          segments: const [
-                            ButtonSegment(value: null, label: Text('全部')),
-                            ButtonSegment(
-                              value: 'physical',
-                              label: Text('实体'),
-                            ),
-                            ButtonSegment(value: 'virtual', label: Text('虚拟')),
-                          ],
-                          selected: {_typeFilter},
-                          onSelectionChanged: (selection) => setState(() {
-                            _typeFilter = selection.first;
-                          }),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Row(
-                    children: [
                       const Text('分类', style: TextStyle(color: Colors.grey)),
                       const SizedBox(width: 12),
                       Expanded(
@@ -339,11 +308,7 @@ class _HomePageState extends State<HomePage> {
                             itemBuilder: (context, index) {
                               final asset = filtered[index];
                               return ListTile(
-                                leading: Icon(
-                                  asset.assetType == 'virtual'
-                                      ? Icons.cloud_outlined
-                                      : Icons.inventory_2_outlined,
-                                ),
+                                leading: const Icon(Icons.inventory_2_outlined),
                                 title: Text(asset.name),
                                 subtitle: Text(
                                   '${_categoryName(asset)}'

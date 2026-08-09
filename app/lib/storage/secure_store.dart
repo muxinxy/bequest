@@ -20,8 +20,26 @@ class SecureStore {
   static const _syncConfigKey = 'bequest_sync_config';
   static const _serverUrlKey = 'bequest_server_url';
   static const _storageModeKey = 'bequest_storage_mode';
+  static const _masterHintKey = 'bequest_master_hint';
 
   final FlutterSecureStorage _storage;
+
+  /// 通用整数读写:失败限流计数与锁定时间戳(millis epoch)。
+  Future<void> writeInt(String key, int value) =>
+      _storage.write(key: key, value: '$value');
+
+  Future<int?> readInt(String key) async {
+    final v = await _storage.read(key: key);
+    return int.tryParse(v ?? '');
+  }
+
+  Future<void> deleteKey(String key) => _storage.delete(key: key);
+
+  /// 主密码提示语(可选,帮助回忆)。
+  Future<void> saveMasterHint(String hint) =>
+      _storage.write(key: _masterHintKey, value: hint);
+
+  Future<String?> readMasterHint() => _storage.read(key: _masterHintKey);
 
   Future<void> saveJwt(String jwt) => _storage.write(key: _jwtKey, value: jwt);
 

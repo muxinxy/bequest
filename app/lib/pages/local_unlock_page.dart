@@ -28,6 +28,7 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
   final _formKey = GlobalKey<FormState>();
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
+  final _hintController = TextEditingController();
 
   LocalUnlockStep _step = LocalUnlockStep.setup;
   bool _submitting = false;
@@ -42,6 +43,7 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
   void dispose() {
     _passwordController.dispose();
     _confirmController.dispose();
+    _hintController.dispose();
     super.dispose();
   }
 
@@ -66,6 +68,9 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
       final mk = deriveMasterKey(_passwordController.text, salt);
       await _store.saveMasterSalt(salt);
       await _store.saveMasterKey(mk);
+      // 主密码提示语(可选):仅本机保存,帮助回忆,不随备份上传。
+      final hint = _hintController.text.trim();
+      if (hint.isNotEmpty) await _store.saveMasterHint(hint);
       // 初始化空本地库(携带 salt,供跨设备恢复)。
       await LocalVault().saveLocalData(
         {
@@ -173,6 +178,16 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
                 ),
                 validator: (value) =>
                     value != _passwordController.text ? '两次输入的主密码不一致' : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _hintController,
+                maxLength: 50,
+                decoration: const InputDecoration(
+                  labelText: '主密码提示语(可选)',
+                  hintText: '帮助回忆的提示,仅保存在本机',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 24),
               FilledButton(

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:local_auth/local_auth.dart';
 
 import '../crypto/key_derivation.dart';
 import '../crypto/pattern_hash.dart';
@@ -7,7 +8,7 @@ import '../crypto/pin_hash.dart';
 import '../storage/secure_store.dart';
 import '../widgets/pattern_lock.dart';
 
-/// 锁设置:解锁方式(PIN/图案/生物识别)、锁定时机(退出即锁/退出且超时锁)。
+/// 应用锁:解锁方式(PIN/图案/生物识别)、锁定时机(退出即锁/退出且超时锁)。
 class AppLockSetupPage extends StatefulWidget {
   const AppLockSetupPage({super.key});
 
@@ -25,6 +26,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
 
   String _timing = 'exit';
   bool _biometric = false;
+  bool _biometricSupported = true;
   bool _hasPin = false;
   bool _hasPattern = false;
   List<int>? _newPattern;
@@ -52,9 +54,19 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
       final timeout = await _store.readLockTimeoutMinutes();
       final hasPin = (await _store.readPinHash()) != null;
       final hasPattern = (await _store.readPatternHash()) != null;
+      // 设备无生物识别能力时置灰开关并提示原因。
+      var supported = true;
+      try {
+        final auth = LocalAuthentication();
+        supported =
+            await auth.isDeviceSupported() && await auth.canCheckBiometrics;
+      } catch (_) {
+        supported = false;
+      }
       if (mounted) {
         setState(() {
           _biometric = biometric;
+          _biometricSupported = supported;
           _timing = timing;
           _hasPin = hasPin;
           _hasPattern = hasPattern;
@@ -152,7 +164,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
   Widget build(BuildContext context) {
     final patternSet = (_hasPattern && !_clearPattern) || _newPattern != null;
     return Scaffold(
-      appBar: AppBar(title: const Text('锁设置')),
+      appBar: AppBar(title: const Text('应用锁')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -205,9 +217,13 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('生物识别解锁'),
-                subtitle: const Text('支持指纹或面容解锁'),
+                subtitle: Text(
+                  _biometricSupported ? '支持指纹或面容解锁' : '当前设备不支持生物识别',
+                ),
                 value: _biometric,
-                onChanged: (value) => setState(() => _biometric = value),
+                onChanged: _biometricSupported
+                    ? (value) => setState(() => _biometric = value)
+                    : null,
               ),
               const SizedBox(height: 8),
               TextFormField(

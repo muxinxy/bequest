@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 
+import '../crypto/attempt_guard.dart';
 import '../crypto/pattern_hash.dart';
 import '../crypto/pin_hash.dart';
+import '../logger.dart';
 import '../storage/secure_store.dart';
 import '../widgets/pattern_lock.dart';
 
@@ -22,6 +27,14 @@ class _AppLockScreenState extends State<AppLockScreen> {
   final _auth = LocalAuthentication();
   final _pinController = TextEditingController();
 
+  /// 应用锁失败限流:连续 5 次错误 → 锁定 60 秒。
+  late final AttemptGuard _lockGuard = AttemptGuard(
+    store: _store,
+    prefix: 'lock',
+  );
+  Timer? _lockTimer;
+  int _lockSeconds = 0;
+
   bool _biometricAvailable = false;
   bool _hasPin = false;
   bool _hasPattern = false;
@@ -38,6 +51,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
   @override
   void dispose() {
+    _lockTimer?.cancel();
     _pinController.dispose();
     super.dispose();
   }
@@ -73,6 +87,10 @@ class _AppLockScreenState extends State<AppLockScreen> {
           if (mounted) widget.onUnlocked();
         });
       }
+      // 上次锁定未到期(如进程被杀后重启):继续倒计时。
+      if (mounted && await _lockGuard.checkLocked()) {
+        await _startLockCountdown();
+      }
     } catch (_) {
       // 模拟器/测试环境无生物识别能力,静默降级。
     }
@@ -94,14 +112,44 @@ class _AppLockScreenState extends State<AppLockScreen> {
         ),
       );
       if (ok && mounted) widget.onUnlocked();
-    } catch (_) {
-      if (mounted) setState(() => _error = '生物识别失败,请使用其他方式解锁');
+      // 返回 false = 用户取消,不提示错误、不计数。
+    } catch (e) {
+      // 用户主动取消(如点系统返回)不算失败,静默。
+      if (e is PlatformException &&
+          (e.code == 'AppCanceled' ||
+              e.code == 'UserCanceled' ||
+              e.code == 'SystemCanceled')) {
+        return;
+      }
+      Logger.instance.e('biometric unlock failed: $e');
+      if (mounted) setState(() => _error = _biometricErrorMessage(e));
     } finally {
       if (mounted) setState(() => _verifying = false);
     }
   }
 
+  /// 把 local_auth 的 PlatformException code 映射为中文原因。
+  String _biometricErrorMessage(Object error) {
+    if (error is PlatformException) {
+      switch (error.code) {
+        case 'NotEnrolled':
+          return '未录入指纹/人脸,请在系统设置中添加';
+        case 'NotAvailable':
+          return '设备不支持生物识别';
+        case 'LockedOut':
+          return '尝试次数过多,系统已暂时锁定生物识别,请稍后再试或用其他方式解锁';
+        case 'PermanentlyLocked':
+          return '生物识别已被系统永久锁定,请用其他方式解锁';
+      }
+    }
+    return '生物识别验证失败,请重试或用其他方式解锁';
+  }
+
   Future<void> _unlockWithPin() async {
+    if (await _lockGuard.checkLocked()) {
+      await _startLockCountdown();
+      return;
+    }
     final pin = _pinController.text;
     if (pin.isEmpty) return;
     setState(() {
@@ -112,12 +160,15 @@ class _AppLockScreenState extends State<AppLockScreen> {
       final salt = await _store.readPinSalt();
       final hash = await _store.readPinHash();
       if (hashPin(pin, salt ?? '') == hash) {
+        await _lockGuard.recordSuccess();
         if (mounted) widget.onUnlocked();
       } else {
-        if (mounted) {
+        await _recordWrongAttempt();
+        // 进入锁定时由倒计时文案提示,不再叠加"错误"提示。
+        if (mounted && _lockSeconds == 0) {
           setState(() => _error = 'PIN 码错误,请重试');
-          _pinController.clear();
         }
+        _pinController.clear();
       }
     } catch (_) {
       if (mounted) setState(() => _error = '解锁失败,请重试');
@@ -126,16 +177,57 @@ class _AppLockScreenState extends State<AppLockScreen> {
     }
   }
 
-  void _unlockWithPattern(List<int> dots) {
+  Future<void> _unlockWithPattern(List<int> dots) async {
+    if (await _lockGuard.checkLocked()) {
+      await _startLockCountdown();
+      return;
+    }
     if (dots.length < 4) {
       setState(() => _error = '图案错误,请重试');
       return;
     }
     if (verifyPattern(dots, _patternSalt, _patternHash)) {
-      widget.onUnlocked();
+      await _lockGuard.recordSuccess();
+      if (mounted) widget.onUnlocked();
     } else {
-      setState(() => _error = '图案错误,请重试');
+      await _recordWrongAttempt();
+      // 进入锁定时由倒计时文案提示,不再叠加"错误"提示。
+      if (mounted && _lockSeconds == 0) {
+        setState(() => _error = '图案错误,请重试');
+      }
     }
+  }
+
+  /// 记录一次失败;达到阈值后进入锁定并启动倒计时。
+  Future<void> _recordWrongAttempt() async {
+    await _lockGuard.recordFailure();
+    await _startLockCountdown();
+  }
+
+  /// 显示剩余锁定秒数并每秒刷新;到期后重新启用输入。
+  Future<void> _startLockCountdown() async {
+    if (_lockTimer != null) return;
+    final seconds = await _lockGuard.remainingSeconds();
+    if (seconds <= 0) return;
+    if (!mounted) return;
+    setState(() {
+      _lockSeconds = seconds;
+      _error = null;
+    });
+    _lockTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      final remaining = await _lockGuard.remainingSeconds();
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (remaining <= 0) {
+        timer.cancel();
+        _lockTimer = null;
+        setState(() => _lockSeconds = 0);
+      } else {
+        setState(() => _lockSeconds = remaining);
+      }
+    });
   }
 
   @override
@@ -162,13 +254,26 @@ class _AppLockScreenState extends State<AppLockScreen> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.grey),
                 ),
+                if (_lockSeconds > 0) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '尝试次数过多,请等待 $_lockSeconds 秒后重试',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
                 if (_hasPattern) ...[
                   const SizedBox(height: 16),
                   Center(
-                    child: SizedBox(
-                      width: 260,
-                      height: 260,
-                      child: PatternLock(onCompleted: _unlockWithPattern),
+                    child: IgnorePointer(
+                      ignoring: _lockSeconds > 0,
+                      child: SizedBox(
+                        width: 260,
+                        height: 260,
+                        child: PatternLock(onCompleted: _unlockWithPattern),
+                      ),
                     ),
                   ),
                 ],
@@ -179,6 +284,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                     obscureText: true,
                     keyboardType: TextInputType.number,
                     maxLength: 6,
+                    enabled: _lockSeconds == 0,
                     textAlign: TextAlign.center,
                     style: const TextStyle(fontSize: 24, letterSpacing: 12),
                     decoration: InputDecoration(
@@ -190,7 +296,9 @@ class _AppLockScreenState extends State<AppLockScreen> {
                   ),
                   const SizedBox(height: 16),
                   FilledButton(
-                    onPressed: _verifying ? null : _unlockWithPin,
+                    onPressed: (_verifying || _lockSeconds > 0)
+                        ? null
+                        : _unlockWithPin,
                     child: _verifying
                         ? const SizedBox(
                             height: 20,
@@ -213,7 +321,9 @@ class _AppLockScreenState extends State<AppLockScreen> {
                 if (_biometricAvailable) ...[
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
-                    onPressed: _verifying ? null : _tryBiometric,
+                    onPressed: (_verifying || _lockSeconds > 0)
+                        ? null
+                        : _tryBiometric,
                     icon: const Icon(Icons.fingerprint),
                     label: const Text('生物识别解锁'),
                   ),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../crypto/attempt_guard.dart';
 import '../crypto/key_derivation.dart';
 import '../crypto/master_password.dart';
 import '../logger.dart';
@@ -188,7 +189,13 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       // 优先用本机主密钥;未登录或解密失败时改用主密码 + 负载盐。
       var backupJson = await extractBackupJsonAny(payloadJson);
       String? usedPassword;
+      // 失败限流:连续 5 次错误 → 锁定 60 秒,防暴力尝试。
+      final guard = AttemptGuard(store: _store, prefix: 'master');
       if (jwt == null || backupJson == null) {
+        if (await guard.checkLocked()) {
+          _snack('尝试次数过多,请等待 ${await guard.remainingSeconds()} 秒后重试');
+          return;
+        }
         if (!mounted) return;
         final password = await showMasterPasswordDialog(context);
         if (password == null) return;
@@ -196,8 +203,17 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         usedPassword = password;
       }
       if (backupJson == null) {
-        _snack('解密失败(主密码错误或数据被篡改)');
+        await guard.recordFailure();
+        final locked = await guard.checkLocked();
+        _snack(
+          locked
+              ? '尝试次数过多,请等待 ${await guard.remainingSeconds()} 秒后重试'
+              : '解密失败(主密码错误或数据被篡改)',
+        );
         return;
+      }
+      if (usedPassword != null) {
+        await guard.recordSuccess();
       }
       if (usedPassword != null) {
         // 本机尚无主密钥时,用负载盐派生并保存,本地模式即可解锁。
