@@ -7,6 +7,7 @@ class SecureStore {
 
   static const _jwtKey = 'bequest_jwt';
   static const _masterKeyKey = 'bequest_master_key';
+  static const _masterSaltKey = 'bequest_master_salt';
   static const _wrappingKeyKey = 'bequest_wrapping_key';
   static const _pinHashKey = 'bequest_pin_hash';
   static const _pinSaltKey = 'bequest_pin_salt';
@@ -26,6 +27,11 @@ class SecureStore {
   Future<String?> readJwt() => _storage.read(key: _jwtKey);
 
   Future<String?> readMasterKey() => _storage.read(key: _masterKeyKey);
+
+  Future<void> saveMasterSalt(String salt) =>
+      _storage.write(key: _masterSaltKey, value: salt);
+
+  Future<String?> readMasterSalt() => _storage.read(key: _masterSaltKey);
 
   Future<String?> readWrappingKey() => _storage.read(key: _wrappingKeyKey);
 

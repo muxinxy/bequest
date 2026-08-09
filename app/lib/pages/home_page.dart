@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
@@ -8,7 +11,10 @@ import '../models/reminder.dart';
 import '../storage/secure_store.dart';
 import 'app_lock_setup_page.dart';
 import 'asset_edit_page.dart';
+import 'audit_page.dart';
 import 'category_page.dart';
+import 'export_page.dart';
+import 'import_page.dart';
 import 'inheritance_status_page.dart';
 import 'inheritors_page.dart';
 import 'login_page.dart';
@@ -122,6 +128,63 @@ class _HomePageState extends State<HomePage> {
     if (mounted) _load();
   }
 
+  /// 导出流程:先选范围,再交给导出页(验证主密码 + 解密 + 分享)。
+  Future<void> _exportFlow() async {
+    if (_assets.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('暂无资产可导出')));
+      return;
+    }
+    final scope = await showDialog<String>(
+      context: context,
+      builder: (context) => _ExportScopeDialog(hasFilter: _filterCategoryId != null),
+    );
+    if (scope == null) return;
+    final assets = scope == 'filter' ? _filteredAssets : _assets;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => ExportPage(assets: assets)),
+    );
+    if (mounted) _load();
+  }
+
+  /// 导入流程:选 JSON 文件后交给导入页(验证主密码 + 逐条创建)。
+  Future<void> _importFlow() async {
+    final FilePickerResult? result;
+    try {
+      result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('选择文件失败')));
+      return;
+    }
+    if (result == null || result.files.isEmpty) return;
+    final path = result.files.single.path;
+    if (path == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('读取文件失败')));
+      return;
+    }
+    try {
+      final text = await File(path).readAsString();
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => ImportPage(fileText: text)),
+      );
+      // 导入完成后刷新资产列表。
+      if (mounted) _load();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('读取文件失败')));
+    }
+  }
+
   void _onMenuSelected(String value) {
     switch (value) {
       case 'inheritors':
@@ -132,6 +195,12 @@ class _HomePageState extends State<HomePage> {
         _openPage(const CategoryPage());
       case 'status':
         _openPage(const InheritanceStatusPage());
+      case 'export':
+        _exportFlow();
+      case 'import':
+        _importFlow();
+      case 'audit':
+        _openPage(const AuditPage());
       case 'lock':
         Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const AppLockSetupPage()),
@@ -165,6 +234,9 @@ class _HomePageState extends State<HomePage> {
               PopupMenuItem(value: 'templates', child: Text('提醒模板')),
               PopupMenuItem(value: 'categories', child: Text('分类管理')),
               PopupMenuItem(value: 'status', child: Text('继承状态')),
+              PopupMenuItem(value: 'export', child: Text('导出资产')),
+              PopupMenuItem(value: 'import', child: Text('导入资产')),
+              PopupMenuItem(value: 'audit', child: Text('审计日志')),
               PopupMenuItem(value: 'lock', child: Text('锁设置')),
               PopupMenuItem(value: 'logout', child: Text('退出登录')),
             ],
@@ -247,5 +319,54 @@ class _HomePageState extends State<HomePage> {
         (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
       ),
     ];
+  }
+}
+
+/// 导出范围选择对话框:全部资产 / 当前筛选分类。
+class _ExportScopeDialog extends StatefulWidget {
+  const _ExportScopeDialog({required this.hasFilter});
+
+  final bool hasFilter;
+
+  @override
+  State<_ExportScopeDialog> createState() => _ExportScopeDialogState();
+}
+
+class _ExportScopeDialogState extends State<_ExportScopeDialog> {
+  String _scope = 'all';
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('导出资产'),
+      content: RadioGroup<String>(
+        groupValue: _scope,
+        onChanged: (value) => setState(() => _scope = value ?? 'all'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RadioListTile<String>(
+              value: 'all',
+              title: const Text('全部资产'),
+            ),
+            RadioListTile<String>(
+              value: 'filter',
+              title: const Text('当前筛选分类'),
+              enabled: widget.hasFilter,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_scope),
+          child: const Text('确定'),
+        ),
+      ],
+    );
   }
 }

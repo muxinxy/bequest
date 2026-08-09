@@ -57,6 +57,8 @@ class _RegisterPageState extends State<RegisterPage> {
 
       await _store.saveJwt(_extractJwt(response));
       await _store.saveMasterKey(masterKey);
+      // 盐必须随主密钥一起保存,导出/导入时需用它重新派生并校验主密码。
+      await _store.saveMasterSalt(salt);
       await _store.saveWrappingKey(wrappingKey);
 
       if (!mounted) return;

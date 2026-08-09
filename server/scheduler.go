@@ -35,7 +35,9 @@ var expiryAdvances = []int{30, 7, 1}
 // window (30/7/1 days before expiry) plus a single "已到期" reminder once an
 // asset is past its expiry date.
 func processExpiryReminders(db *sql.DB, now time.Time) {
-	rows, err := db.Query(`SELECT id, user_id, name, expiry_date FROM assets WHERE expiry_date IS NOT NULL AND expiry_date != ''`)
+	rows, err := db.Query(`SELECT a.id, a.user_id, a.name, a.expiry_date, u.tier
+		FROM assets a JOIN users u ON u.id = a.user_id
+		WHERE a.expiry_date IS NOT NULL AND a.expiry_date != ''`)
 	if err != nil {
 		log.Printf("query assets for expiry: %v", err)
 		return
@@ -46,11 +48,12 @@ func processExpiryReminders(db *sql.DB, now time.Time) {
 		uid  int64
 		name string
 		exp  string
+		tier string
 	}
 	var assets []assetRow
 	for rows.Next() {
 		var a assetRow
-		if err := rows.Scan(&a.id, &a.uid, &a.name, &a.exp); err != nil {
+		if err := rows.Scan(&a.id, &a.uid, &a.name, &a.exp, &a.tier); err != nil {
 			log.Printf("scan asset: %v", err)
 			return
 		}
@@ -69,13 +72,13 @@ func processExpiryReminders(db *sql.DB, now time.Time) {
 				if !expDate.After(now.AddDate(0, 0, adv)) {
 					title := fmt.Sprintf("资产「%s」即将到期", a.name)
 					body := fmt.Sprintf("您的资产 %s 将于 %s 到期,剩余 %d 天,请及时处理续费或迁移。", a.name, a.exp, daysLeft)
-					insertReminder(db, a.uid, "expiry", &a.id, title, body, fmt.Sprintf("exp:%d:%d", a.id, adv))
+					notifyUser(db, a.uid, a.tier, "expiry", title, body, fmt.Sprintf("exp:%d:%d", a.id, adv))
 				}
 			}
 		} else {
 			title := fmt.Sprintf("资产「%s」已到期", a.name)
 			body := fmt.Sprintf("您的资产 %s 已于 %s 到期,请及时处理续费或迁移。", a.name, a.exp)
-			insertReminder(db, a.uid, "expiry", &a.id, title, body, fmt.Sprintf("exp:%d:past", a.id))
+			notifyUser(db, a.uid, a.tier, "expiry", title, body, fmt.Sprintf("exp:%d:past", a.id))
 		}
 	}
 }
@@ -145,7 +148,11 @@ func processEscalation(db *sql.DB, now time.Time) {
 				continue
 			}
 			body := fmt.Sprintf("您已 %d 天未登录,资产安全提醒升级。", daysSince)
-			insertReminder(db, u.id, "escalation", nil, "长时间未登录提醒", body, fmt.Sprintf("esc:%d:%d", u.id, level))
+			notifyUser(db, u.id, u.tier, "escalation", "长时间未登录提醒", body, fmt.Sprintf("esc:%d:%d", u.id, level))
+			// escalation email cutoff stays here (level >= 2), unchanged.
+			// ponytail: notifyUser also emails the generic body; if SMTP is ever
+			// configured, members at level>=2 get two mails — fold the cutoff
+			// into notifyUser if that ever matters.
 			if level >= 2 && u.email != "" {
 				sendMail(u.email, "资产安全提醒升级",
 					fmt.Sprintf("您已 %d 天未登录,资产安全提醒升级,请尽快登录以确认仍在世。", daysSince))

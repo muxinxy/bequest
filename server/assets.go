@@ -149,6 +149,16 @@ func handleGetAsset(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// freeAssetQuota is the asset cap for free-tier users; members are unlimited.
+const freeAssetQuota = 50
+
+// assetCount returns how many assets uid owns.
+func assetCount(db *sql.DB, uid int64) (int, error) {
+	var n int
+	err := db.QueryRow(`SELECT COUNT(*) FROM assets WHERE user_id = ?`, uid).Scan(&n)
+	return n, err
+}
+
 // handleCreateAsset: POST /api/v1/assets -> 201 full object
 func handleCreateAsset(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +167,8 @@ func handleCreateAsset(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
-		if msg, err := validateAsset(db, userID(r), &req); err != nil {
+		uid := userID(r)
+		if msg, err := validateAsset(db, uid, &req); err != nil {
 			log.Printf("validate asset: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
@@ -165,17 +176,36 @@ func handleCreateAsset(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, msg)
 			return
 		}
+		// free-tier quota check (members unlimited)
+		var tier string
+		if err := db.QueryRow(`SELECT tier FROM users WHERE id = ?`, uid).Scan(&tier); err != nil {
+			log.Printf("query user tier: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if tier == "free" {
+			n, err := assetCount(db, uid)
+			if err != nil {
+				log.Printf("count assets: %v", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			if n >= freeAssetQuota {
+				writeError(w, http.StatusForbidden, "免费用户最多 50 条资产,升级会员可解锁")
+				return
+			}
+		}
 		data, _ := base64.StdEncoding.DecodeString(req.EncryptedData)
 		res, err := db.Exec(`INSERT INTO assets (user_id, category_id, asset_type, name, encrypted_data, expiry_date)
 			VALUES (?, ?, ?, ?, ?, ?)`,
-			userID(r), req.CategoryID, req.AssetType, req.Name, data, req.ExpiryDate)
+			uid, req.CategoryID, req.AssetType, req.Name, data, req.ExpiryDate)
 		if err != nil {
 			log.Printf("insert asset: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		id, _ := res.LastInsertId()
-		a, err := fetchAsset(db, id, userID(r))
+		a, err := fetchAsset(db, id, uid)
 		if err != nil {
 			log.Printf("fetch created asset: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
