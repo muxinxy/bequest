@@ -5,7 +5,11 @@
 #
 # 关于数据目录:
 #   镜像内 WORKDIR=/data, 服务器在 CWD 下打开 "data/bequest.db",
-#   因此相对路径落在 /data 上, 即宿主机 ./data 目录。
+#   相对路径落在 /data 上。默认使用 Docker 命名卷 bequest_data
+#   (首次初始化自动继承镜像内 /data 的属主权限, 非 root 用户可直接写入);
+#   如需在宿主机直接查看数据文件, 把 volumes 改为:
+#     - ./data:/data
+#   并保证宿主机 ./data 可被容器内 uid 10001 写入(Linux: chown -R 10001:10001 ./data)。
 #   config.json 同理: 服务器从 CWD 读取 config.json,
 #   把宿主机配置挂载到 ./config.json:/data/config.json 即可生效。
 services:
@@ -17,7 +21,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/data
+      - bequest_data:/data
       # 可选: 使用宿主机配置文件(见 README-deploy.md 的 config.json 示例)
       # - ./config.json:/data/config.json
     environment:
@@ -30,3 +34,6 @@ services:
       # SMTP_USER: ${SMTP_USER:-}
       # SMTP_PASS: ${SMTP_PASS:-}
       # SMTP_FROM: ${SMTP_FROM:-}
+
+volumes:
+  bequest_data:
