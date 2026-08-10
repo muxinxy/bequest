@@ -154,8 +154,19 @@ class _LockGateState extends State<LockGate> {
         widget.child,
         if (_checked && _locked)
           Positioned.fill(
-            child: AppLockScreen(
-              onUnlocked: () => setState(() => _locked = false),
+            // 锁屏位于 MaterialApp.builder,与主 Navigator 是兄弟节点而非后代,
+            // showDialog 会抛 "no Navigator" 异常(用主密码解锁因此完全无反应)。
+            // 包一层独立 Navigator 提供对话框宿主,且不干扰主路由栈;
+            // HeroControllerScope.none 避免与主 Navigator 争用同一个 HeroController。
+            child: HeroControllerScope.none(
+              child: Navigator(
+                onGenerateRoute: (settings) => MaterialPageRoute<void>(
+                  settings: settings,
+                  builder: (_) => AppLockScreen(
+                    onUnlocked: () => setState(() => _locked = false),
+                  ),
+                ),
+              ),
             ),
           ),
       ],

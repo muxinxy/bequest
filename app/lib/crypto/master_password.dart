@@ -20,6 +20,24 @@ Future<bool> verifyMasterPassword(
   return masterKey == deriveMasterKey(inputPassword, salt);
 }
 
+/// 主密码解锁纯逻辑(无 UI 依赖,可单测):
+/// 限流锁定中 → false 且不计数;校验通过 → 清零计数并返回 true;
+/// 校验失败 → 累计一次失败并返回 false。
+/// 锁屏/导出/导入/修改主密码共用,避免各处实现漂移。
+Future<bool> masterPasswordUnlock({
+  required SecureStore store,
+  required AttemptGuard guard,
+  required String password,
+}) async {
+  if (await guard.checkLocked()) return false;
+  if (await verifyMasterPassword(password, store: store)) {
+    await guard.recordSuccess();
+    return true;
+  }
+  await guard.recordFailure();
+  return false;
+}
+
 /// 校验主密码并应用失败限流:锁定期间拒绝;失败累计,达到阈值锁定 60 秒;
 /// 成功清零。消息(锁定倒计时/主密码错误)由本函数统一提示,返回是否通过。
 Future<bool> guardedVerifyMasterPassword(
@@ -28,24 +46,17 @@ Future<bool> guardedVerifyMasterPassword(
   String password,
 ) async {
   final messenger = ScaffoldMessenger.of(context);
-  if (await guard.checkLocked()) {
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('尝试次数过多,请等待 ${await guard.remainingSeconds()} 秒后重试'),
-      ),
-    );
-    return false;
-  }
-  if (await verifyMasterPassword(password)) {
-    await guard.recordSuccess();
+  if (await masterPasswordUnlock(
+    store: SecureStore(),
+    guard: guard,
+    password: password,
+  )) {
     return true;
   }
-  await guard.recordFailure();
-  final locked = await guard.checkLocked();
   messenger.showSnackBar(
     SnackBar(
       content: Text(
-        locked
+        await guard.checkLocked()
             ? '尝试次数过多,请等待 ${await guard.remainingSeconds()} 秒后重试'
             : '主密码错误',
       ),
@@ -57,7 +68,6 @@ Future<bool> guardedVerifyMasterPassword(
 /// 弹出主密码输入对话框,返回输入内容;取消返回 null。
 /// 已设置提示语时在对话框中展示(帮助回忆,不暴露密码本身)。
 Future<String?> showMasterPasswordDialog(BuildContext context) async {
-  final controller = TextEditingController();
   String? hint;
   try {
     hint = await SecureStore().readMasterHint();
@@ -65,15 +75,43 @@ Future<String?> showMasterPasswordDialog(BuildContext context) async {
     // 插件缺失(测试环境)时忽略提示语。
   }
   if (!context.mounted) return null;
-  final password = await showDialog<String>(
+  return showDialog<String>(
     context: context,
-    builder: (context) => AlertDialog(
+    builder: (context) => _MasterPasswordDialog(hint: hint),
+  );
+}
+
+/// 主密码输入对话框。controller 在 State.dispose 中释放:
+/// showDialog 返回时退出动画仍在进行,过早 dispose 会导致
+/// TextField 在重建时访问已释放的 controller 而崩溃。
+class _MasterPasswordDialog extends StatefulWidget {
+  const _MasterPasswordDialog({this.hint});
+
+  final String? hint;
+
+  @override
+  State<_MasterPasswordDialog> createState() => _MasterPasswordDialogState();
+}
+
+class _MasterPasswordDialogState extends State<_MasterPasswordDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hint = widget.hint;
+    return AlertDialog(
       title: const Text('请输入主密码'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
-            controller: controller,
+            controller: _controller,
             autofocus: true,
             obscureText: true,
             decoration: const InputDecoration(
@@ -99,12 +137,10 @@ Future<String?> showMasterPasswordDialog(BuildContext context) async {
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop(controller.text),
+          onPressed: () => Navigator.of(context).pop(_controller.text),
           child: const Text('确认'),
         ),
       ],
-    ),
-  );
-  controller.dispose();
-  return password;
+    );
+  }
 }

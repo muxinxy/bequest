@@ -40,6 +40,10 @@ class _AppLockScreenState extends State<AppLockScreen> {
   );
   Timer? _lockTimer;
   int _lockSeconds = 0;
+  /// 主密码独立限流的剩余秒数(与 PIN/图案的 [_lockSeconds] 分开,
+  /// 主密码被限流不应影响其他解锁方式)。
+  Timer? _masterLockTimer;
+  int _masterLockSeconds = 0;
 
   /// 生物识别解锁方式:''(关闭) | 'fingerprint'(指纹) | 'face'(人脸)。
   String _biometricType = '';
@@ -60,6 +64,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
   @override
   void dispose() {
     _lockTimer?.cancel();
+    _masterLockTimer?.cancel();
     _pinController.dispose();
     super.dispose();
   }
@@ -95,6 +100,10 @@ class _AppLockScreenState extends State<AppLockScreen> {
       // 上次锁定未到期(如进程被杀后重启):继续倒计时。
       if (mounted && await _lockGuard.checkLocked()) {
         await _startLockCountdown();
+      }
+      // 主密码被其他入口(导出/导入/修改主密码/恢复)限流时,锁屏也要可见提示。
+      if (mounted && await _masterGuard.checkLocked()) {
+        await _startMasterLockCountdown();
       }
     } catch (_) {
       // 模拟器/测试环境无生物识别能力,静默降级。
@@ -240,17 +249,30 @@ class _AppLockScreenState extends State<AppLockScreen> {
     final password = await showMasterPasswordDialog(context);
     if (password == null || password.isEmpty) return;
     if (!mounted) return;
-    setState(() => _verifying = true);
+    setState(() {
+      _verifying = true;
+      _error = null;
+    });
     try {
-      final ok = await guardedVerifyMasterPassword(
-        context,
-        _masterGuard,
-        password,
+      final ok = await masterPasswordUnlock(
+        store: _store,
+        guard: _masterGuard,
+        password: password,
       );
-      if (!ok || !mounted) return;
-      // 同时清零应用锁(PIN/图案)计数,与正常解锁一致。
-      await _lockGuard.recordSuccess();
-      widget.onUnlocked();
+      if (!mounted) return;
+      if (ok) {
+        // 同时清零应用锁(PIN/图案)计数,与正常解锁一致。
+        await _lockGuard.recordSuccess();
+        widget.onUnlocked();
+        return;
+      }
+      // 未通过:限流中给持久倒计时提示,否则提示密码错误(避免仅一闪而过的
+      // snackbar 被忽略——这是"用主密码解锁没反应"的常见误判来源)。
+      if (await _masterGuard.checkLocked()) {
+        await _startMasterLockCountdown();
+      } else {
+        setState(() => _error = '主密码错误,请重试');
+      }
     } finally {
       if (mounted) setState(() => _verifying = false);
     }
@@ -284,6 +306,30 @@ class _AppLockScreenState extends State<AppLockScreen> {
         setState(() => _lockSeconds = 0);
       } else {
         setState(() => _lockSeconds = remaining);
+      }
+    });
+  }
+
+  /// 显示主密码限流的剩余秒数并每秒刷新;到期后自动清零。
+  /// 与 [_startLockCountdown] 分开:主密码被限流不冻结 PIN/图案输入。
+  Future<void> _startMasterLockCountdown() async {
+    if (_masterLockTimer != null) return;
+    final seconds = await _masterGuard.remainingSeconds();
+    if (seconds <= 0) return;
+    if (!mounted) return;
+    setState(() => _masterLockSeconds = seconds);
+    _masterLockTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      final remaining = await _masterGuard.remainingSeconds();
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (remaining <= 0) {
+        timer.cancel();
+        _masterLockTimer = null;
+        setState(() => _masterLockSeconds = 0);
+      } else {
+        setState(() => _masterLockSeconds = remaining);
       }
     });
   }
@@ -392,6 +438,17 @@ class _AppLockScreenState extends State<AppLockScreen> {
                     onPressed: _verifying ? null : _unlockWithMasterPassword,
                     child: const Text('用主密码解锁'),
                   ),
+                  if (_masterLockSeconds > 0) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '主密码尝试次数过多,请等待 $_masterLockSeconds 秒后重试',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
                 ],
               ],
             ),

@@ -80,6 +80,19 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
     }
   }
 
+  /// 设备实际可用的生物识别类别:weak 归入指纹类,iris 归入人脸类。
+  /// 用于禁用不支持的选项,避免用户选了指纹结果系统弹窗只出人脸。
+  bool get _hasFingerprint => _availableBiometrics.any(
+    (b) =>
+        b == BiometricType.fingerprint ||
+        b == BiometricType.strong ||
+        b == BiometricType.weak,
+  );
+
+  bool get _hasFace => _availableBiometrics.any(
+    (b) => b == BiometricType.face || b == BiometricType.iris,
+  );
+
   /// 所选方式是否落在设备可用类别上;未知类别(空数组)按不支持处理。
   bool _typeSupported(String type) {
     if (type.isEmpty) return true;
@@ -164,7 +177,11 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
       }
       if (_clearPattern) await _store.clearPattern();
       await _store.setLockEnabled(true);
-      await _store.setLockBiometricType(_biometricType);
+      // 设备不支持所选方式时(如恢复备份后换设备)按"关闭"保存,避免不可用配置。
+      final biometricType = _typeSupported(_biometricType)
+          ? _biometricType
+          : '';
+      await _store.setLockBiometricType(biometricType);
       await _store.setLockTiming(_timing);
       await _store.setLockTimeoutMinutes(timeout ?? 5);
       if (!mounted) return;
@@ -245,27 +262,41 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
                 groupValue: _biometricType,
                 onChanged: (value) =>
                     setState(() => _biometricType = value ?? ''),
-                child: const Column(
+                child: Column(
                   children: [
                     RadioListTile<String>(
                       value: 'fingerprint',
-                      title: Text('指纹'),
+                      title: const Text('指纹'),
+                      subtitle: _hasFingerprint
+                          ? null
+                          : const Text('设备不支持'),
                       dense: true,
                       contentPadding: EdgeInsets.zero,
+                      enabled: _hasFingerprint,
                     ),
                     RadioListTile<String>(
                       value: 'face',
-                      title: Text('人脸'),
+                      title: const Text('人脸'),
+                      subtitle: _hasFace ? null : const Text('设备不支持'),
                       dense: true,
                       contentPadding: EdgeInsets.zero,
+                      enabled: _hasFace,
                     ),
-                    RadioListTile<String>(
+                    const RadioListTile<String>(
                       value: '',
                       title: Text('关闭'),
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                     ),
                   ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '系统生物识别弹窗由设备统一管理,可能同时展示指纹与人脸,'
+                  '无法强制单一方式(Android 平台限制)',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ),
               Padding(
