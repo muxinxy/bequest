@@ -1,5 +1,12 @@
 # 更新日志
 
+## v0.3.4 (2026-08-10)
+
+### 修复
+- **锁屏「用主密码解锁」崩溃**：AppLockScreen 此前无 Navigator 宿主，弹主密码输入框时抛 no-Navigator 异常；现已自建 Navigator，解锁流程抽为共享纯逻辑（`masterPasswordUnlock`）并补回归测试
+- **生物识别设置显示不实**：设置页按设备真实能力展示指纹/人脸（不再一律显示可用）
+- **Docker 数据目录权限**：镜像预创建 `/data` 并归属 appuser，compose 改用命名卷（继承权限），解决容器内无写权限导致的 Permission denied；bind mount 场景的 chown 步骤已写入文档
+
 ## v0.3.3 (2026-08-09)
 
 ### 修复
