@@ -47,7 +47,7 @@ docker compose up -d --build
 
 - 服务监听宿主机 `8080` 端口;
 - 数据库落在宿主机 `server/data/`(`./data:/data` 卷挂载);
-- 容器内 `WORKDIR=/data`, 服务器在**当前工作目录**下打开 `data/bequest.db`, 因此相对路径正好落在卷上, 无需改代码;
+- 容器内 `WORKDIR=/data`, 数据库写入卷中的 `data/bequest.db`; SQL 迁移文件已嵌入服务器二进制, 无需在容器内挂载 `migrations/` 目录;
 - `config.json` 同理: 服务器从 CWD 读取 `config.json`, 将宿主机配置文件挂载到容器即可(取消 `docker-compose.yml` 中对应注释):
 
 ```yaml
