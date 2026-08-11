@@ -2,8 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"embed"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,6 +14,9 @@ import (
 
 	_ "modernc.org/sqlite"
 )
+
+//go:embed migrations/*.sql
+var migrationFS embed.FS
 
 const dataDir = "data"
 
@@ -41,7 +47,7 @@ func runMigrations(db *sql.DB) error {
 		return fmt.Errorf("create schema_migrations: %w", err)
 	}
 
-	entries, err := os.ReadDir("migrations")
+	entries, err := fs.ReadDir(migrationFS, "migrations")
 	if err != nil {
 		return fmt.Errorf("read migrations dir: %w", err)
 	}
@@ -72,7 +78,7 @@ func runMigrations(db *sql.DB) error {
 		if applied[f] {
 			continue
 		}
-		body, err := os.ReadFile(filepath.Join("migrations", f))
+		body, err := fs.ReadFile(migrationFS, path.Join("migrations", f))
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", f, err)
 		}
