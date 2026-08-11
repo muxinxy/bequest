@@ -92,6 +92,7 @@ bequest/
 
 - 二进制：`scripts/build.sh`（5 平台）/ `build.ps1`（本地 Windows）；Docker：多阶段 alpine 非 root，`WORKDIR=/data` 使相对路径 `data/bequest.db` 落在卷上
 - 发布：tag `v*` 触发 GitHub Actions——矩阵构建 + buildx 双架构推 `ghcr.io/muxinxy/bequest` + Release 资产；workflow 用 `"on":` 加引号规避 YAML 1.1 解析器布尔化问题
+- 迁移部署：SQL 迁移通过 `go:embed` 编译进二进制，Docker 运行时不依赖外部 `migrations/` 目录；仅将 `/data` 作为数据库持久化卷
 
 ### ADR-7 导入导出（纯客户端 E2E）
 

@@ -32,7 +32,7 @@
 - 端到端联调已验证：分类/资产 CRUD 全链路、密文 round-trip、未认证 401、更新置 null 均符合契约
 
 **P0 已交付（历史）**：
-- 后端：`POST /api/v1/auth/register`、`/login`、`GET /api/v1/me`；JWT HS256 24h（`JWT_SECRET` 环境变量）；argon2id PHC 哈希；SQLite（modernc 纯 Go）自动迁移（schema_migrations 表）
+- 后端：`POST /api/v1/auth/register`、`/login`、`GET /api/v1/me`；JWT HS256 24h（`JWT_SECRET` 环境变量）；argon2id PHC 哈希；SQLite（modernc 纯 Go）自动迁移（schema_migrations 表），迁移 SQL 通过 `go:embed` 编译进二进制
 - 前端：登录/注册/主页；注册时 Argon2id 派生主密钥（3/65536/4 → 32B）→ 随机 WK 包装 MK → 上传 `master_key_wrapped`；JWT/MK/WK 存 flutter_secure_storage（Keystore）
 
 **实现偏差与踩坑（长期有效）**：
@@ -80,6 +80,7 @@
 - **自托管同步（隐私第一）**：同步配置**仅存本机**（secure_store），凭据绝不经过托孤服务端；WebDAV + S3 两个实现（**纯手写**：webdav_client 内部用 dio 无法注入 MockClient 测试、aws_s3 包无 null safety——SigV4 用 package:crypto 手写并用 AWS 官方测试向量锁定）；FTP/SFTP 界面预留"即将支持"
 - 备份 = 全量数据（资产密文 + 分类 + 模板 + 继承人）→ 主密钥 AES-GCM 加密单文件 → 上传用户自己的存储；恢复 = 下载 → 解密 → 逐条重建（分类按名解析：预设→null、自定义→匹配/创建）
 - **SMTP 设置页**：自定义发件服务器（提醒邮件走用户自己的邮箱）
+- **迁移部署**：SQL 迁移通过 `go:embed` 编译进后端二进制，Docker 运行时无需挂载 `migrations/` 目录；仅需持久化 `/data` 数据卷
 - **部署**：`server/Dockerfile`（多阶段 alpine，非 root，WORKDIR=/data 落卷）+ `docker-compose.yml` + `scripts/build.sh`（5 平台交叉编译）/`build.ps1` + `.github/workflows/release.yml`（tag v* 触发：矩阵构建 + buildx 双架构推 GHCR `ghcr.io/muxinxy/bequest` + softprops 发 Release 资产，`"on":` 加引号规避 YAML 1.1 布尔陷阱）
 - 验证：后端 22 测试全绿（+4：SMTP CRUD 加密存取、version、无配置轮询、用户 SMTP 优先不 panic）；前端 29 测试全绿（+14：备份 round-trip/篡改、WebDAV MockClient、SigV4 AWS 向量、SMTP 设置）；端到端实测 SMTP API 全链路（密码不泄露、空密码保留旧值、version dev）
 
