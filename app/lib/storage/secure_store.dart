@@ -82,6 +82,7 @@ class SecureStore {
   Future<void> setLockBiometricType(String type) async {
     final t = (type == 'fingerprint' || type == 'face') ? type : '';
     await _storage.write(key: _lockBiometricTypeKey, value: t);
+    await _storage.delete(key: _lockBiometricKey);
   }
 
   Future<String> readLockBiometricType() async {
@@ -91,6 +92,7 @@ class SecureStore {
     // 新键缺失 → 读旧布尔迁移(首次读取时顺手写回新键)。
     if (await _storage.read(key: _lockBiometricKey) == 'true') {
       await _storage.write(key: _lockBiometricTypeKey, value: 'fingerprint');
+      await _storage.delete(key: _lockBiometricKey);
       return 'fingerprint';
     }
     return '';

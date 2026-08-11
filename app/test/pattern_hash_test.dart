@@ -150,6 +150,16 @@ void main() {
       expect(await store.readLockBiometricType(), 'fingerprint');
     });
 
+    test('迁移后关闭生物识别不会被旧布尔键重新打开', () async {
+      FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(
+        {'bequest_lock_biometric': 'true'},
+      );
+      final store = SecureStore();
+      expect(await store.readLockBiometric(), isTrue);
+      await store.setLockBiometric(false);
+      expect(await store.readLockBiometric(), isFalse);
+    });
+
     test('迁移:旧布尔 false → 关闭', () async {
       FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(
         {'bequest_lock_biometric': 'false'},

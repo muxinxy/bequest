@@ -25,8 +25,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
   final _timeoutController = TextEditingController();
 
   String _timing = 'exit';
-  /// 生物识别解锁方式:''(关闭) | 'fingerprint'(指纹) | 'face'(人脸)。
-  String _biometricType = '';
+  bool _biometricEnabled = false;
   List<BiometricType> _availableBiometrics = [];
   bool _hasPin = false;
   bool _hasPattern = false;
@@ -50,12 +49,12 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
 
   Future<void> _load() async {
     try {
-      final biometricType = await _store.readLockBiometricType();
+      final biometricEnabled = await _store.readLockBiometric();
       final timing = await _store.readLockTiming();
       final timeout = await _store.readLockTimeoutMinutes();
       final hasPin = (await _store.readPinHash()) != null;
       final hasPattern = (await _store.readPatternHash()) != null;
-      // 查询设备实际注册的生物识别,用于支持提示与不匹配警告。
+      // 查询设备实际注册的生物识别,用于支持提示。
       var available = <BiometricType>[];
       try {
         final auth = LocalAuthentication();
@@ -67,7 +66,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
       }
       if (mounted) {
         setState(() {
-          _biometricType = biometricType;
+          _biometricEnabled = biometricEnabled;
           _availableBiometrics = available;
           _timing = timing;
           _hasPin = hasPin;
@@ -78,32 +77,6 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
     } catch (_) {
       // 读取失败按默认处理。
     }
-  }
-
-  /// 设备实际可用的生物识别类别:weak 归入指纹类,iris 归入人脸类。
-  /// 用于禁用不支持的选项,避免用户选了指纹结果系统弹窗只出人脸。
-  bool get _hasFingerprint => _availableBiometrics.any(
-    (b) =>
-        b == BiometricType.fingerprint ||
-        b == BiometricType.strong ||
-        b == BiometricType.weak,
-  );
-
-  bool get _hasFace => _availableBiometrics.any(
-    (b) => b == BiometricType.face || b == BiometricType.iris,
-  );
-
-  /// 所选方式是否落在设备可用类别上;未知类别(空数组)按不支持处理。
-  bool _typeSupported(String type) {
-    if (type.isEmpty) return true;
-    if (type == 'fingerprint') {
-      return _availableBiometrics.any(
-        (b) => b == BiometricType.fingerprint || b == BiometricType.strong,
-      );
-    }
-    return _availableBiometrics.any(
-      (b) => b == BiometricType.face || b == BiometricType.iris,
-    );
   }
 
   /// 设备可用类别的中文描述;iris 归入人脸类。
@@ -158,7 +131,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
     }
     final patternSet = (_hasPattern && !_clearPattern) || _newPattern != null;
     final pinSet = _hasPin || _pinController.text.isNotEmpty;
-    if (_biometricType.isEmpty && !patternSet && !pinSet) {
+    if (!_biometricEnabled && !patternSet && !pinSet) {
       _snack('请至少设置一种解锁方式(PIN 或图案)');
       return;
     }
@@ -177,11 +150,10 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
       }
       if (_clearPattern) await _store.clearPattern();
       await _store.setLockEnabled(true);
-      // 设备不支持所选方式时(如恢复备份后换设备)按"关闭"保存,避免不可用配置。
-      final biometricType = _typeSupported(_biometricType)
-          ? _biometricType
-          : '';
-      await _store.setLockBiometricType(biometricType);
+      // 设备不支持时按"关闭"保存,避免恢复备份后留下不可用配置。
+      await _store.setLockBiometric(
+        _biometricEnabled && _availableBiometrics.isNotEmpty,
+      );
       await _store.setLockTiming(_timing);
       await _store.setLockTimeoutMinutes(timeout ?? 5);
       if (!mounted) return;
@@ -257,45 +229,21 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
               ],
               const SizedBox(height: 8),
               const Divider(),
-              _sectionTitle('生物识别解锁方式'),
-              RadioGroup<String>(
-                groupValue: _biometricType,
+              _sectionTitle('生物识别解锁'),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('使用生物识别解锁'),
+                subtitle: _availableBiometrics.isEmpty
+                    ? const Text('当前设备未检测到生物识别')
+                    : null,
+                value: _biometricEnabled,
                 onChanged: (value) =>
-                    setState(() => _biometricType = value ?? ''),
-                child: Column(
-                  children: [
-                    RadioListTile<String>(
-                      value: 'fingerprint',
-                      title: const Text('指纹'),
-                      subtitle: _hasFingerprint
-                          ? null
-                          : const Text('设备不支持'),
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      enabled: _hasFingerprint,
-                    ),
-                    RadioListTile<String>(
-                      value: 'face',
-                      title: const Text('人脸'),
-                      subtitle: _hasFace ? null : const Text('设备不支持'),
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      enabled: _hasFace,
-                    ),
-                    const RadioListTile<String>(
-                      value: '',
-                      title: Text('关闭'),
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ],
-                ),
+                    setState(() => _biometricEnabled = value),
               ),
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
-                  '系统生物识别弹窗由设备统一管理,可能同时展示指纹与人脸,'
-                  '无法强制单一方式(Android 平台限制)',
+                  '系统弹窗由设备统一管理,会自动选择可用的人脸或指纹验证方式',
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ),
@@ -306,13 +254,11 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
                   style: const TextStyle(fontSize: 13, color: Colors.grey),
                 ),
               ),
-              // 平台限制:Android BiometricPrompt 无法强制仅指纹或仅人脸,
-              // 系统弹窗展示全部已注册生物识别。此处仅提示用户偏好可能不可用。
-              if (_biometricType.isNotEmpty && !_typeSupported(_biometricType))
+              if (_biometricEnabled && _availableBiometrics.isEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                    '当前设备不支持所选方式,可能无法解锁',
+                    '当前设备不支持生物识别,保存后将自动关闭',
                     style: TextStyle(
                       fontSize: 13,
                       color: Theme.of(context).colorScheme.error,
