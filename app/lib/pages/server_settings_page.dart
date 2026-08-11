@@ -182,10 +182,13 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
             mappedId = serverCatIdByName[name];
           }
         }
+        // 服务端 category_id 为 int64:本地 'L...' 字符串经名字映射后已是
+        // 服务端数字 id 的字符串形式,转回数字提交。
+        final categoryId = mappedId == null ? null : int.tryParse(mappedId);
         await cloud.createAsset({
           'name': full['name']?.toString() ?? '',
           'asset_type': full['asset_type']?.toString() ?? 'physical',
-          'category_id': mappedId,
+          'category_id': categoryId,
           'encrypted_data': full['encrypted_data']?.toString() ?? '',
           'expiry_date': full['expiry_date']?.toString(),
         });

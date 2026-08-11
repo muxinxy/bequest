@@ -18,6 +18,7 @@
 | UX 反馈 2 | 移除实体/虚拟 UI、锁设置改名应用锁、生物识别失败原因提示、应用锁/主密钥限次（5 次→60s）、主密码提示语、日志增强（按天轮转 + 请求日志 + 埋点）、Asset id 往返修复 | ✅ 完成 |
 | UX 反馈 3 | MainActivity→FlutterFragmentActivity（修生物识别 no_fragment_activity 根因）、图案限流修复（<4 点也计数）、应用锁主密码绕过、修改主密码/提示语（本地重加密 + 云端 master_key_wrapped 更新 API） | ✅ 完成 |
 | 后置 | 多继承人优先级、定时释放、生前共享、数字遗言、Excel 导出、Web/iOS/鸿蒙 | ⏳ |
+| Web 客户端 + 资产级继承 | Web 编译(Android+Web)、服务端同源托管、web 派生 WASM 性能、资产级密钥隔离、手动锁定、加密导出/覆盖导入、客户端时区、模板变量提示 | ✅ 完成 |
 
 ## 当前状态（P1 完成，下一步 P2）
 
@@ -86,6 +87,22 @@
 
 **仍后置**：FTP/SFTP 同步真实现、SMS/电话 API 真接入、网盘扩展（坚果云/百度云等走 WebDAV 即可）、Excel 导出、多继承人优先级、定时释放、生前共享、数字遗言、Web/iOS/鸿蒙、会员开通后台
 
+## 当前状态（v0.4.0：Web 客户端 + 资产级继承完成）
+
+**v0.4.0 已交付**：
+- **Web 客户端**：`flutter create --platforms=web` 生成 web/ 平台，`flutter build web` 编译成功；Go 服务端 `web.go` 静态托管 build/web（`webDir` 自动探测 `WEB_DIR`/web/app/build/web，`spaHandler` 真实文件直出 + `/api/*` 404 + SPA 回退 index.html）；CORS 中间件（middleware.go）；Dockerfile/compose/release.yml context 改仓库根 + CI 先 `flutter build web`；端到端 Chrome 无头验证 flutter-view 渲染
+- **web 派生性能**：根因 argon2 pointycastle `Register64` 纯 JS 实测 33s/次（注册/导出/导入卡死）；改自托管 hash-wasm WASM（web/assets/hash-wasm.js，UMD 单文件无 CDN），实测 ~0.3s（快 113 倍）；条件导入 `key_derivation_io.dart`（VM pointycastle）/`key_derivation_web.dart`（web WASM）；`deriveMasterKey` 改 async，6 处调用方加 await；锚值测试 `web_argon2_compat_test.dart` 锁定派生结果与旧实现逐字节一致
+- **资产级密钥隔离（ADR-12）**：迁移 005；每资产 AK，内容用 AK 加密，AK 双包装（`asset_key_wrapped_mk` 号主/`asset_key_wrapped_wk` 继承人）；`asset_inheritors` 表 + CRUD API；`triggerInheritance` 按资产建事件（trigger_days 独立或全局线）；claim 资产级事件只发 `asset_key_wrapped_wk`（端到端实测验证：领取只拿指定资产密钥）；老资产渐进兼容（`decryptAssetData` 回退 MK）；客户端 AssetInheritorsPage UI（资产编辑页 AppBar 入口）；`asset_key_isolation_test.dart` 4 测试
+- **手动锁定**：`LockGate.lockNow()` 静态入口（有凭据即锁，忽略 lock_enabled 开关）+ home_page AppBar 锁定按钮
+- **加密导出/覆盖导入**：export_page encrypt 参数（.beq，`encryptSensitiveData` 复用）；import_page overwrite 参数 + 加密文件自动解密检测（`parseExportFile` 失败再试 decrypt）；settings_page 两个确认框
+- **客户端时区**：utils/time_format.dart `formatServerTime`（UTC 无标记 +Z→toLocal）；替换 audit_page/inheritance_status_page/reminders_page 共 5 处；expiry_date 纯日期不转
+- **模板变量提示**：reminder_templates_page 编辑弹窗加 {name}/{date}/{days} 说明
+- 验证：Flutter 119 测试（新增 asset_key_isolation 4 + web_argon2_compat 1）、Go 全测试、flutter build web、端到端（注册→资产双包装→绑定继承人→130 天触发→claim 拿资产密钥）
+
+**实现偏差与踩坑（v0.4.0）**：
+- hash-wasm 采用**下载后自托管**（web/assets/hash-wasm.js，UMD 单文件），避免运行时依赖 CDN（内网/离线部署不可用）
+- `dart:js_util` 在 flutter analyze 的 VM 视角误报（`unavailable` 提示），但 web 编译正常——以 `flutter build web` 为准
+
 ## 如何运行（交接用）
 
 ```powershell
@@ -98,6 +115,12 @@ go run .                    # 监听 :8080，首次启动自动建库 server/dat
 cd D:\Documents\Code\bequest\app
 flutter pub get
 flutter run                 # Android 模拟器访问后端用 http://10.0.2.2:8080
+
+# Web 客户端（同套代码编译，服务端同源托管）
+cd D:\Documents\Code\bequest\app
+flutter build web
+cd D:\Documents\Code\bequest\server
+go run .                    # 浏览器访问 http://localhost:8080
 ```
 
 ## 决策变更记录
@@ -108,3 +131,4 @@ flutter run                 # Android 模拟器访问后端用 http://10.0.2.2:8
 - 2026-08-09：**自托管同步无需登录**——新增 LocalVault（本地加密快照 `vault.bq`，主密钥 AES-GCM）；同步优先读本地快照、恢复未登录时落本地；登录页新增「自托管同步(无需登录)」入口；README 补齐部署/Release 文档
 - 2026-08-09：**发布 v0.1.0**——tag 推送触发 GitHub Actions（5 平台二进制 + GHCR 双架构镜像 + Release 资产）
 - 2026-08-09：**云/本地双模存储**——`AssetRepository` 抽象（Cloud/Local 双实现）+ `RepositoryFactory`；不登录可进本地模式（设置主密码 → 本地加密库全量 CRUD）；登录页新增「进入本地模式」；`ApiConfig` 服务器地址可配置（设置页保存 + 测试连接）；`extractBackupJsonAny` 支持「主密码 + 备份内 salt」跨设备恢复；三层权益矩阵（访客 20 条/免费 50 条/会员不限）UI 徽章 + 资产上限拦截；云↔本地切换迁移（拉取/上传 + 进度提示）；Release 新增 android job（Flutter APK 三 ABI → Release 资产）
+- 2026-08-11：**v0.4.0**——Web 客户端（同套代码编译，服务端托管）、资产级密钥隔离（ADR-12，每资产独立密钥+继承人绑定+按资产领取）、web 派生 WASM 性能修复、手动锁定/加密导出/覆盖导入/时区/模板提示

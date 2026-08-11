@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
@@ -27,7 +27,11 @@ void main() {
   });
 
   group('extractBackupJsonAny', () {
-    final mk = deriveMasterKey(password, salt);
+    late String mk;
+
+    setUpAll(() async {
+      mk = await deriveMasterKey(password, salt);
+    });
 
     test('本机已存主密钥 → 直接解密', () async {
       FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform({

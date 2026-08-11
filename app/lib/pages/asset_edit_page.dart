@@ -10,6 +10,7 @@ import '../models/entitlements.dart';
 import '../repository/asset_repository.dart';
 import '../repository/local_asset_repository.dart';
 import '../storage/secure_store.dart';
+import 'asset_inheritors_page.dart';
 
 /// 资产编辑页:新建(asset 为 null)或编辑(asset 非空)。
 /// 凭据与备注用主密钥加密后经仓储写入(云端或本地库)。
@@ -45,6 +46,9 @@ class _AssetEditPageState extends State<AssetEditPage> {
   bool _decryptFailed = false;
   bool get _isEdit => widget.asset != null;
 
+  /// 云端资产的资产密钥包装(编辑时解出原 AK 复用,保持密钥稳定)。
+  String? _assetKeyWrappedMk;
+
   /// 本地模式(注入的是 LocalAssetRepository)下失败与网络无关,提示语要准确。
   bool get _isLocalRepo => widget.repository is LocalAssetRepository;
 
@@ -73,12 +77,20 @@ class _AssetEditPageState extends State<AssetEditPage> {
         String? credentials;
         String? notes;
         final encrypted = asset.encryptedData;
+        _assetKeyWrappedMk = full['asset_key_wrapped_mk']?.toString();
         if (encrypted != null && encrypted.isNotEmpty) {
           try {
             final masterKey = await _store.readMasterKey();
             if (masterKey != null) {
+              // 资产级密钥隔离:有 asset_key_wrapped_mk 时解出 AK 再解密;
+              // 老资产(无包装)回退直接用主密钥解密。
+              String key = masterKey;
+              final wrappedMk = _assetKeyWrappedMk;
+              if (wrappedMk != null && wrappedMk.isNotEmpty) {
+                key = unwrapAssetKey(wrappedMk, masterKey);
+              }
               final payload =
-                  jsonDecode(decryptSensitiveData(encrypted, masterKey));
+                  jsonDecode(decryptSensitiveData(encrypted, key));
               if (payload is Map<String, dynamic>) {
                 credentials = payload['credentials']?.toString();
                 notes = payload['notes']?.toString();
@@ -148,10 +160,14 @@ class _AssetEditPageState extends State<AssetEditPage> {
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 
-  String? _categoryIdToSubmit() {
+  /// 分类 id 提交值:
+  /// - 云端:数字(服务端 assetRequest.CategoryID 为 int64,字符串会 400 invalid JSON);
+  /// - 本地:'L<时间戳><序号>' 字符串,原样保留。
+  Object? _categoryIdToSubmit() {
     final value = _categoryValue;
     if (value.isEmpty) return null;
-    return value;
+    if (_isLocalRepo) return value;
+    return int.tryParse(value);
   }
 
   Future<void> _deleteAsset() async {
@@ -212,14 +228,38 @@ class _AssetEditPageState extends State<AssetEditPage> {
       // ponytail: 后端资产接口暂无 reminder_settings 字段,
       // 提前天数先随加密载荷往返,待 API 支持后再挪到独立字段。
       if (_advanceDays != null) payload['advance_days'] = _advanceDays;
-      final body = {
+      final body = <String, dynamic>{
         'name': _nameController.text.trim(),
         // 兼容保留:UI 不再区分实体/虚拟,统一按后端默认 physical 提交。
         'asset_type': 'physical',
         'category_id': _categoryIdToSubmit(),
-        'encrypted_data': encryptSensitiveData(jsonEncode(payload), masterKey),
         'expiry_date': _expiryDate,
       };
+      if (_isLocalRepo) {
+        // 本地模式:无继承,直接用主密钥加密(与旧数据一致,渐进兼容)。
+        body['encrypted_data'] = encryptSensitiveData(jsonEncode(payload), masterKey);
+      } else {
+        // 云端模式:资产级密钥隔离——内容用独立 AK 加密,AK 分别被 MK(号主)
+        // 与 WK(继承人)包装上传。编辑时若已有 AK 则解出复用,保持稳定。
+        String assetKey;
+        final existingWrappedMk = _assetKeyWrappedMk;
+        if (_isEdit && existingWrappedMk != null && existingWrappedMk.isNotEmpty) {
+          try {
+            assetKey = unwrapAssetKey(existingWrappedMk, masterKey);
+          } catch (_) {
+            assetKey = generateAssetKey();
+          }
+        } else {
+          assetKey = generateAssetKey();
+        }
+        final wrappingKey = await _store.readWrappingKey();
+        if (wrappingKey == null || wrappingKey.isEmpty) {
+          throw ApiException('未找到继承包装密钥,请重新登录');
+        }
+        body['encrypted_data'] = encryptSensitiveData(jsonEncode(payload), assetKey);
+        body['asset_key_wrapped_mk'] = wrapAssetKey(assetKey, masterKey);
+        body['asset_key_wrapped_wk'] = wrapAssetKey(assetKey, wrappingKey);
+      }
       if (_isEdit) {
         await widget.repository.updateAsset(widget.asset!.id, body);
       } else {
@@ -249,6 +289,24 @@ class _AssetEditPageState extends State<AssetEditPage> {
       appBar: AppBar(
         title: Text(_isEdit ? '编辑资产' : '添加资产'),
         actions: [
+          if (_isEdit && !_isLocalRepo)
+            IconButton(
+              tooltip: '设置继承人',
+              icon: const Icon(Icons.people_outline),
+              onPressed: () async {
+                final asset = widget.asset;
+                if (asset == null) return;
+                await Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AssetInheritorsPage(
+                      assetId: asset.id,
+                      assetName: asset.name,
+                      repository: widget.repository,
+                    ),
+                  ),
+                );
+              },
+            ),
           if (_isEdit)
             IconButton(
               tooltip: '删除资产',

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
@@ -70,7 +71,9 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
   Future<void> _init() async {
     try {
-      final biometricEnabled = await _store.readLockBiometric();
+      final biometricEnabled = kIsWeb
+          ? false // ponytail: web 无 local_auth,生物识别配置强制失效。
+          : await _store.readLockBiometric();
       final hasPin = (await _store.readPinHash()) != null;
       final masterKey = await _store.readMasterKey();
       final patternHash = await _store.readPatternHash();
@@ -109,7 +112,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
   }
 
   Future<void> _tryBiometric() async {
-    if (_verifying) return;
+    if (_verifying || kIsWeb) return; // ponytail: web 无生物识别。
     setState(() {
       _verifying = true;
       _error = null;

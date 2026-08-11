@@ -159,27 +159,94 @@ func processEscalation(db *sql.DB, now time.Time) {
 			}
 		}
 		if idx >= len(thresholds)-1 {
-			triggerInheritance(db, u.id)
+			triggerInheritance(db, u.id, daysSince)
 		}
 	}
 }
 
-// triggerInheritance creates a single pending inheritance event for a user at
-// the top escalation tier. The event snapshots the first inheritor's stored
-// access-code hash (the scheduler never sees the plaintext code).
-func triggerInheritance(db *sql.DB, uid int64) {
+// triggerInheritance creates pending inheritance events for a user at the top
+// escalation tier. Assets with per-asset inheritors (asset_inheritors) get
+// individual events bound to their designated inheritor (asset_key_wrapped_wk
+// is handed over on claim); assets without configuration fall back to the
+// user-level event that releases master_key_wrapped.
+func triggerInheritance(db *sql.DB, uid int64, daysSince int) {
+	// Per-asset events: for each asset-inheritor binding whose trigger condition
+	// is met (trigger_days NULL = use the global escalation line already reached).
+	rows, err := db.Query(`SELECT ai.asset_id, ai.inheritor_id, i.email, i.access_code_hash, ai.trigger_days
+		FROM asset_inheritors ai
+		JOIN inheritors i ON i.id = ai.inheritor_id
+		JOIN assets a ON a.id = ai.asset_id
+		WHERE a.user_id = ? ORDER BY ai.priority ASC, ai.id ASC`, uid)
+	if err != nil {
+		log.Printf("query asset inheritors: %v", err)
+		return
+	}
+	defer rows.Close()
+	type binding struct {
+		assetID, inID   int64
+		email, codeHash string
+		triggerDays     *int
+	}
+	bindings := []binding{}
+	for rows.Next() {
+		var b binding
+		var td sql.NullInt64
+		if err := rows.Scan(&b.assetID, &b.inID, &b.email, &b.codeHash, &td); err != nil {
+			log.Printf("scan asset inheritor: %v", err)
+			continue
+		}
+		if td.Valid {
+			n := int(td.Int64)
+			b.triggerDays = &n
+		}
+		bindings = append(bindings, b)
+	}
+	// 每资产一个 live 事件(按 asset_id 计);触发天数:独立配置优先,否则用全局已跨过的线。
+	for _, b := range bindings {
+		if b.triggerDays != nil && daysSince < *b.triggerDays {
+			continue
+		}
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM inheritance_events
+			WHERE user_id = ? AND asset_id = ? AND status IN ('pending','claimed')`, uid, b.assetID).
+			Scan(&n); err != nil {
+			log.Printf("count asset events: %v", err)
+			continue
+		}
+		if n > 0 {
+			continue
+		}
+		createInheritanceEvent(db, uid, b.inID, b.email, b.codeHash, &b.assetID)
+	}
+	// 有 per-asset 配置的资产不再进全量事件,避免重复交接。
+	var configured int
+	if err := db.QueryRow(`SELECT COUNT(DISTINCT asset_id) FROM asset_inheritors ai
+		JOIN assets a ON a.id = ai.asset_id WHERE a.user_id = ?`, uid).Scan(&configured); err != nil {
+		log.Printf("count configured assets: %v", err)
+		return
+	}
+	var total int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM assets WHERE user_id = ?`, uid).Scan(&total); err != nil {
+		log.Printf("count assets: %v", err)
+		return
+	}
+	// 全量事件:仅当存在未配置继承人绑定的资产(或完全无绑定)时才建。
+	// 有 per-asset 配置的资产已单独建事件,不再进全量。
+	if configured >= total && total > 0 {
+		return
+	}
 	var n int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM inheritance_events WHERE user_id = ? AND status IN ('pending','claimed')`, uid).
+	if err := db.QueryRow(`SELECT COUNT(*) FROM inheritance_events WHERE user_id = ? AND asset_id IS NULL AND status IN ('pending','claimed')`, uid).
 		Scan(&n); err != nil {
 		log.Printf("count inheritance events: %v", err)
 		return
 	}
 	if n > 0 {
-		return // one live event per user
+		return // one live global event per user
 	}
 	var inID int64
 	var inEmail, codeHash string
-	err := db.QueryRow(`SELECT id, email, access_code_hash FROM inheritors
+	err = db.QueryRow(`SELECT id, email, access_code_hash FROM inheritors
 		WHERE user_id = ? ORDER BY priority ASC, id ASC LIMIT 1`, uid).
 		Scan(&inID, &inEmail, &codeHash)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -189,28 +256,41 @@ func triggerInheritance(db *sql.DB, uid int64) {
 		log.Printf("query first inheritor: %v", err)
 		return
 	}
+	createInheritanceEvent(db, uid, inID, inEmail, codeHash, nil)
+}
+
+// createInheritanceEvent inserts one event, snapshots the inheritor's access
+// code hash, sets stage, notifies owner and emails the inheritor.
+func createInheritanceEvent(db *sql.DB, uid, inID int64, inEmail, codeHash string, assetID *int64) {
 	keyBytes := make([]byte, 16)
 	if _, err := rand.Read(keyBytes); err != nil {
 		log.Printf("random event key: %v", err)
 		return
 	}
 	eventKey := hex.EncodeToString(keyBytes)
-	if _, err := db.Exec(`INSERT INTO inheritance_events (user_id, inheritor_id, event_key, access_code_hash)
-		VALUES (?, ?, ?, ?)`, uid, inID, eventKey, codeHash); err != nil {
+	if _, err := db.Exec(`INSERT INTO inheritance_events (user_id, inheritor_id, event_key, access_code_hash, asset_id)
+		VALUES (?, ?, ?, ?, ?)`, uid, inID, eventKey, codeHash, assetID); err != nil {
 		log.Printf("insert inheritance event: %v", err)
 		return
 	}
 	if _, err := db.Exec(`UPDATE users SET inherit_stage = 'triggered' WHERE id = ?`, uid); err != nil {
 		log.Printf("set triggered stage: %v", err)
 	}
-	insertReminder(db, uid, "inheritance", nil, "继承交接已触发",
-		"继承交接已触发,事件密钥: "+eventKey, fmt.Sprintf("inherit:%d", uid))
+	assetNote := ""
+	if assetID != nil {
+		var name string
+		if err := db.QueryRow(`SELECT name FROM assets WHERE id = ?`, *assetID).Scan(&name); err == nil {
+			assetNote = " (资产: " + name + ")"
+		}
+	}
+	insertReminder(db, uid, "inheritance", assetID, "继承交接已触发"+assetNote,
+		"继承交接已触发,事件密钥: "+eventKey, fmt.Sprintf("inherit:%d:%v", uid, assetID))
 	// event_key is written to the audit detail so it stays retrievable in dev
 	// (and emailed to the inheritor when SMTP is configured).
 	if _, err := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'system', 'inheritance_triggered', ?)`,
-		uid, "event_key="+eventKey); err != nil {
+		uid, "event_key="+eventKey+assetNote); err != nil {
 		log.Printf("audit trigger: %v", err)
 	}
-	sendMail(inEmail, "托孤: 继承交接已触发",
+	sendMail(inEmail, "托孤: 继承交接已触发"+assetNote,
 		fmt.Sprintf("继承交接已触发。事件密钥: %s\n请通过 App/API 使用该密钥与您的访问码完成继承领取。", eventKey))
 }

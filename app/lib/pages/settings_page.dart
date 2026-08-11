@@ -35,24 +35,70 @@ class SettingsPage extends StatelessWidget {
       ).showSnackBar(const SnackBar(content: Text('暂无资产可导出')));
       return;
     }
+    // 可选加密导出:加密文件(.beq)需主密码才能解密导入。
+    final encrypt = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('导出资产'),
+        content: const Text('是否用主密码加密导出文件?\n加密后文件无法直接查看,导入时需验证主密码。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('不加密'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('加密'),
+          ),
+        ],
+      ),
+    );
+    if (encrypt == null || !context.mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ExportPage(assets: assets, repository: repository),
+        builder: (_) =>
+            ExportPage(assets: assets, repository: repository, encrypt: encrypt),
       ),
     );
   }
 
   Future<void> _importFlow(BuildContext context) async {
     // 用官方 file_selector(无自定义 Gradle 插件,CI 可编译;file_picker 有 KGP 兼容问题)。
-    const typeGroup = XTypeGroup(label: 'JSON 文件', extensions: ['json']);
+    const typeGroup = XTypeGroup(
+      label: 'JSON / 加密导出文件',
+      extensions: ['json', 'beq'],
+    );
     try {
       final file = await openFile(acceptedTypeGroups: const [typeGroup]);
       if (file == null) return;
       final text = await file.readAsString();
       if (!context.mounted) return;
+      // 覆盖导入:清空现有资产后再导入(破坏性操作,需确认)。
+      final overwrite = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('导入资产'),
+          content: const Text('是否覆盖现有资产?\n覆盖会先删除当前全部资产再导入(不可恢复)。选择"否"则追加导入。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('追加'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('覆盖'),
+            ),
+          ],
+        ),
+      );
+      if (overwrite == null || !context.mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => ImportPage(fileText: text, repository: repository),
+          builder: (_) => ImportPage(
+            fileText: text,
+            repository: repository,
+            overwrite: overwrite,
+          ),
         ),
       );
     } catch (_) {

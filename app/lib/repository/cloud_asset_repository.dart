@@ -60,4 +60,17 @@ class CloudAssetRepository implements AssetRepository {
 
   @override
   Future<void> deleteAsset(String id) => _api.deleteAsset(jwt, id);
+
+  @override
+  Future<List<Map<String, dynamic>>> listAssetInheritors(String assetId) =>
+      _api.listAssetInheritors(jwt, assetId);
+
+  @override
+  Future<Map<String, dynamic>> createAssetInheritor(
+          String assetId, Map<String, dynamic> body) =>
+      _api.createAssetInheritor(jwt, assetId, body);
+
+  @override
+  Future<void> deleteAssetInheritor(String assetId, String iid) =>
+      _api.deleteAssetInheritor(jwt, assetId, iid);
 }

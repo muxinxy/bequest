@@ -12,6 +12,7 @@ import '../repository/asset_repository.dart';
 import '../repository/repository_factory.dart';
 import '../storage/secure_store.dart';
 import '../sync/backup.dart';
+import '../main.dart';
 import 'asset_edit_page.dart';
 import 'login_page.dart';
 import 'reminders_page.dart';
@@ -220,6 +221,11 @@ class _HomePageState extends State<HomePage> {
               child: const Icon(Icons.notifications_outlined),
             ),
             onPressed: () => _openPage(const RemindersPage()),
+          ),
+          IconButton(
+            tooltip: '锁定',
+            icon: const Icon(Icons.lock_outline),
+            onPressed: LockGate.lockNow,
           ),
           IconButton(
             tooltip: '设置',

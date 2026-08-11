@@ -12,6 +12,15 @@ import (
 
 var errNotFound = errors.New("not found")
 
+// nullable converts an empty string to NULL for SQL params (asset key wrapped
+// fields are optional: legacy assets have none, client falls back to MK).
+func nullable(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 // ---------- assets ----------
 
 // assetListJSON is the metadata-only shape returned by the list endpoint
@@ -28,15 +37,19 @@ type assetListJSON struct {
 // assetJSON is the full shape; EncryptedData is the base64 re-encoded blob.
 type assetJSON struct {
 	assetListJSON
-	EncryptedData string `json:"encrypted_data"`
+	EncryptedData      string `json:"encrypted_data"`
+	AssetKeyWrappedMk  string `json:"asset_key_wrapped_mk,omitempty"`
+	AssetKeyWrappedWk  string `json:"asset_key_wrapped_wk,omitempty"`
 }
 
 type assetRequest struct {
-	Name          string  `json:"name"`
-	AssetType     string  `json:"asset_type"`
-	CategoryID    *int64  `json:"category_id"`
-	EncryptedData string  `json:"encrypted_data"`
-	ExpiryDate    *string `json:"expiry_date"`
+	Name               string  `json:"name"`
+	AssetType          string  `json:"asset_type"`
+	CategoryID         *int64  `json:"category_id"`
+	EncryptedData      string  `json:"encrypted_data"`
+	AssetKeyWrappedMk  string  `json:"asset_key_wrapped_mk"`
+	AssetKeyWrappedWk  string  `json:"asset_key_wrapped_wk"`
+	ExpiryDate         *string `json:"expiry_date"`
 }
 
 // validateAsset returns a 400 message, or ("", err) for internal DB errors.
@@ -52,6 +65,16 @@ func validateAsset(db *sql.DB, uid int64, req *assetRequest) (string, error) {
 	}
 	if _, err := base64.StdEncoding.DecodeString(req.EncryptedData); err != nil {
 		return "encrypted_data must be base64", nil
+	}
+	if req.AssetKeyWrappedMk != "" {
+		if _, err := base64.StdEncoding.DecodeString(req.AssetKeyWrappedMk); err != nil {
+			return "asset_key_wrapped_mk must be base64", nil
+		}
+	}
+	if req.AssetKeyWrappedWk != "" {
+		if _, err := base64.StdEncoding.DecodeString(req.AssetKeyWrappedWk); err != nil {
+			return "asset_key_wrapped_wk must be base64", nil
+		}
 	}
 	if req.ExpiryDate != nil && strings.TrimSpace(*req.ExpiryDate) == "" {
 		return "expiry_date must be a non-empty string if provided", nil
@@ -75,9 +98,11 @@ func fetchAsset(db *sql.DB, id, uid int64) (*assetJSON, error) {
 	var catID sql.NullInt64
 	var exp sql.NullString
 	var data []byte
-	err := db.QueryRow(`SELECT id, name, asset_type, category_id, encrypted_data, expiry_date, updated_at
+	var wkMk, wkWk sql.NullString
+	err := db.QueryRow(`SELECT id, name, asset_type, category_id, encrypted_data,
+			expiry_date, updated_at, asset_key_wrapped_mk, asset_key_wrapped_wk
 		FROM assets WHERE id = ? AND user_id = ?`, id, uid).
-		Scan(&a.ID, &a.Name, &a.AssetType, &catID, &data, &exp, &a.UpdatedAt)
+		Scan(&a.ID, &a.Name, &a.AssetType, &catID, &data, &exp, &a.UpdatedAt, &wkMk, &wkWk)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errNotFound
 	}
@@ -89,6 +114,12 @@ func fetchAsset(db *sql.DB, id, uid int64) (*assetJSON, error) {
 	}
 	if exp.Valid {
 		a.ExpiryDate = &exp.String
+	}
+	if wkMk.Valid {
+		a.AssetKeyWrappedMk = wkMk.String
+	}
+	if wkWk.Valid {
+		a.AssetKeyWrappedWk = wkWk.String
 	}
 	a.EncryptedData = base64.StdEncoding.EncodeToString(data)
 	return &a, nil
@@ -196,9 +227,11 @@ func handleCreateAsset(db *sql.DB) http.HandlerFunc {
 			}
 		}
 		data, _ := base64.StdEncoding.DecodeString(req.EncryptedData)
-		res, err := db.Exec(`INSERT INTO assets (user_id, category_id, asset_type, name, encrypted_data, expiry_date)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-			uid, req.CategoryID, req.AssetType, req.Name, data, req.ExpiryDate)
+		res, err := db.Exec(`INSERT INTO assets (user_id, category_id, asset_type, name, encrypted_data, expiry_date,
+				asset_key_wrapped_mk, asset_key_wrapped_wk)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			uid, req.CategoryID, req.AssetType, req.Name, data, req.ExpiryDate,
+			nullable(req.AssetKeyWrappedMk), nullable(req.AssetKeyWrappedWk))
 		if err != nil {
 			log.Printf("insert asset: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -239,8 +272,10 @@ func handleUpdateAsset(db *sql.DB) http.HandlerFunc {
 		}
 		data, _ := base64.StdEncoding.DecodeString(req.EncryptedData)
 		res, err := db.Exec(`UPDATE assets SET category_id = ?, asset_type = ?, name = ?, encrypted_data = ?,
-			expiry_date = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?`,
-			req.CategoryID, req.AssetType, req.Name, data, req.ExpiryDate, id, uid)
+			expiry_date = ?, updated_at = datetime('now'), asset_key_wrapped_mk = ?, asset_key_wrapped_wk = ?
+			WHERE id = ? AND user_id = ?`,
+			req.CategoryID, req.AssetType, req.Name, data, req.ExpiryDate,
+			nullable(req.AssetKeyWrappedMk), nullable(req.AssetKeyWrappedWk), id, uid)
 		if err != nil {
 			log.Printf("update asset: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")

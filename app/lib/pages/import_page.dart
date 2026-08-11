@@ -8,16 +8,25 @@ import '../crypto/master_password.dart';
 import '../logger.dart';
 import '../models/export_format.dart';
 import '../repository/asset_repository.dart';
+import '../repository/local_asset_repository.dart';
 import '../storage/secure_store.dart';
 import 'local_unlock_page.dart';
 
 /// 导入页:验证主密码后解析导出文件,经仓储逐条创建资产并显示进度。
 /// 云端模式写入服务器;本地模式写入本地加密库(jwt 为空时)。
+/// 支持明文 .json 与主密码加密的 .beq(先解密再解析)。
+/// [overwrite] 为 true 时先清空现有资产再导入。
 class ImportPage extends StatefulWidget {
-  const ImportPage({super.key, required this.fileText, required this.repository});
+  const ImportPage({
+    super.key,
+    required this.fileText,
+    required this.repository,
+    this.overwrite = false,
+  });
 
   final String fileText;
   final AssetRepository repository;
+  final bool overwrite;
 
   @override
   State<ImportPage> createState() => _ImportPageState();
@@ -60,13 +69,31 @@ class _ImportPageState extends State<ImportPage> {
       _finish();
       return;
     }
-    final items = parseExportFile(widget.fileText);
+    // 明文 .json 直接解析;加密 .beq 先解密再解析。
+    List<Map<String, dynamic>>? parsed;
+    parsed = parseExportFile(widget.fileText);
+    if (parsed == null) {
+      try {
+        final decrypted = decryptSensitiveData(widget.fileText, masterKey);
+        parsed = parseExportFile(decrypted);
+      } catch (_) {
+        parsed = null;
+      }
+    }
+    final items = parsed;
     if (items == null) {
-      _showError('无效的导出文件');
+      _showError('无效的导出文件(加密文件需与当前主密码一致)');
       _finish();
       return;
     }
     try {
+      // 覆盖导入:先清空现有资产(两种模式同一接口,分类保留按名复用)。
+      if (widget.overwrite) {
+        setState(() => _status = '正在清空现有资产...');
+        for (final a in await widget.repository.listAssets()) {
+          await widget.repository.deleteAsset('${a['id']}');
+        }
+      }
       final categoryNames = <String, String>{
         for (final c in await widget.repository.listCategories())
           if (c['name'] != null && c['id'] != null) '${c['name']}': '${c['id']}',
@@ -141,10 +168,14 @@ class _ImportPageState extends State<ImportPage> {
     final advanceDays = (item['advance_days'] as num?)?.toInt();
     if (advanceDays != null) payload['advance_days'] = advanceDays;
     final expiry = item['expiry_date']?.toString().trim() ?? '';
+    // 服务端 category_id 为 int64;本地模式分类 id 为 'L...' 字符串,原样保留。
+    final categoryIdToSubmit = widget.repository is LocalAssetRepository
+        ? categoryId
+        : (categoryId == null ? null : int.tryParse(categoryId));
     await widget.repository.createAsset({
       'name': name,
       'asset_type': assetType,
-      'category_id': categoryId,
+      'category_id': categoryIdToSubmit,
       'encrypted_data': encryptSensitiveData(jsonEncode(payload), masterKey),
       'expiry_date': expiry.isEmpty ? null : expiry,
     });

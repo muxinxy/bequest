@@ -1,9 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../crypto/asset_crypto.dart';
 import '../crypto/attempt_guard.dart';
@@ -11,16 +8,24 @@ import '../crypto/master_password.dart';
 import '../logger.dart';
 import '../models/asset.dart';
 import '../models/export_format.dart';
+import '../platform/file_share.dart';
 import '../repository/asset_repository.dart';
 import '../storage/secure_store.dart';
 
-/// 导出页:验证主密码后经仓储拉取资产详情、解密并构建 JSON,写入临时文件分享。
+/// 导出页:验证主密码后经仓储拉取资产详情、解密并构建 JSON,分享/下载。
 /// 全程客户端解密,云端只见密文;本地模式同样适用(读本地加密库)。
+/// [encrypt] 为 true 时导出文件用主密码 AES 加密(.beq),导入时需主密码解密。
 class ExportPage extends StatefulWidget {
-  const ExportPage({super.key, required this.assets, required this.repository});
+  const ExportPage({
+    super.key,
+    required this.assets,
+    required this.repository,
+    this.encrypt = false,
+  });
 
   final List<Asset> assets;
   final AssetRepository repository;
+  final bool encrypt;
 
   @override
   State<ExportPage> createState() => _ExportPageState();
@@ -60,18 +65,18 @@ class _ExportPageState extends State<ExportPage> {
       setState(() => _status = '正在导出资产...');
       final items = await _collectItems(masterKey);
       final exportJson = buildExportJson(items, DateTime.now());
-      final file = await _writeTempFile(exportJson);
-      // 分享面板失败不影响导出文件已生成;测试环境无原生实现,忽略异常。
-      try {
-        await SharePlus.instance.share(
-          ShareParams(files: [XFile(file.path)], text: '托孤资产导出'),
-        );
-      } catch (_) {
-        // 分享不可用时忽略,文件仍在临时目录。
-      }
+      final now = DateTime.now();
+      final stamp = '${now.year}${_pad(now.month)}${_pad(now.day)}'
+          '_${_pad(now.hour)}${_pad(now.minute)}${_pad(now.second)}';
+      // 加密导出:用主密码 AES-256-GCM 加密整个 JSON,导入时需主密码解密。
+      final content = widget.encrypt
+          ? encryptSensitiveData(jsonEncode(exportJson), masterKey)
+          : jsonEncode(exportJson);
+      final fileName = 'bequest_export_$stamp${widget.encrypt ? '.beq' : '.json'}';
+      final ok = await shareTextFile(fileName, content, '托孤资产导出');
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('导出成功')));
+          .showSnackBar(SnackBar(content: Text(ok ? '导出成功' : '导出失败,请检查网络后重试')));
       _finish();
     } catch (e) {
       Logger.instance.e('export failed: $e');
@@ -95,8 +100,8 @@ class _ExportPageState extends State<ExportPage> {
       final encrypted = full['encrypted_data']?.toString() ?? '';
       if (encrypted.isNotEmpty) {
         try {
-          final payload =
-              jsonDecode(decryptSensitiveData(encrypted, masterKey));
+          final payload = jsonDecode(decryptAssetData(encrypted, masterKey,
+              assetKeyWrappedMk: full['asset_key_wrapped_mk']?.toString()));
           if (payload is Map<String, dynamic>) {
             credentials = payload['credentials']?.toString() ?? '';
             notes = payload['notes']?.toString() ?? '';
@@ -120,17 +125,6 @@ class _ExportPageState extends State<ExportPage> {
       ));
     }
     return items;
-  }
-
-  Future<File> _writeTempFile(Map<String, dynamic> exportJson) async {
-    final dir = await getTemporaryDirectory();
-    final now = DateTime.now();
-    final name = 'bequest_export_'
-        '${now.year}${_pad(now.month)}${_pad(now.day)}'
-        '_${_pad(now.hour)}${_pad(now.minute)}${_pad(now.second)}.json';
-    final file = File('${dir.path}${Platform.pathSeparator}$name');
-    await file.writeAsString(jsonEncode(exportJson));
-    return file;
   }
 
   static String _pad(int value) => value.toString().padLeft(2, '0');

@@ -26,7 +26,7 @@ func main() {
 	go runScheduler(db)
 
 	log.Println("bequest server listening on :8080")
-	log.Fatal(http.ListenAndServe(":8080", newMux(db)))
+	log.Fatal(http.ListenAndServe(":8080", cors(newMux(db))))
 }
 
 // runScheduler ticks the dead-man's-switch scan every 60s.
@@ -43,6 +43,10 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
+	// Flutter web 客户端(同源托管,免 CORS);未构建 web 时静默跳过。
+	if dir := webDir(); dir != "" {
+		mux.Handle("GET /", spaHandler(dir))
+	}
 	mux.HandleFunc("POST /api/v1/auth/register", handleRegister(db))
 	mux.HandleFunc("POST /api/v1/auth/login", handleLogin(db))
 	mux.Handle("GET /api/v1/me", requireAuth(handleMe(db)))
@@ -55,6 +59,9 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("POST /api/v1/assets", requireAuth(handleCreateAsset(db)))
 	mux.Handle("PUT /api/v1/assets/{id}", requireAuth(handleUpdateAsset(db)))
 	mux.Handle("DELETE /api/v1/assets/{id}", requireAuth(handleDeleteAsset(db)))
+	mux.Handle("GET /api/v1/assets/{id}/inheritors", requireAuth(handleListAssetInheritors(db)))
+	mux.Handle("POST /api/v1/assets/{id}/inheritors", requireAuth(handleCreateAssetInheritor(db)))
+	mux.Handle("DELETE /api/v1/assets/{id}/inheritors/{iid}", requireAuth(handleDeleteAssetInheritor(db)))
 	mux.Handle("GET /api/v1/inheritors", requireAuth(handleListInheritors(db)))
 	mux.Handle("POST /api/v1/inheritors", requireAuth(handleCreateInheritor(db)))
 	mux.Handle("PUT /api/v1/inheritors/{id}", requireAuth(handleUpdateInheritor(db)))

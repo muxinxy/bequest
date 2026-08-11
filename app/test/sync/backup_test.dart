@@ -256,9 +256,9 @@ void main() {
     final byName = <String, Map<String, dynamic>>{
       for (final a in createdAssets) a['name'].toString(): a,
     };
-    expect(byName['房产A']!['category_id'], '10'); // 已存在分类:复用
-    expect(byName['证券B']!['category_id'], '99'); // 新分类:创建后复用
-    expect(byName['收藏C']!['category_id'], '99'); // 预设名服务端无此分类:按名创建后复用
+    expect(byName['房产A']!['category_id'], 10); // 已存在分类:复用(服务端 int64)
+    expect(byName['证券B']!['category_id'], 99); // 新分类:创建后复用
+    expect(byName['收藏C']!['category_id'], 99); // 预设名服务端无此分类:按名创建后复用
     expect(byName['房产A']!['encrypted_data'], 'blob-1'); // 密文原样
   });
 }

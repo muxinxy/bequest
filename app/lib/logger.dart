@@ -1,8 +1,8 @@
-import 'dart:io';
+import 'platform/string_store.dart';
+import 'platform/string_store_io.dart'
+    if (dart.library.js_interop) 'platform/string_store_web.dart';
 
-import 'package:path_provider/path_provider.dart';
-
-/// 轻量文件日志:追加写入 应用文档目录/logs/app.log。
+/// 轻量日志:追加写入 应用文档目录/logs/app.log(VM)或 localStorage(Web)。
 /// 所有 IO 失败静默吞掉,绝不影响业务。供"关于"页导出排查问题。
 class Logger {
   Logger._();
@@ -18,6 +18,12 @@ class Logger {
   /// 串行写队列:保证顺序,也便于测试 await [flush]。
   Future<void> _pending = Future.value();
 
+  /// 平台存储:VM 用文件(logs/app.log),Web 用 localStorage。
+  StringStore get _store => makeStringStore(
+    fileName: 'logs/app.log',
+    directoryProvider: directoryOverride,
+  );
+
   void d(String msg) => _enqueue('D', msg);
 
   void e(String msg) => _enqueue('E', msg);
@@ -29,14 +35,6 @@ class Logger {
   /// 等待队列中的写操作全部完成(测试用)。
   Future<void> flush() => _pending;
 
-  Future<File> _logFile() async {
-    final dir = directoryOverride != null
-        ? await directoryOverride!()
-        : (await getApplicationDocumentsDirectory()).path;
-    return File('$dir${Platform.pathSeparator}logs'
-        '${Platform.pathSeparator}app.log');
-  }
-
   Future<void> _append(String level, String msg) async {
     try {
       final now = DateTime.now();
@@ -44,11 +42,7 @@ class Logger {
       final line = '[${now.year}-${pad(now.month)}-${pad(now.day)} '
           '${pad(now.hour)}:${pad(now.minute)}:${pad(now.second)}.'
           '${pad(now.millisecond, 3)}] [$level] $msg\n';
-      final file = await _logFile();
-      if (!await file.parent.exists()) {
-        await file.parent.create(recursive: true);
-      }
-      final existing = await file.exists() ? await file.readAsString() : '';
+      final existing = await _store.read() ?? '';
       var content = existing;
       if (content.length + line.length > _maxBytes) {
         // 超限:丢旧保新,只留末尾 64KB。
@@ -56,7 +50,7 @@ class Logger {
             ? content.substring(content.length - _keepBytes)
             : '';
       }
-      await file.writeAsString('$content$line', flush: true);
+      await _store.write('$content$line');
     } catch (_) {
       // 日志失败静默,不影响业务。
     }
@@ -65,9 +59,7 @@ class Logger {
   /// 读取完整日志内容(用于导出);文件不存在返回空串。
   Future<String> readLog() async {
     try {
-      final file = await _logFile();
-      if (!await file.exists()) return '';
-      return await file.readAsString();
+      return await _store.read() ?? '';
     } catch (_) {
       return '';
     }
@@ -75,8 +67,7 @@ class Logger {
 
   Future<void> clear() async {
     try {
-      final file = await _logFile();
-      if (await file.exists()) await file.delete();
+      await _store.delete();
     } catch (_) {
       // 静默。
     }

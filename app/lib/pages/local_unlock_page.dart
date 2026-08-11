@@ -65,7 +65,7 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
     setState(() => _submitting = true);
     try {
       final salt = generateSalt();
-      final mk = deriveMasterKey(_passwordController.text, salt);
+      final mk = await deriveMasterKey(_passwordController.text, salt);
       await _store.saveMasterSalt(salt);
       await _store.saveMasterKey(mk);
       // 主密码提示语(可选):仅本机保存,帮助回忆,不随备份上传。

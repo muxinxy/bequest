@@ -85,6 +85,14 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
                   border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 8),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '可用变量:\n{name} 资产名 · {date} 到期日 · {days} 未登录天数',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ),
             ],
           ),
         ),

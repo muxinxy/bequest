@@ -133,7 +133,7 @@ Future<String?> extractBackupJsonAny(
   final salt = payloadSalt(payloadJson);
   if (password != null && password.isNotEmpty && salt != null) {
     final result =
-        await extractBackupJson(payloadJson, deriveMasterKey(password, salt));
+        await extractBackupJson(payloadJson, await deriveMasterKey(password, salt));
     if (result != null) return result;
   }
   return null;
@@ -202,7 +202,8 @@ Future<({int ok, int fail})> restoreAssets(
         'asset_type': asset['asset_type']?.toString() ?? 'physical',
         'encrypted_data': asset['encrypted_data']?.toString() ?? '',
         'expiry_date': asset['expiry_date']?.toString(),
-        'category_id': ?categoryId,
+        // 服务端 category_id 为 int64:字符串形式转回数字。
+        'category_id': categoryId == null ? null : int.tryParse(categoryId),
       });
       ok++;
     } catch (_) {

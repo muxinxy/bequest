@@ -17,7 +17,7 @@ Future<bool> verifyMasterPassword(
   if (salt == null || salt.isEmpty) return false;
   final masterKey = await s.readMasterKey();
   if (masterKey == null) return false;
-  return masterKey == deriveMasterKey(inputPassword, salt);
+  return masterKey == await deriveMasterKey(inputPassword, salt);
 }
 
 /// 主密码解锁纯逻辑(无 UI 依赖,可单测):

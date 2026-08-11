@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../storage/secure_store.dart';
+import '../utils/time_format.dart';
 
 /// 审计日志:只读展示后端记录的操作流水。
 class AuditPage extends StatefulWidget {
@@ -91,7 +92,7 @@ class _AuditPageState extends State<AuditPage> {
                               Text(detail),
                             Text(
                               '${_actorLabel(actor)}'
-                              '${createdAt == null || createdAt.isEmpty ? '' : ' · $createdAt'}',
+                              '${createdAt == null || createdAt.isEmpty ? '' : ' · ${formatServerTime(createdAt)}'}',
                             ),
                           ],
                         ),

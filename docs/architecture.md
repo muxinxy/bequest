@@ -10,7 +10,7 @@
 
 | 层 | 选型 | 说明 |
 |---|---|---|
-| 客户端 | Flutter 3.44 (Dart) | 当前仅 Android；后续 iOS/Web/鸿蒙(flutter_ohos) 同一套代码 |
+| 客户端 | Flutter 3.44 (Dart) | 同一套代码编译 Android + Web（flutter_ohos 后续） |
 | 本地存储 | SQLite (drift) + 字段级 AES-256-GCM | 敏感字段密文，非敏感字段明文 |
 | 密钥派生 | Argon2id → AES-256 主密钥 | 主密码 ≠ 账户密码，忘记主密码 = 数据丢失（有意为之） |
 | 后端 | Go (标准库 net/http) | 单二进制；1.22+ 路由模式 |
@@ -22,11 +22,12 @@
 
 ```
 bequest/
-├── app/                          # Flutter 客户端
+├── app/                          # Flutter 客户端（Android + Web）
 │   └── lib/
 │       ├── main.dart             # 入口：登录态路由
 │       ├── api/                  # HTTP 客户端
 │       ├── crypto/               # 主密码派生、加解密
+│       ├── platform/             # 平台抽象：string_store/file_share（io/web 双实现）
 │       ├── pages/                # 页面
 │       └── widgets/
 ├── server/                       # Go 后端
@@ -94,6 +95,23 @@ bequest/
 - 发布：tag `v*` 触发 GitHub Actions——矩阵构建 + buildx 双架构推 `ghcr.io/muxinxy/bequest` + Release 资产；workflow 用 `"on":` 加引号规避 YAML 1.1 解析器布尔化问题
 - 迁移部署：SQL 迁移通过 `go:embed` 编译进二进制，Docker 运行时不依赖外部 `migrations/` 目录；仅将 `/data` 作为数据库持久化卷
 
+### ADR-12 资产级密钥隔离
+
+- 每资产独立随机 AK（AES-256），资产密文改用 AK 加密；AK 分别被 MK（号主）与 WK（继承人）包装为 `asset_key_wrapped_mk` / `asset_key_wrapped_wk` 上传（`assets` 表新增两列，迁移 005）
+- 新增 `asset_inheritors` 表：`asset_id × inheritor_id × priority × trigger_days`（`UNIQUE(asset_id, inheritor_id)`）；绑定即资产级继承，`trigger_days` 独立判定，否则沿用全局升级线
+- `inheritance_events` 加 `asset_id` 列（NULL = 全量事件）；调度器 `triggerInheritance` 先按 `asset_inheritors` 逐资产创建事件，全部资产有绑定则跳过全量事件
+- 继承人 claim：资产级事件返回 `{"asset_key_wrapped_wk","asset_id","status"}`——只拿被指定的资产，拿不到 `master_key_wrapped`
+- 老资产渐进兼容：客户端 `decryptAssetData` 有 `asset_key_wrapped_mk` 则解 AK 再解密，否则回退 MK 直解（历史数据不受影响）
+- 管理：`server/asset_inheritors.go` 三 handler（list/create/delete），校验继承人属于同一用户；API `GET/POST /api/v1/assets/{id}/inheritors`、`DELETE /api/v1/assets/{id}/inheritors/{iid}`
+
+### ADR-13 Web 客户端
+
+- 同一套 Flutter 代码编译 Web；服务端静态托管 `build/web` + SPA 回退（`web.go` 的 `webDir()`：`WEB_DIR` env > 自动探测；`spaHandler` 真实文件直出、`/api/*` 返回 404、其余回退 `index.html`）
+- CORS 中间件：`Allow-Origin *`（Bearer 认证无 cookie，`*` 可接受）、`OPTIONS` 预检 204
+- Web 端 argon2id 派生：自托管 WASM（`web/assets/hash-wasm.js`，约 0.3s，纯 JS 约 33s）；条件导入 `key_derivation_io.dart`（pointycastle）/ `key_derivation_web.dart`（hash-wasm）
+- 平台存储抽象：`string_store`（文件 / localStorage）、`file_share`（系统分享 / 浏览器下载）——`platform/` 下 io、web 双实现
+- `local_auth` Web 禁用（网页无生物识别）；Web 默认相对路径请求（同源免 CORS）
+
 ### ADR-7 导入导出（纯客户端 E2E）
 
 - 导出/导入完全在客户端完成：拉取密文 → 主密码验证（派生比对本地 MK，salt 于注册时保存 `bequest_master_salt`）→ 解密/加密 → JSON v1 文件
@@ -127,13 +145,14 @@ bequest/
   - `GET /healthz`
   - `POST /api/v1/auth/register`、`POST /api/v1/auth/login`、`GET /api/v1/me`
   - `GET|POST /api/v1/categories`、`DELETE /api/v1/categories/{id}`（删除后资产 category_id 自动置空）
-  - `GET|POST /api/v1/assets`、`GET|PUT|DELETE /api/v1/assets/{id}`
+  - `GET|POST /api/v1/assets`、`GET|PUT|DELETE /api/v1/assets/{id}`、`GET|POST /api/v1/assets/{id}/inheritors`、`DELETE /api/v1/assets/{id}/inheritors/{iid}`
   - `GET|POST|PUT|DELETE /api/v1/inheritors`（访问码仅存 sha256，返回不含）
   - `GET|POST|PUT|DELETE /api/v1/reminder-templates`（is_preset=1 系统模板只读）
   - `GET /api/v1/reminders`、`POST /api/v1/reminders/{id}/read`
-  - `POST /api/v1/inheritance/claim`（无 JWT，event_key+access_code）→ `{"master_key_wrapped","status"}`
+  - `POST /api/v1/inheritance/claim`（无 JWT，event_key+access_code）→ 资产级事件返回 `{"asset_key_wrapped_wk","asset_id","status"}`，全量事件返回 `{"master_key_wrapped","status"}`
   - `GET /api/v1/inheritance/status`、`GET /api/v1/audit-log`
 - 资产列表不含 `encrypted_data`（元数据），单条含密文 base64；`encrypted_data` 为客户端 AES-256-GCM 加密后的 `base64(nonce‖ciphertext‖tag)`
+- 资产请求/响应含可选字段 `asset_key_wrapped_mk` / `asset_key_wrapped_wk`（空串经 nullable() 转 NULL）
 - 预设分类为客户端常量（不落库），自定义分类走 API；预设选中即 `category_id=null`（升级路径：服务端种子分类）
 
 ## 关键数据流

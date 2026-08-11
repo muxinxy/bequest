@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../models/inheritance_status.dart';
 import '../storage/secure_store.dart';
+import '../utils/time_format.dart';
 
 /// 继承状态:当前阶段、升级等级、最近登录与继承事件列表。
 class InheritanceStatusPage extends StatefulWidget {
@@ -101,7 +102,7 @@ class _InheritanceStatusPageState extends State<InheritanceStatusPage> {
                                   const SizedBox(height: 4),
                                   Text(
                                     '升级等级:${status.escalationLevel ?? 0}'
-                                    '${status.lastLoginAt == null ? '' : ' · 最近登录 ${status.lastLoginAt}'}',
+                                    '${status.lastLoginAt == null ? '' : ' · 最近登录 ${formatServerTime(status.lastLoginAt)}'}',
                                   ),
                                 ],
                               ),
@@ -130,11 +131,11 @@ class _InheritanceStatusPageState extends State<InheritanceStatusPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 if (e.createdAt != null)
-                                  Text('创建:${e.createdAt}'),
+                                  Text('创建:${formatServerTime(e.createdAt)}'),
                                 if (e.claimedAt != null)
-                                  Text('领取:${e.claimedAt}'),
+                                  Text('领取:${formatServerTime(e.claimedAt)}'),
                                 if (e.reversedAt != null)
-                                  Text('撤销:${e.reversedAt}'),
+                                  Text('撤销:${formatServerTime(e.reversedAt)}'),
                               ],
                             ),
                           ),

@@ -2,9 +2,10 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:argon2/argon2.dart';
-import 'package:pointycastle/export.dart'
-    hide Argon2Parameters, Argon2BytesGenerator;
+import 'package:pointycastle/export.dart';
+
+import 'key_derivation_io.dart'
+    if (dart.library.js_interop) 'key_derivation_web.dart';
 
 /// 生成 16 字节随机盐,返回 base64 字符串。
 String generateSalt() {
@@ -14,22 +15,12 @@ String generateSalt() {
 /// 用 Argon2id 从主密码派生 32 字节主密钥,返回 base64 字符串。
 ///
 /// [saltB64] 为 base64 编码的盐。
-/// ponytail: 镜像源 argon2 仅到 1.0.1,无高层 Argon2id 类,
-/// 改用底层 API,参数与 Argon2id(memory 65536 KiB, iterations 3, parallelism 4) 一致。
-String deriveMasterKey(String masterPassword, String saltB64) {
-  final parameters = Argon2Parameters(
-    Argon2Parameters.ARGON2_id,
-    base64.decode(saltB64),
-    iterations: 3,
-    memory: 65536,
-    lanes: 4,
-  );
-  final generator = Argon2BytesGenerator();
-  generator.init(parameters);
-  final key = Uint8List(32);
-  generator.generateBytesFromString(masterPassword, key);
-  return base64.encode(key);
-}
+/// ponytail: VM/桌面走 pointycastle native int;web 走 hash-wasm WASM
+/// (自托管 web/assets/hash-wasm.js,~200ms;Register64 纯 JS 需 ~33s)。
+/// 两者参数一致(memory 65536 KiB, iterations 3, parallelism 4, V13),
+/// 派生结果与旧 argon2 1.0.1 逐字节相同,见 test/web_argon2_compat_test.dart。
+Future<String> deriveMasterKey(String masterPassword, String saltB64) =>
+    platformDeriveMasterKey(masterPassword, saltB64);
 
 /// 生成 32 字节随机包装密钥,返回 base64 字符串。
 String generateWrappingKey() {

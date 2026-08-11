@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
@@ -31,8 +31,8 @@ void main() {
 
   group('reencryptVault', () {
     test('旧密钥写 → 新密钥重加密 → 新密钥可读,旧密钥不可读', () async {
-      final oldMk = deriveMasterKey(oldPassword, salt);
-      final newMk = deriveMasterKey(newPassword, 'bmV3c2FsdA==');
+      final oldMk = await deriveMasterKey(oldPassword, salt);
+      final newMk = await deriveMasterKey(newPassword, 'bmV3c2FsdA==');
       await vault.saveLocalData(
         {'schema': 1, 'assets': <Map<String, dynamic>>[], 'categories': <Map<String, dynamic>>[]},
         oldMk,
@@ -64,12 +64,12 @@ void main() {
     });
 
     test('旧版备份串(无 schema)→ false 且文件不被覆盖', () async {
-      final oldMk = deriveMasterKey(oldPassword, salt);
+      final oldMk = await deriveMasterKey(oldPassword, salt);
       const backup = '{"app":"bequest","type":"backup","version":1,"assets":[]}';
       await vault.saveVault(backup, oldMk);
       final ok = await reencryptVault(
         oldMk: oldMk,
-        newMk: deriveMasterKey(newPassword, 'bmV3c2FsdA=='),
+        newMk: await deriveMasterKey(newPassword, 'bmV3c2FsdA=='),
         newSalt: 'bmV3c2FsdA==',
         vault: vault,
       );
@@ -78,7 +78,7 @@ void main() {
     });
 
     test('密钥错误 → false 不抛异常', () async {
-      final oldMk = deriveMasterKey(oldPassword, salt);
+      final oldMk = await deriveMasterKey(oldPassword, salt);
       await vault.saveLocalData(
         {'schema': 1, 'assets': <Map<String, dynamic>>[]},
         oldMk,
@@ -95,7 +95,7 @@ void main() {
 
   group('changeMasterPasswordLocal(本地路径)', () {
     Future<void> seedOld() async {
-      final oldMk = deriveMasterKey(oldPassword, salt);
+      final oldMk = await deriveMasterKey(oldPassword, salt);
       await store.saveMasterSalt(salt);
       await store.saveMasterKey(oldMk);
       await store.saveMasterHint('旧提示');

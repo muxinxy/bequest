@@ -55,7 +55,7 @@ Future<({bool ok, String? error, String? newMk})> changeMasterPasswordLocal({
     return (ok: false, error: '未找到当前主密钥,无法修改', newMk: null);
   }
   final newSalt = generateSalt();
-  final newMk = deriveMasterKey(newPassword, newSalt);
+  final newMk = await deriveMasterKey(newPassword, newSalt);
   // 本地库缺失/不可读则跳过重加密(返回 false),不阻断主密码修改。
   await reencryptVault(
     oldMk: oldMk,

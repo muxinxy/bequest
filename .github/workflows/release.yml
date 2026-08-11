@@ -56,6 +56,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: 构建 Flutter Web 客户端
+        run: cd app && flutter pub get && flutter build web
+
       - uses: docker/setup-buildx-action@v3
 
       - name: 确定版本号
@@ -84,7 +92,7 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: ./server
+          context: .
           file: ./server/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}

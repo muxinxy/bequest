@@ -23,3 +23,6 @@ app/*.iml
 *.log
 .DS_Store
 Thumbs.db
+
+# 工具目录
+.omo/

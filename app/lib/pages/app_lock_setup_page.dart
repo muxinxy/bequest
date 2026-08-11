@@ -56,13 +56,16 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
       final hasPattern = (await _store.readPatternHash()) != null;
       // 查询设备实际注册的生物识别,用于支持提示。
       var available = <BiometricType>[];
-      try {
-        final auth = LocalAuthentication();
-        if (await auth.isDeviceSupported() && await auth.canCheckBiometrics) {
-          available = await auth.getAvailableBiometrics();
+      // ponytail: web 无 local_auth 实现,直接按无生物识别处理。
+      if (!kIsWeb) {
+        try {
+          final auth = LocalAuthentication();
+          if (await auth.isDeviceSupported() && await auth.canCheckBiometrics) {
+            available = await auth.getAvailableBiometrics();
+          }
+        } catch (_) {
+          available = [];
         }
-      } catch (_) {
-        available = [];
       }
       if (mounted) {
         setState(() {

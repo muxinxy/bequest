@@ -219,9 +219,10 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 		var status, codeHash string
 		var ownerID int64
 		var mkw []byte
-		err := db.QueryRow(`SELECT e.id, e.status, e.access_code_hash, e.user_id, u.master_key_wrapped
+		var assetID sql.NullInt64
+		err := db.QueryRow(`SELECT e.id, e.status, e.access_code_hash, e.user_id, u.master_key_wrapped, e.asset_id
 			FROM inheritance_events e JOIN users u ON u.id = e.user_id WHERE e.event_key = ?`, req.EventKey).
-			Scan(&eventID, &status, &codeHash, &ownerID, &mkw)
+			Scan(&eventID, &status, &codeHash, &ownerID, &mkw, &assetID)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusUnauthorized, "invalid event_key or access_code")
 			return
@@ -257,6 +258,22 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 			ownerID, fmt.Sprintf("inheritor:%d", eventID), req.EventKey); err != nil {
 			log.Printf("audit claim: %v", err)
 		}
+		// 资产级事件:只发放该资产的继承包装密钥(继承人凭 WK 解出该资产 AK);
+		// 全量事件:发放用户级主密钥包装(现有行为)。
+		if assetID.Valid {
+			var wk string
+			if err := db.QueryRow(`SELECT asset_key_wrapped_wk FROM assets WHERE id = ?`, assetID.Int64).Scan(&wk); err != nil || wk == "" {
+				log.Printf("claim asset key: asset=%d err=%v", assetID.Int64, err)
+				writeError(w, http.StatusInternalServerError, "asset key missing")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"asset_key_wrapped_wk": wk,
+				"asset_id":             assetID.Int64,
+				"status":               "claimed",
+			})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"master_key_wrapped": base64.StdEncoding.EncodeToString(mkw),
 			"status":             "claimed",
@@ -267,6 +284,8 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 type eventJSON struct {
 	ID         int64   `json:"id"`
 	Status     string  `json:"status"`
+	AssetID    *int64  `json:"asset_id"`
+	AssetName  *string `json:"asset_name"`
 	CreatedAt  string  `json:"created_at"`
 	ClaimedAt  *string `json:"claimed_at"`
 	ReversedAt *string `json:"reversed_at"`
@@ -290,8 +309,10 @@ func handleInheritanceStatus(db *sql.DB) http.HandlerFunc {
 		if lastLogin.Valid {
 			ll = &lastLogin.String
 		}
-		rows, err := db.Query(`SELECT id, status, created_at, claimed_at, reversed_at
-			FROM inheritance_events WHERE user_id = ? ORDER BY id DESC`, uid)
+		rows, err := db.Query(`SELECT e.id, e.status, e.created_at, e.claimed_at, e.reversed_at,
+				e.asset_id, a.name
+			FROM inheritance_events e LEFT JOIN assets a ON a.id = e.asset_id
+			WHERE e.user_id = ? ORDER BY e.id DESC`, uid)
 		if err != nil {
 			log.Printf("list events: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -302,7 +323,9 @@ func handleInheritanceStatus(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var e eventJSON
 			var claimed, reversed sql.NullString
-			if err := rows.Scan(&e.ID, &e.Status, &e.CreatedAt, &claimed, &reversed); err != nil {
+			var assetID sql.NullInt64
+			var assetName sql.NullString
+			if err := rows.Scan(&e.ID, &e.Status, &e.CreatedAt, &claimed, &reversed, &assetID, &assetName); err != nil {
 				log.Printf("scan event: %v", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
@@ -312,6 +335,12 @@ func handleInheritanceStatus(db *sql.DB) http.HandlerFunc {
 			}
 			if reversed.Valid {
 				e.ReversedAt = &reversed.String
+			}
+			if assetID.Valid {
+				e.AssetID = &assetID.Int64
+			}
+			if assetName.Valid {
+				e.AssetName = &assetName.String
 			}
 			events = append(events, e)
 		}

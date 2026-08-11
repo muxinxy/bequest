@@ -42,7 +42,7 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() => _submitting = true);
     try {
       final salt = generateSalt();
-      final masterKey = deriveMasterKey(
+      final masterKey = await deriveMasterKey(
         _masterPasswordController.text,
         salt,
       );

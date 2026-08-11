@@ -1,13 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../logger.dart';
+import '../platform/file_share.dart';
 
 /// 关于本应用:版本信息、简介、GitHub 链接、日志导出/清空。
 /// 所有插件调用都包 try/catch,插件缺失或失败时回退,不影响页面展示。
@@ -69,14 +66,8 @@ class _AboutPageState extends State<AboutPage> {
         _snack('暂无日志');
         return;
       }
-      final dir = await getTemporaryDirectory();
-      final file = File(
-        '${dir.path}${Platform.pathSeparator}bequest_logs.txt',
-      );
-      await file.writeAsString(log);
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)], text: '托孤调试日志'),
-      );
+      final ok = await shareTextFile('bequest_logs.txt', log, '托孤调试日志');
+      if (!ok && mounted) _snack('导出日志失败');
     } catch (_) {
       if (!mounted) return;
       _snack('导出日志失败');

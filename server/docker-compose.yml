@@ -14,7 +14,10 @@
 #   把宿主机配置挂载到 ./config.json:/data/config.json 即可生效。
 services:
   bequest:
-    build: .
+    # build 上下文为仓库根(需先 cd app && flutter build web, 见 Dockerfile 注释)
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
     image: ghcr.io/muxinxy/bequest:latest
     container_name: bequest
     restart: unless-stopped

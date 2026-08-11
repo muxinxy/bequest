@@ -170,4 +170,20 @@ class LocalAssetRepository implements AssetRepository {
     (data['assets'] as List).removeWhere((a) => '${(a as Map)['id']}' == id);
     await _save(data);
   }
+
+  // 本地模式无继承概念:继承人绑定为空列表(避免 UI 崩溃),写操作抛错。
+  @override
+  Future<List<Map<String, dynamic>>> listAssetInheritors(String assetId) async =>
+      const [];
+
+  @override
+  Future<Map<String, dynamic>> createAssetInheritor(
+      String assetId, Map<String, dynamic> body) {
+    throw UnsupportedError('本地模式不支持资产级继承人设置');
+  }
+
+  @override
+  Future<void> deleteAssetInheritor(String assetId, String iid) {
+    throw UnsupportedError('本地模式不支持资产级继承人设置');
+  }
 }

@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../models/reminder.dart';
 import '../storage/secure_store.dart';
+import '../utils/time_format.dart';
 
 /// 站内提醒收件箱:未读加粗并带圆点,点击标记已读并查看详情。
 class RemindersPage extends StatefulWidget {
@@ -86,7 +87,7 @@ class _RemindersPageState extends State<RemindersPage> {
               if (reminder.createdAt != null) ...[
                 const SizedBox(height: 12),
                 Text(
-                  reminder.createdAt!,
+                  formatServerTime(reminder.createdAt),
                   style: const TextStyle(color: Colors.grey, fontSize: 12),
                 ),
               ],
@@ -160,7 +161,7 @@ class _RemindersPageState extends State<RemindersPage> {
                       ),
                       subtitle: Text(
                         '${_typeLabel(reminder.type)}'
-                        '${reminder.createdAt == null ? '' : ' · ${reminder.createdAt}'}',
+                        '${reminder.createdAt == null ? '' : ' · ${formatServerTime(reminder.createdAt)}'}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),

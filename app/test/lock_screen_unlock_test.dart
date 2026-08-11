@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,7 +20,7 @@ void main() {
     FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform({});
     final store = SecureStore();
     await store.saveMasterSalt(salt);
-    await store.saveMasterKey(deriveMasterKey(correct, salt));
+    await store.saveMasterKey(await deriveMasterKey(correct, salt));
     await store.savePinSalt(salt);
     await store.savePinHash(hashPin(pin, salt));
     await store.setLockEnabled(true);

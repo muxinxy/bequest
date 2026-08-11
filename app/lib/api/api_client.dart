@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../logger.dart';
@@ -10,7 +11,8 @@ class ApiClient {
   /// 默认本机后端;构造时可注入覆盖(见 ApiConfig,设置页可持久化覆盖)。
   ApiClient({http.Client? client, String? baseUrl})
       : _client = client ?? http.Client(),
-        baseUrl = baseUrl ?? 'http://10.0.2.2:8080';
+        // ponytail: web 与后端同源,空 baseUrl = 相对路径;移动端默认开发机。
+        baseUrl = baseUrl ?? (kIsWeb ? '' : 'http://10.0.2.2:8080');
 
   final http.Client _client;
   final String baseUrl;
@@ -104,6 +106,28 @@ class ApiClient {
   /// DELETE /api/v1/assets/{id}
   Future<void> deleteAsset(String jwt, String id) {
     return _delete('/api/v1/assets/$id', jwt);
+  }
+
+  /// GET /api/v1/assets/{id}/inheritors:该资产的继承人绑定列表
+  Future<List<Map<String, dynamic>>> listAssetInheritors(
+    String jwt,
+    String assetId,
+  ) {
+    return _getList('/api/v1/assets/$assetId/inheritors', jwt);
+  }
+
+  /// POST /api/v1/assets/{id}/inheritors:绑定继承人到资产
+  Future<Map<String, dynamic>> createAssetInheritor(
+    String jwt,
+    String assetId,
+    Map<String, dynamic> body,
+  ) {
+    return _postAuth('/api/v1/assets/$assetId/inheritors', body, jwt);
+  }
+
+  /// DELETE /api/v1/assets/{id}/inheritors/{iid}
+  Future<void> deleteAssetInheritor(String jwt, String assetId, String iid) {
+    return _delete('/api/v1/assets/$assetId/inheritors/$iid', jwt);
   }
 
   /// GET /api/v1/inheritors

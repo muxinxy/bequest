@@ -38,6 +38,10 @@ class LockGate extends StatefulWidget {
 
   final Widget child;
 
+  /// 手动锁定:立即锁定应用(重新进入需解锁)。
+  /// 无凭据(未登录且无主密钥)时锁定无意义,保持解锁。
+  static void lockNow() => _LockGateState._instance?.lockNow();
+
   @override
   State<LockGate> createState() => _LockGateState();
 }
@@ -50,15 +54,21 @@ class _LockGateState extends State<LockGate> {
   bool _locked = false;
   Timer? _lockTimer;
 
+  /// 手动锁定入口:主页"锁定"按钮经此触发(见 [LockGate.lockNow])。
+  /// ponytail: 单实例应用,静态指针够用。
+  static _LockGateState? _instance;
+
   @override
   void initState() {
     super.initState();
+    _instance = this;
     _lifecycleListener = AppLifecycleListener(onStateChange: _onLifecycleState);
     _init();
   }
 
   @override
   void dispose() {
+    if (_instance == this) _instance = null;
     _lockTimer?.cancel();
     _lifecycleListener.dispose();
     super.dispose();
@@ -140,6 +150,22 @@ class _LockGateState extends State<LockGate> {
             hasCredential: jwt != null || (mk != null && mk.isNotEmpty),
           ) &&
           mounted) {
+        setState(() => _locked = true);
+      }
+    } catch (_) {
+      // 读取失败保持当前状态。
+    }
+  }
+
+  /// 手动锁定:与 [._lockNow] 不同,只要求有凭据(忽略 lock_enabled 开关)。
+  /// 用户主动点"锁定"就是要锁,即使退出时不锁;无凭据时锁定无法解锁,放弃。
+  Future<void> lockNow() async {
+    if (_locked) return;
+    try {
+      final jwt = await _store.readJwt();
+      final mk = await _store.readMasterKey();
+      final hasCredential = jwt != null || (mk != null && mk.isNotEmpty);
+      if (hasCredential && mounted) {
         setState(() => _locked = true);
       }
     } catch (_) {

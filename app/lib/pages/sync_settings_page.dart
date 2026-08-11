@@ -222,7 +222,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
           final salt = payloadSalt(payloadJson);
           if (salt != null) {
             await _store.saveMasterSalt(salt);
-            await _store.saveMasterKey(deriveMasterKey(usedPassword, salt));
+            await _store.saveMasterKey(await deriveMasterKey(usedPassword, salt));
           }
         }
       }
