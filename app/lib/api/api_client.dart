@@ -130,6 +130,36 @@ class ApiClient {
     return _delete('/api/v1/assets/$assetId/inheritors/$iid', jwt);
   }
 
+  /// GET /api/v1/categories/{id}/inheritors:该分组的继承人绑定列表
+  Future<List<Map<String, dynamic>>> listCategoryInheritors(
+    String jwt,
+    String categoryId,
+  ) {
+    return _getList('/api/v1/categories/$categoryId/inheritors', jwt);
+  }
+
+  /// POST /api/v1/categories/{id}/inheritors:绑定继承人到分组
+  Future<Map<String, dynamic>> createCategoryInheritor(
+    String jwt,
+    String categoryId,
+    Map<String, dynamic> body,
+  ) {
+    return _postAuth('/api/v1/categories/$categoryId/inheritors', body, jwt);
+  }
+
+  /// DELETE /api/v1/categories/{id}/inheritors/{iid}
+  Future<void> deleteCategoryInheritor(String jwt, String categoryId, String iid) {
+    return _delete('/api/v1/categories/$categoryId/inheritors/$iid', jwt);
+  }
+
+  /// GET /api/v1/inheritors/{id}/assets:该继承人绑定的所有资产(含分组继承)
+  Future<List<Map<String, dynamic>>> listInheritorAssets(
+    String jwt,
+    String inheritorId,
+  ) {
+    return _getList('/api/v1/inheritors/$inheritorId/assets', jwt);
+  }
+
   /// GET /api/v1/inheritors
   Future<List<Map<String, dynamic>>> listInheritors(String jwt) {
     return _getList('/api/v1/inheritors', jwt);
@@ -215,6 +245,18 @@ class ApiClient {
       headers: _authHeaders(jwt),
     );
     return _decode(response);
+  }
+
+  /// GET /api/v1/settings/inheritance → {"enabled":bool}
+  Future<Map<String, dynamic>> getInheritanceToggle(String jwt) =>
+      _get('/api/v1/settings/inheritance', jwt);
+
+  /// PUT /api/v1/settings/inheritance {"enabled":bool} → {"enabled":bool}
+  Future<Map<String, dynamic>> putInheritanceToggle(
+    String jwt,
+    bool enabled,
+  ) {
+    return _put('/api/v1/settings/inheritance', {'enabled': enabled}, jwt);
   }
 
   /// PUT /api/v1/settings/master-key,修改主密码后更新云端继承密钥包装。

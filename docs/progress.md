@@ -19,6 +19,7 @@
 | UX 反馈 3 | MainActivity→FlutterFragmentActivity（修生物识别 no_fragment_activity 根因）、图案限流修复（<4 点也计数）、应用锁主密码绕过、修改主密码/提示语（本地重加密 + 云端 master_key_wrapped 更新 API） | ✅ 完成 |
 | 后置 | 多继承人优先级、定时释放、生前共享、数字遗言、Excel 导出、Web/iOS/鸿蒙 | ⏳ |
 | Web 客户端 + 资产级继承 | Web 编译(Android+Web)、服务端同源托管、web 派生 WASM 性能、资产级密钥隔离、手动锁定、加密导出/覆盖导入、客户端时区、模板变量提示 | ✅ 完成 |
+| v0.4.1 | 分组继承 + 重置主密码 | Android 网络权限修复、Web 锁定修复、分组视图与搜索、分组继承人、继承开关、继承人绑定资产多选解绑、账号密码重置主密码 | ✅ 完成 |
 
 ## 当前状态（P1 完成，下一步 P2）
 
@@ -103,6 +104,20 @@
 - hash-wasm 采用**下载后自托管**（web/assets/hash-wasm.js，UMD 单文件），避免运行时依赖 CDN（内网/离线部署不可用）
 - `dart:js_util` 在 flutter analyze 的 VM 视角误报（`unavailable` 提示），但 web 编译正常——以 `flutter build web` 为准
 
+## 当前状态（v0.4.1：分组继承 + 重置主密码完成）
+
+**v0.4.1 已交付**：
+- **Android 网络权限修复**：release 包无网络——main AndroidManifest 缺 INTERNET（debug/profile 有）+ Android 9+ 禁明文 HTTP。修复：main manifest 加 `uses-permission INTERNET` + application `usesCleartextTraffic="true"`。这是"手机浏览器能访问但 APP 连接失败"的根因
+- **Web 锁定修复**：AppLockScreen 自动放行条件缺 `_hasMasterKey`（仅设主密码的用户点锁定立即自动解锁=锁定无效）；`LockGate.lockNow` 改为无条件锁定（锁屏自身处理无凭据）
+- **分组视图**：home_page 资产按分组展示（`_GroupedAssetList` + `_collapsedGroups` 折叠），分组标题显示资产数
+- **搜索增强**：`filterAssets` 加 `categoryNames` 参数，搜索同时匹配分组名和资产名
+- **分组继承人**：迁移 007 `category_inheritors` + CRUD API（GET/POST/DELETE `/categories/{id}/inheritors`）+ 调度器集成（资产无资产级绑定时按分组交接）+ CategoryInheritorsPage（分类管理页入口）
+- **继承开关**：迁移 006 `users.inheritance_enabled` + GET/PUT `/settings/inheritance` + 调度器 `processEscalation` 过滤 `inheritance_enabled=1` + 设置页 SwitchListTile（本地模式禁用）
+- **继承人绑定资产**：GET `/inheritors/{id}/assets`（UNION 资产级+分组级，含 binding_id/binding_type）+ InheritorAssetsPage（选择继承人→资产列表→多选解绑）
+- **重置主密码**：`reset_master_password.dart` + 页面（账户密码→新 MK/WK/salt→更新云端 master_key_wrapped→云端资产保留元数据清空凭据换新 AK→本地 vault 重建）→ 复用 PUT `/settings/master-key` 零后端新增
+- 验证：Flutter 119 测试全过、Go 全测试过、`flutter build web` 成功；继承开关 API 端到端 GET/PUT 200；分组继承绑定关系 SQL 验证正确
+- 备注：完整"分组继承触发→claim"端到端当时卡在测试环境（旧进程占 8080 端口，新进程 scheduler 未接管），非代码问题——分组继承 SQL/逻辑已单独验证
+
 ## 如何运行（交接用）
 
 ```powershell
@@ -132,3 +147,4 @@ go run .                    # 浏览器访问 http://localhost:8080
 - 2026-08-09：**发布 v0.1.0**——tag 推送触发 GitHub Actions（5 平台二进制 + GHCR 双架构镜像 + Release 资产）
 - 2026-08-09：**云/本地双模存储**——`AssetRepository` 抽象（Cloud/Local 双实现）+ `RepositoryFactory`；不登录可进本地模式（设置主密码 → 本地加密库全量 CRUD）；登录页新增「进入本地模式」；`ApiConfig` 服务器地址可配置（设置页保存 + 测试连接）；`extractBackupJsonAny` 支持「主密码 + 备份内 salt」跨设备恢复；三层权益矩阵（访客 20 条/免费 50 条/会员不限）UI 徽章 + 资产上限拦截；云↔本地切换迁移（拉取/上传 + 进度提示）；Release 新增 android job（Flutter APK 三 ABI → Release 资产）
 - 2026-08-11：**v0.4.0**——Web 客户端（同套代码编译，服务端托管）、资产级密钥隔离（ADR-12，每资产独立密钥+继承人绑定+按资产领取）、web 派生 WASM 性能修复、手动锁定/加密导出/覆盖导入/时区/模板提示
+- 2026-08-11：**v0.4.1**——Android release 网络权限修复（INTERNET+明文 HTTP）、Web 锁定修复、分组视图/搜索、分组继承人（ADR-12 扩展）、继承开关（ADR-14）、重置主密码（ADR-15）、继承人绑定资产

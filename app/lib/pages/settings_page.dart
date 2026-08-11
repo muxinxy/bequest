@@ -1,8 +1,10 @@
-import 'package:file_selector/file_selector.dart';
+﻿import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import '../api/api_config.dart';
 import '../models/asset.dart';
 import '../repository/asset_repository.dart';
+import '../storage/secure_store.dart';
 import 'about_page.dart';
 import 'app_lock_setup_page.dart';
 import 'audit_page.dart';
@@ -11,21 +13,72 @@ import 'change_master_password_page.dart';
 import 'export_page.dart';
 import 'import_page.dart';
 import 'inheritance_status_page.dart';
+import 'inheritor_assets_page.dart';
 import 'inheritors_page.dart';
 import 'reminder_templates_page.dart';
+import 'reset_master_password_page.dart';
 import 'server_settings_page.dart';
 import 'smtp_settings_page.dart';
 import 'sync_settings_page.dart';
 
 /// 设置:二级聚合页,收纳主页 AppBar 中拥挤的菜单项。
 /// 各项只做跳转或小交互,页面逻辑复用现有页面,不复制实现。
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key, required this.repository});
 
   final AssetRepository repository;
 
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  final _store = SecureStore();
+
+  /// 全局继承开关(仅云端模式有意义;本地模式无继承)。
+  bool _inheritanceEnabled = true;
+  bool _hasJwt = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadToggle();
+  }
+
+  Future<void> _loadToggle() async {
+    try {
+      final jwt = await _store.readJwt();
+      if (jwt == null || jwt.isEmpty) return;
+      final api = await ApiConfig.client();
+      final res = await api.getInheritanceToggle(jwt);
+      if (mounted) {
+        setState(() {
+          _hasJwt = true;
+          _inheritanceEnabled = res['enabled'] == true;
+        });
+      }
+    } catch (_) {
+      // 未登录/网络失败:保持默认。
+    }
+  }
+
+  Future<void> _toggleInheritance(bool value) async {
+    setState(() => _inheritanceEnabled = value);
+    try {
+      final jwt = await _store.readJwt();
+      if (jwt == null) return;
+      await (await ApiConfig.client()).putInheritanceToggle(jwt, value);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _inheritanceEnabled = !value);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('开关保存失败,请检查网络后重试')));
+    }
+  }
+
   Future<void> _exportFlow(BuildContext context) async {
-    final assets = await repository.listAssets().then(
+    final assets = await widget.repository.listAssets().then(
       (list) => list.map(Asset.fromJson).toList(),
     );
     if (!context.mounted) return;
@@ -57,7 +110,7 @@ class SettingsPage extends StatelessWidget {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) =>
-            ExportPage(assets: assets, repository: repository, encrypt: encrypt),
+            ExportPage(assets: assets, repository: widget.repository, encrypt: encrypt),
       ),
     );
   }
@@ -96,7 +149,7 @@ class SettingsPage extends StatelessWidget {
         MaterialPageRoute<void>(
           builder: (_) => ImportPage(
             fileText: text,
-            repository: repository,
+            repository: widget.repository,
             overwrite: overwrite,
           ),
         ),
@@ -123,7 +176,7 @@ class SettingsPage extends StatelessWidget {
           _entry(
             Icons.category_outlined,
             '分类管理',
-            () => _push(context, CategoryPage(repository: repository)),
+            () => _push(context, CategoryPage(repository: widget.repository)),
           ),
           _entry(
             Icons.file_download_outlined,
@@ -151,6 +204,22 @@ class SettingsPage extends StatelessWidget {
             '继承状态',
             () => _push(context, const InheritanceStatusPage()),
           ),
+          // 全局继承开关:一键开启/关闭继承功能(关闭后不再升级提醒/触发交接)。
+          SwitchListTile(
+            secondary: const Icon(Icons.power_settings_new),
+            title: const Text('继承开关'),
+            subtitle: Text(
+              _hasJwt ? '关闭后不触发继承交接' : '仅登录后可用',
+              style: const TextStyle(fontSize: 12),
+            ),
+            value: _inheritanceEnabled,
+            onChanged: _hasJwt ? _toggleInheritance : null,
+          ),
+          _entry(
+            Icons.people_alt_outlined,
+            '继承人绑定资产',
+            () => _push(context, InheritorAssetsPage(repository: widget.repository)),
+          ),
           _section(context, '账户与安全'),
           _entry(
             Icons.lock_outline,
@@ -161,6 +230,11 @@ class SettingsPage extends StatelessWidget {
             Icons.password_outlined,
             '修改主密码',
             () => _push(context, const ChangeMasterPasswordPage()),
+          ),
+          _entry(
+            Icons.restart_alt_outlined,
+            '重置主密码(忘记)',
+            () => _push(context, const ResetMasterPasswordPage()),
           ),
           _entry(
             Icons.mail_outline,

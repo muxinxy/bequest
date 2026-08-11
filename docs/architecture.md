@@ -90,6 +90,7 @@ bequest/
 - **三层权益**：访客（20 条、无云同步/继承、本地可用）/ 免费（50 条、云同步+继承）/ 会员（不限）；UI 徽章 + 创建时资产上限拦截
 - **模式切换**：云→本地（拉取全量写 vault）/ 本地→云（需登录，逐条上传，分类按名去重）——复制式迁移，非连续同步（ponytail: 后续可升级为双向增量）
 - **发布**：Release 含 Android APK（`flutter build apk --release --split-per-abi`，三 ABI 上传 assets）
+- Android 网络：主 manifest 加 `INTERNET` 权限 + `usesCleartextTraffic`（自托管 HTTP 必需；debug/profile 构建的权限/配置不继承到 release）
 
 - 二进制：`scripts/build.sh`（5 平台）/ `build.ps1`（本地 Windows）；Docker：多阶段 alpine 非 root，`WORKDIR=/data` 使相对路径 `data/bequest.db` 落在卷上
 - 发布：tag `v*` 触发 GitHub Actions——矩阵构建 + buildx 双架构推 `ghcr.io/muxinxy/bequest` + Release 资产；workflow 用 `"on":` 加引号规避 YAML 1.1 解析器布尔化问题
@@ -103,6 +104,8 @@ bequest/
 - 继承人 claim：资产级事件返回 `{"asset_key_wrapped_wk","asset_id","status"}`——只拿被指定的资产，拿不到 `master_key_wrapped`
 - 老资产渐进兼容：客户端 `decryptAssetData` 有 `asset_key_wrapped_mk` 则解 AK 再解密，否则回退 MK 直解（历史数据不受影响）
 - 管理：`server/asset_inheritors.go` 三 handler（list/create/delete），校验继承人属于同一用户；API `GET/POST /api/v1/assets/{id}/inheritors`、`DELETE /api/v1/assets/{id}/inheritors/{iid}`
+- 分组（分类）级继承（迁移 007 `category_inheritors`：`category_id × inheritor_id × priority × trigger_days`，`UNIQUE(category_id, inheritor_id)`）：分组绑定 = 该分组下未资产级绑定的资产的默认继承人，资产级绑定优先级更高
+- 调度器 `triggerInheritance`：资产无资产级绑定时按所属分组 `category_inheritors` 交接（JOIN inheritors/assets，`NOT EXISTS` 过滤已资产级绑定的资产）；分组绑定资产同样逐资产建事件、计入 boundAssets；有资产级/分组级配置的资产不进全量事件
 
 ### ADR-13 Web 客户端
 
@@ -111,6 +114,19 @@ bequest/
 - Web 端 argon2id 派生：自托管 WASM（`web/assets/hash-wasm.js`，约 0.3s，纯 JS 约 33s）；条件导入 `key_derivation_io.dart`（pointycastle）/ `key_derivation_web.dart`（hash-wasm）
 - 平台存储抽象：`string_store`（文件 / localStorage）、`file_share`（系统分享 / 浏览器下载）——`platform/` 下 io、web 双实现
 - `local_auth` Web 禁用（网页无生物识别）；Web 默认相对路径请求（同源免 CORS）
+- Web 锁定修复：AppLockScreen 自动放行条件加 `!_hasMasterKey`（主密码也是可校验方式，只设主密码的用户不能自动放行）；`LockGate.lockNow` 无条件锁定，锁屏自身处理无凭据场景（无任何解锁方式才自动放行）——修复 web 端手动锁定立即失效的根因
+
+### ADR-14 继承开关（全局）
+
+- 迁移 006：`users.inheritance_enabled`（默认 1）；关闭 = 调度器跳过升级提醒与继承触发
+- API：`GET /api/v1/settings/inheritance`（读 `{"enabled":bool}`）、`PUT /api/v1/settings/inheritance`（写开关）
+- 调度器 `processEscalation` 查询加 `AND inheritance_enabled = 1`；客户端设置页 SwitchListTile 开关（settings_page.dart）
+
+### ADR-15 重置主密码
+
+- 复用 `PUT /api/v1/settings/master-key`（账户密码验证 + 换 `master_key_wrapped`，零新增后端端点）
+- 客户端 `reset_master_password.dart`：派生新 MK/新 WK/新 salt → 更新云端 `master_key_wrapped` → 云端资产逐条保留元数据（name/分类/到期）、凭据清空、换新 AK 重加密 → 本地 vault 重建空库 → 更新本机密钥
+- 端到端加密固有代价：旧凭据不可恢复（页面明示用户）
 
 ### ADR-7 导入导出（纯客户端 E2E）
 
@@ -147,6 +163,9 @@ bequest/
   - `GET|POST /api/v1/categories`、`DELETE /api/v1/categories/{id}`（删除后资产 category_id 自动置空）
   - `GET|POST /api/v1/assets`、`GET|PUT|DELETE /api/v1/assets/{id}`、`GET|POST /api/v1/assets/{id}/inheritors`、`DELETE /api/v1/assets/{id}/inheritors/{iid}`
   - `GET|POST|PUT|DELETE /api/v1/inheritors`（访问码仅存 sha256，返回不含）
+  - `GET /api/v1/inheritors/{id}/assets`（该继承人绑定的所有资产：资产级 + 经分组，含 binding_id/binding_type 供解绑）
+  - `GET|POST /api/v1/categories/{id}/inheritors`、`DELETE /api/v1/categories/{id}/inheritors/{iid}`（分组级继承人，校验分类归属同一用户）
+  - `GET|PUT /api/v1/settings/inheritance`（全局继承开关）
   - `GET|POST|PUT|DELETE /api/v1/reminder-templates`（is_preset=1 系统模板只读）
   - `GET /api/v1/reminders`、`POST /api/v1/reminders/{id}/read`
   - `POST /api/v1/inheritance/claim`（无 JWT，event_key+access_code）→ 资产级事件返回 `{"asset_key_wrapped_wk","asset_id","status"}`，全量事件返回 `{"master_key_wrapped","status"}`

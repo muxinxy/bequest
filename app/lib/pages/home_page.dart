@@ -44,6 +44,9 @@ class _HomePageState extends State<HomePage> {
   bool _isLocal = false;
   bool _hasJwt = false;
 
+  /// 折叠的分组 id 集合(分组视图下点击分组标题折叠/展开)。
+  final Set<String> _collapsedGroups = {};
+
   @override
   void initState() {
     super.initState();
@@ -148,12 +151,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  String _categoryName(Asset asset) {
-    final id = asset.categoryId;
-    if (id == null || id.isEmpty) return '未分类';
-    return _categoryNames[id] ?? '未分类';
-  }
-
   /// 预设分类与'未分类'同为分类表中的真实行,过滤直接按 id 精确匹配。
   List<Asset> get _filteredAssets {
     final maps = filterAssets(
@@ -161,8 +158,38 @@ class _HomePageState extends State<HomePage> {
       typeFilter: null,
       categoryFilter: _filterCategoryId,
       search: _search,
+      categoryNames: _categoryNames,
     );
     return maps.map(Asset.fromJson).toList(growable: false);
+  }
+
+  /// 分组视图:资产按分组分组。返回 [(分组 id/名称, 分组资产)] 列表,
+  /// 含'未分类'组(尾部)。搜索激活时保持分组结构,空分组不显示。
+  List<(String, String, List<Asset>)> get _groupedAssets {
+    final assets = _filteredAssets;
+    final groups = <String, List<Asset>>{};
+    for (final a in assets) {
+      final id = a.categoryId ?? '';
+      groups.putIfAbsent(id, () => []).add(a);
+    }
+    final result = <(String, String, List<Asset>)>[];
+    for (final c in _categories) {
+      final list = groups.remove(c.id);
+      if (list != null && list.isNotEmpty) {
+        result.add((c.id, c.name, list));
+      }
+    }
+    final uncategorized = groups.remove('');
+    if (uncategorized != null && uncategorized.isNotEmpty) {
+      result.add(('', '未分类', uncategorized));
+    }
+    // 搜索激活时可能有资产挂在已删除/未知分类下。
+    for (final entry in groups.entries) {
+      if (entry.value.isNotEmpty) {
+        result.add((entry.key, _categoryNames[entry.key] ?? '未分类', entry.value));
+      }
+    }
+    return result;
   }
 
   Future<void> _openEditor([Asset? asset]) async {
@@ -279,7 +306,7 @@ class _HomePageState extends State<HomePage> {
                     controller: _searchController,
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.search),
-                      hintText: '搜索资产名称',
+                      hintText: '搜索分组或资产名称',
                       isDense: true,
                       border: const OutlineInputBorder(),
                       suffixIcon: _search.isEmpty
@@ -306,24 +333,15 @@ class _HomePageState extends State<HomePage> {
                         )
                       : RefreshIndicator(
                           onRefresh: _load,
-                          child: ListView.separated(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            itemCount: filtered.length,
-                            separatorBuilder: (_, _) =>
-                                const Divider(height: 1),
-                            itemBuilder: (context, index) {
-                              final asset = filtered[index];
-                              return ListTile(
-                                leading: const Icon(Icons.inventory_2_outlined),
-                                title: Text(asset.name),
-                                subtitle: Text(
-                                  '${_categoryName(asset)}'
-                                  '${asset.expiryDate == null ? '' : ' · 到期 ${asset.expiryDate}'}',
-                                ),
-                                trailing: const Icon(Icons.chevron_right),
-                                onTap: () => _openEditor(asset),
-                              );
-                            },
+                          child: _GroupedAssetList(
+                            groups: _groupedAssets,
+                            collapsed: _collapsedGroups,
+                            onToggle: (id) => setState(() {
+                              if (!_collapsedGroups.remove(id)) {
+                                _collapsedGroups.add(id);
+                              }
+                            }),
+                            onTapAsset: _openEditor,
                           ),
                         ),
                 ),
@@ -340,5 +358,79 @@ class _HomePageState extends State<HomePage> {
         (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
       ),
     ];
+  }
+}
+
+/// 分组资产列表:分组标题行(可折叠)+ 组内资产。
+/// 组标题显示分组名与资产数,点击折叠/展开。
+class _GroupedAssetList extends StatelessWidget {
+  const _GroupedAssetList({
+    required this.groups,
+    required this.collapsed,
+    required this.onToggle,
+    required this.onTapAsset,
+  });
+
+  final List<(String, String, List<Asset>)> groups;
+  final Set<String> collapsed;
+  final void Function(String groupId) onToggle;
+  final void Function(Asset) onTapAsset;
+
+  @override
+  Widget build(BuildContext context) {
+    final children = <Widget>[];
+    for (final (id, name, assets) in groups) {
+      final isCollapsed = collapsed.contains(id);
+      children.add(
+        InkWell(
+          onTap: () => onToggle(id),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                Icon(
+                  isCollapsed ? Icons.chevron_right : Icons.expand_more,
+                  size: 20,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${assets.length}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (!isCollapsed) {
+        for (final asset in assets) {
+          children.add(
+            ListTile(
+              contentPadding: const EdgeInsets.only(left: 40, right: 16),
+              leading: const Icon(Icons.inventory_2_outlined, size: 20),
+              title: Text(asset.name),
+              subtitle: asset.expiryDate == null
+                  ? null
+                  : Text('到期 ${asset.expiryDate}'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => onTapAsset(asset),
+            ),
+          );
+        }
+      }
+    }
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: children,
+    );
   }
 }

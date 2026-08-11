@@ -7,8 +7,6 @@ import 'package:bequest/crypto/key_derivation.dart';
 
 /// 资产级密钥隔离:AK 加密内容,AK 分别被 MK/WK 包装;号主与继承人都能解开。
 void main() {
-  const masterKey = 'TWVzc2FnZQ=='; // 固定的 32 字节密钥(base64 'Message...')
-  const wrappingKey = 'V3JhcHBlcktleQ==';
   const payload = '{"credentials":"secret","notes":"note"}';
 
   // 用真实派生产生 32 字节密钥(确保密钥长度合法)。

@@ -14,4 +14,10 @@ abstract class AssetRepository {
   Future<List<Map<String, dynamic>>> listAssetInheritors(String assetId);
   Future<Map<String, dynamic>> createAssetInheritor(String assetId, Map<String, dynamic> body);
   Future<void> deleteAssetInheritor(String assetId, String iid);
+  // 分组(分类)级继承人绑定。
+  Future<List<Map<String, dynamic>>> listCategoryInheritors(String categoryId);
+  Future<Map<String, dynamic>> createCategoryInheritor(String categoryId, Map<String, dynamic> body);
+  Future<void> deleteCategoryInheritor(String categoryId, String iid);
+  // 某继承人绑定的所有资产(直接 + 经分组)。
+  Future<List<Map<String, dynamic>>> listInheritorAssets(String inheritorId);
 }

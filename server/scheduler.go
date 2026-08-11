@@ -95,7 +95,8 @@ var escalationTiers = map[string][]int{
 // final tier is the inheritance trigger, not a distinct level.
 func processEscalation(db *sql.DB, now time.Time) {
 	rows, err := db.Query(`SELECT id, tier, escalation_level, last_login_at, email
-		FROM users WHERE last_login_at IS NOT NULL AND last_login_at != ''`)
+		FROM users WHERE last_login_at IS NOT NULL AND last_login_at != ''
+			AND inheritance_enabled = 1`) // 继承开关关闭:跳过升级/触发
 	if err != nil {
 		log.Printf("query users for escalation: %v", err)
 		return
@@ -202,7 +203,9 @@ func triggerInheritance(db *sql.DB, uid int64, daysSince int) {
 		bindings = append(bindings, b)
 	}
 	// 每资产一个 live 事件(按 asset_id 计);触发天数:独立配置优先,否则用全局已跨过的线。
+	boundAssets := map[int64]bool{}
 	for _, b := range bindings {
+		boundAssets[b.assetID] = true
 		if b.triggerDays != nil && daysSince < *b.triggerDays {
 			continue
 		}
@@ -218,20 +221,55 @@ func triggerInheritance(db *sql.DB, uid int64, daysSince int) {
 		}
 		createInheritanceEvent(db, uid, b.inID, b.email, b.codeHash, &b.assetID)
 	}
-	// 有 per-asset 配置的资产不再进全量事件,避免重复交接。
-	var configured int
-	if err := db.QueryRow(`SELECT COUNT(DISTINCT asset_id) FROM asset_inheritors ai
-		JOIN assets a ON a.id = ai.asset_id WHERE a.user_id = ?`, uid).Scan(&configured); err != nil {
-		log.Printf("count configured assets: %v", err)
+	// 分组级继承:资产无资产级绑定时,按所属分组的 category_inheritors 交接
+	// (该分组下所有未单独绑定的资产继承分组继承人)。
+	catRows, err := db.Query(`SELECT a.id, ci.inheritor_id, i.email, i.access_code_hash, ci.trigger_days
+		FROM category_inheritors ci
+		JOIN inheritors i ON i.id = ci.inheritor_id
+		JOIN assets a ON a.category_id = ci.category_id
+		WHERE a.user_id = ? AND NOT EXISTS (
+			SELECT 1 FROM asset_inheritors ai WHERE ai.asset_id = a.id
+		) ORDER BY ci.priority ASC, ci.id ASC, a.id ASC`, uid)
+	if err != nil {
+		log.Printf("query category inheritors: %v", err)
 		return
 	}
+	defer catRows.Close()
+	for catRows.Next() {
+		var assetID, inID int64
+		var email, codeHash string
+		var td sql.NullInt64
+		if err := catRows.Scan(&assetID, &inID, &email, &codeHash, &td); err != nil {
+			log.Printf("scan category inheritor: %v", err)
+			continue
+		}
+		if td.Valid && daysSince < int(td.Int64) {
+			continue
+		}
+		if boundAssets[assetID] {
+			continue
+		}
+		boundAssets[assetID] = true
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM inheritance_events
+			WHERE user_id = ? AND asset_id = ? AND status IN ('pending','claimed')`, uid, assetID).
+			Scan(&n); err != nil {
+			log.Printf("count asset events: %v", err)
+			continue
+		}
+		if n == 0 {
+			createInheritanceEvent(db, uid, inID, email, codeHash, &assetID)
+		}
+	}
+	catRows.Close()
+	// 全量事件:仅当存在未配置继承人绑定的资产(或完全无绑定)时才建。
+	// 有资产级/分组级配置的资产已单独建事件,不再进全量。
+	configured := len(boundAssets)
 	var total int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM assets WHERE user_id = ?`, uid).Scan(&total); err != nil {
 		log.Printf("count assets: %v", err)
 		return
 	}
-	// 全量事件:仅当存在未配置继承人绑定的资产(或完全无绑定)时才建。
-	// 有 per-asset 配置的资产已单独建事件,不再进全量。
 	if configured >= total && total > 0 {
 		return
 	}

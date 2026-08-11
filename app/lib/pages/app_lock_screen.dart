@@ -92,8 +92,13 @@ class _AppLockScreenState extends State<AppLockScreen> {
         await _tryBiometric();
       }
       // 未配置任何可校验方式(存储被清空等):视为解锁,避免被锁死。
-      // 生物识别可用(含校验失败)时不自动解锁,防止失败后静默放行。
-      if (mounted && !_hasPin && !_hasPattern && !_biometricEnabled) {
+      // 注意:主密码也是可校验方式——只设主密码的用户不能自动放行,
+      // 否则手动锁定立即失效(web 端锁定无效的根因)。
+      if (mounted &&
+          !_hasPin &&
+          !_hasPattern &&
+          !_hasMasterKey &&
+          !_biometricEnabled) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) widget.onUnlocked();
         });

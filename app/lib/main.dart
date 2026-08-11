@@ -39,7 +39,10 @@ class LockGate extends StatefulWidget {
   final Widget child;
 
   /// 手动锁定:立即锁定应用(重新进入需解锁)。
-  /// 无凭据(未登录且无主密钥)时锁定无意义,保持解锁。
+  /// 不读凭据判断——锁屏自身处理:无任何解锁方式时自动放行(见
+  /// AppLockScreen),有凭据则正常校验。web 端 flutter_secure_storage 依赖
+  /// WebCrypto(仅 HTTPS/localhost 可用),局域网 HTTP 下读取会抛异常,
+  /// 因此不能以"读到凭据"作为锁定前提。
   static void lockNow() => _LockGateState._instance?.lockNow();
 
   @override
@@ -157,20 +160,11 @@ class _LockGateState extends State<LockGate> {
     }
   }
 
-  /// 手动锁定:与 [._lockNow] 不同,只要求有凭据(忽略 lock_enabled 开关)。
-  /// 用户主动点"锁定"就是要锁,即使退出时不锁;无凭据时锁定无法解锁,放弃。
+  /// 手动锁定:直接锁定。锁屏自身会校验解锁方式——有凭据走校验,
+  /// 无任何解锁方式自动放行,不会锁死。
   Future<void> lockNow() async {
     if (_locked) return;
-    try {
-      final jwt = await _store.readJwt();
-      final mk = await _store.readMasterKey();
-      final hasCredential = jwt != null || (mk != null && mk.isNotEmpty);
-      if (hasCredential && mounted) {
-        setState(() => _locked = true);
-      }
-    } catch (_) {
-      // 读取失败保持当前状态。
-    }
+    if (mounted) setState(() => _locked = true);
   }
 
   @override

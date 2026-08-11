@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/category.dart';
 import '../repository/asset_repository.dart';
+import 'category_inheritors_page.dart';
 
 /// 分类管理:列表(含预设与自定义)、新增、改名、删除。
 /// 预设分类是服务端按用户预置的真实行,与自定义分类一样可编辑/删除。
@@ -110,6 +111,19 @@ class _CategoryPageState extends State<CategoryPage> {
     }
   }
 
+  /// 打开分组的继承人设置页(该分组下所有资产默认按此继承人交接)。
+  Future<void> _openInheritors(Category category) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CategoryInheritorsPage(
+          categoryId: category.id,
+          categoryName: category.name,
+          repository: widget.repository,
+        ),
+      ),
+    );
+  }
+
   Future<void> _deleteCategory(Category category) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -193,6 +207,11 @@ class _CategoryPageState extends State<CategoryPage> {
                                 ),
                               ),
                             ),
+                          IconButton(
+                            tooltip: '设置继承人',
+                            icon: const Icon(Icons.people_outline),
+                            onPressed: () => _openInheritors(category),
+                          ),
                           IconButton(
                             tooltip: '删除',
                             icon: const Icon(Icons.delete_outline),

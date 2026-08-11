@@ -118,6 +118,42 @@ func handleGetSMTP(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// handleGetInheritanceToggle: GET /api/v1/settings/inheritance -> 200 {"enabled":bool}
+func handleGetInheritanceToggle(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var enabled int
+		if err := db.QueryRow(`SELECT inheritance_enabled FROM users WHERE id = ?`, userID(r)).Scan(&enabled); err != nil {
+			log.Printf("query inheritance toggle: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": enabled != 0})
+	}
+}
+
+// handlePutInheritanceToggle: PUT /api/v1/settings/inheritance {"enabled":bool}
+func handlePutInheritanceToggle(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		v := 0
+		if req.Enabled {
+			v = 1
+		}
+		if _, err := db.Exec(`UPDATE users SET inheritance_enabled = ? WHERE id = ?`, v, userID(r)); err != nil {
+			log.Printf("update inheritance toggle: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": req.Enabled})
+	}
+}
+
 type smtpPutRequest struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
