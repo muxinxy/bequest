@@ -85,3 +85,55 @@ func TestPasswordResetFlow(t *testing.T) {
 		t.Fatalf("exhausted code: want 401/429, got %d", rr.Code)
 	}
 }
+
+// TestRequestPasswordResetEmits: 发送验证码接口——已知邮箱生成验证码(可入库),
+// 未知邮箱返回 200 但不发码(防枚举);用户已配置自定义 SMTP 时优先走用户 SMTP
+// (sendCustomForUser),不配置时回退系统 SMTP,均不阻断 200。
+func TestRequestPasswordResetEmits(t *testing.T) {
+	ts, db := newTestServer(t)
+	token := registerUser(t, ts, "alice") // email = alice@example.com
+	uid := userIDOf(t, ts, token)
+
+	countCodes := func() int {
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM password_resets WHERE user_id = ?`, uid).Scan(&n); err != nil {
+			t.Fatalf("count reset codes: %v", err)
+		}
+		return n
+	}
+
+	// 未知邮箱:200 且不发码(防枚举)。
+	rr := doReq(t, ts, http.MethodPost, "/api/v1/auth/reset-request",
+		`{"email":"nobody@example.com"}`, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unknown email: want 200, got %d", rr.Code)
+	}
+
+	// 已知邮箱:200 且生成一条验证码。
+	if n := countCodes(); n != 0 {
+		t.Fatalf("unknown email inserted %d codes, want 0", n)
+	}
+	rr = doReq(t, ts, http.MethodPost, "/api/v1/auth/reset-request",
+		`{"email":"alice@example.com"}`, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("known email: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if n := countCodes(); n != 1 {
+		t.Fatalf("known email inserted %d codes, want 1", n)
+	}
+
+	// 用户配置了自定义 SMTP(host 非空)时,仍 200 且发码路径不 panic。
+	if _, err := db.Exec(
+		`INSERT INTO user_smtp (user_id, host, port, user, password_enc, from_addr, enabled)
+		 VALUES (?, 'smtp.test', 587, 'u', x'00', 'a@b.c', 1)`, uid); err != nil {
+		t.Fatalf("insert user smtp: %v", err)
+	}
+	rr = doReq(t, ts, http.MethodPost, "/api/v1/auth/reset-request",
+		`{"email":"alice@example.com"}`, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("known email with custom smtp: want 200, got %d", rr.Code)
+	}
+	if n := countCodes(); n != 2 {
+		t.Fatalf("known email with custom smtp inserted %d codes, want 2", n)
+	}
+}

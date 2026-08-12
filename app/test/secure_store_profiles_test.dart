@@ -82,4 +82,50 @@ void main() {
     // 再次调用不重复登记。
     expect(await store.migrateLegacyLocalProfile(), isFalse);
   });
+
+  test('退出登录(clearAll):保留加密凭据与服务器地址,清除会话/锁凭据', () async {
+    // 模拟已登录设备:加密凭据 + 服务器配置 + 会话 + 应用锁。
+    await store.saveJwt('jwt-token');
+    await store.saveMasterKey('mk');
+    await store.saveMasterSalt('salt');
+    await store.saveWrappingKey('wk');
+    await store.saveMasterHint('提示');
+    await store.saveServerUrl('http://10.0.2.2:8080');
+    await store.saveRecentUrls(['http://10.0.2.2:8080']);
+    await store.savePinHash('pin-hash');
+    await store.savePatternHash('pattern-hash');
+    await store.saveStorageMode('cloud');
+
+    await store.clearAll();
+
+    // 加密凭据必须保留:否则同一设备每次登录都要恢复密钥。
+    expect(await store.readMasterKey(), 'mk');
+    expect(await store.readMasterSalt(), 'salt');
+    expect(await store.readWrappingKey(), 'wk');
+    expect(await store.readMasterHint(), '提示');
+    // 服务器地址是设备级配置,同样保留。
+    expect(await store.readServerUrl(), 'http://10.0.2.2:8080');
+    expect(await store.readRecentUrls(), ['http://10.0.2.2:8080']);
+    // 会话与锁凭据必须清除。
+    expect(await store.readJwt(), isNull);
+    expect(await store.readPinHash(), isNull);
+    expect(await store.readPatternHash(), isNull);
+    // 存储模式回落到默认云端。
+    expect(await store.readStorageMode(), isNull);
+  });
+
+  test('退出登录并清除密钥(keepKeys=false):加密凭据一并删除,服务器地址保留', () async {
+    await store.saveMasterKey('mk');
+    await store.saveMasterSalt('salt');
+    await store.saveWrappingKey('wk');
+    await store.saveServerUrl('http://10.0.2.2:8080');
+
+    await store.clearAll(keepKeys: false);
+
+    expect(await store.readMasterKey(), isNull);
+    expect(await store.readMasterSalt(), isNull);
+    expect(await store.readWrappingKey(), isNull);
+    // 服务器地址仍是设备级配置,保留。
+    expect(await store.readServerUrl(), 'http://10.0.2.2:8080');
+  });
 }

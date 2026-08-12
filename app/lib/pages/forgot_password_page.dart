@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
@@ -21,8 +23,13 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   bool _sending = false;
   bool _submitting = false;
 
+  /// 发送验证码冷却倒计时(秒):防重复点击刷接口。
+  Timer? _cooldownTimer;
+  int _cooldown = 0;
+
   @override
   void dispose() {
+    _cooldownTimer?.cancel();
     _emailController.dispose();
     _codeController.dispose();
     _passwordController.dispose();
@@ -41,11 +48,32 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       await (await _api).requestPasswordReset(email);
       if (!mounted) return;
       _show('验证码已发送到邮箱(10 分钟内有效)');
+      _startCooldown();
     } catch (_) {
       _show('发送失败,请检查网络后重试');
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  /// 发送成功后进入 60 秒冷却:按钮禁用并显示剩余秒数。
+  void _startCooldown() {
+    _cooldownTimer?.cancel();
+    setState(() => _cooldown = 60);
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() => _cooldown--);
+      if (_cooldown <= 0) timer.cancel();
+    });
+  }
+
+  String get _sendButtonLabel {
+    if (_sending) return '发送中...';
+    if (_cooldown > 0) return '重新发送($_cooldown s)';
+    return '发送验证码';
   }
 
   Future<void> _reset() async {
@@ -115,8 +143,8 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                 ),
                 const SizedBox(width: 8),
                 FilledButton.tonal(
-                  onPressed: _sending ? null : _sendCode,
-                  child: Text(_sending ? '发送中...' : '发送验证码'),
+                  onPressed: (_sending || _cooldown > 0) ? null : _sendCode,
+                  child: Text(_sendButtonLabel),
                 ),
               ],
             ),

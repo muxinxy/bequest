@@ -157,8 +157,29 @@ class _HomePageState extends State<HomePage> {
     }());
   }
 
+  /// 退出登录:询问是否一并清除本机加密密钥。
+  /// - 保留密钥(默认):同设备下次登录免恢复,可离线解密本地数据;
+  /// - 清除密钥:公共电脑/彻底退出,下次登录需重新恢复密钥。
   Future<void> _logout() async {
-    await _store.clearAll();
+    final keep = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('退出登录'),
+        content: const Text('是否保留本机加密密钥?\n\n保留:下次登录免恢复,本机加密数据仍可离线读取。\n清除:适用于公共电脑,下次登录需重新恢复密钥。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('保留密钥'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('清除密钥'),
+          ),
+        ],
+      ),
+    );
+    if (keep == null || !mounted) return; // 取消 = 不退出。
+    await _store.clearAll(keepKeys: keep);
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(builder: (_) => const LoginPage()),

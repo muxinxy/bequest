@@ -11,6 +11,7 @@ import '../repository/asset_repository.dart';
 import '../repository/local_asset_repository.dart';
 import '../storage/secure_store.dart';
 import 'asset_inheritors_page.dart';
+import 'login_page.dart';
 
 /// 资产编辑页:新建(asset 为 null)或编辑(asset 非空)。
 /// 凭据与备注用主密钥加密后经仓储写入(云端或本地库)。
@@ -116,11 +117,18 @@ class _AssetEditPageState extends State<AssetEditPage> {
           _loading = false;
         });
         if (_decryptFailed) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('敏感信息解密失败,可能已被篡改或密钥不匹配,请重新填写保存'),
-            ),
-          );
+          if (_isLocalRepo) {
+            // 本地库解密失败与多端无关(本地数据/篡改),保留原提示。
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('敏感信息解密失败,可能已被篡改或密钥不匹配,请重新填写保存'),
+              ),
+            );
+          } else {
+            // 云端解密失败最常见原因是主密码在其他设备已修改(多端不一致):
+            // 本机主密钥已失效,提示重新登录恢复。
+            await _promptRelogin();
+          }
         }
       } else {
         if (!mounted) return;
@@ -138,6 +146,37 @@ class _AssetEditPageState extends State<AssetEditPage> {
           .showSnackBar(SnackBar(content: Text(message)));
       Navigator.of(context).pop();
     }
+  }
+
+  /// 云端敏感信息解密失败:极可能是主密码已在其他设备修改(多端不一致),
+  /// 本机主密钥已失效。提示退出重新登录(登录后走恢复流程重派生密钥)。
+  Future<void> _promptRelogin() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('无法解密敏感信息'),
+        content: const Text(
+          '主密码可能已在其他设备修改,本机加密密钥已失效。请退出登录并重新登录以恢复密钥。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('退出登录'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _store.clearAll();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => const LoginPage()),
+      (route) => false,
+    );
   }
 
   Future<void> _pickExpiryDate() async {

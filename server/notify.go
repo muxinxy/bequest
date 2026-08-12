@@ -26,8 +26,9 @@ func notifyUser(db *sql.DB, uid int64, tier, typ, title, body, dedup string) {
 }
 
 // sendCustomForUser sends via the recipient user's own SMTP server when a row
-// exists, is enabled and has a host; returns true when it sent (so the caller
-// skips the system sender). Decryption failure falls back to system.
+// exists, is enabled and has a host; returns true only when the send actually
+// succeeded (so the caller skips the system sender). Missing/disabled config
+// or a failed send falls back to the system sender.
 func sendCustomForUser(db *sql.DB, uid int64, to, subject, body string) bool {
 	var host, user, from string
 	var port, enabled int
@@ -46,7 +47,11 @@ func sendCustomForUser(db *sql.DB, uid int64, to, subject, body string) bool {
 		log.Printf("notifyUser: decrypt smtp password: %v", err)
 		return false
 	}
-	sendMailCustom(smtpServer{Host: host, Port: port, User: user, Password: pass, FromAddr: from}, to, subject, body)
+	if err := sendMailCustom(smtpServer{Host: host, Port: port, User: user, Password: pass, FromAddr: from}, to, subject, body); err != nil {
+		// 发送失败(认证/网络/配置失效):回退系统 SMTP,不吞错误。
+		log.Printf("notifyUser: send custom mail via %s: %v", host, err)
+		return false
+	}
 	return true
 }
 

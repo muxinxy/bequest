@@ -207,10 +207,13 @@ func handleRequestPasswordReset(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		// 邮件发送失败也返回成功(自托管 SMTP 可能未配,码存审计便于调试)。
+		// 邮件发送:优先用户自配 SMTP,失败回退系统 SMTP(与提醒邮件同策略)。
+		// 全部失败仍返回成功(自托管 SMTP 可能未配,码存审计便于调试)。
 		subject := "托孤: 重置密码验证码"
 		body := fmt.Sprintf("您的验证码是: %s\n10 分钟内有效。若非本人操作请忽略。", code)
-		sendMail(email, subject, body)
+		if !sendCustomForUser(db, uid, email, subject, body) {
+			sendMail(email, subject, body)
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	}
 }

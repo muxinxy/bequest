@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -186,4 +189,157 @@ func TestNotifyUserPrefersUserSMTP(t *testing.T) {
 		t.Fatalf("parse register2 response: %v", err)
 	}
 	notifyUser(db, reg2Resp.User.ID, "free", "expiry", "到期提醒", "正文", "dedup:system-fallback")
+}
+
+// scriptedSMTP is a minimal fake SMTP server (plain, no auth) that records the
+// last MAIL FROM / RCPT TO it received. Proves the manual client rewrite in
+// sendViaServer completes a real SMTP exchange.
+type scriptedSMTP struct {
+	ln       net.Listener
+	gotMail  string
+	gotRcpt  string
+	gotData  bool
+	failAuth bool // advertise STARTTLS+auth to force the TLS branch failure path
+}
+
+func newScriptedSMTP(t *testing.T) *scriptedSMTP {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	s := &scriptedSMTP{ln: ln}
+	go s.serve(t)
+	t.Cleanup(func() { ln.Close() })
+	return s
+}
+
+func (s *scriptedSMTP) serve(t *testing.T) {
+	conn, err := s.ln.Accept()
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	r := bufio.NewReader(conn)
+	write := func(line string) { fmt.Fprintf(conn, "%s\r\n", line) }
+	write("220 scripted ESMTP")
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return
+		}
+		cmd := strings.ToUpper(strings.TrimSpace(line))
+		switch {
+		case strings.HasPrefix(cmd, "EHLO"):
+			write("250-scripted")
+			write("250 OK")
+		case strings.HasPrefix(cmd, "MAIL FROM"):
+			s.gotMail = cmd
+			write("250 OK")
+		case strings.HasPrefix(cmd, "RCPT TO"):
+			s.gotRcpt = cmd
+			write("250 OK")
+		case cmd == "DATA":
+			write("354 go ahead")
+			for {
+				dl, err := r.ReadString('\n')
+				if err != nil {
+					return
+				}
+				if dl == ".\r\n" {
+					break
+				}
+			}
+			s.gotData = true
+			write("250 OK")
+		case cmd == "QUIT":
+			write("221 bye")
+			return
+		case cmd == "RSET":
+			write("250 OK")
+		default:
+			write("250 OK")
+		}
+	}
+}
+
+// TestSendViaServerPlainExchange: a real SMTP exchange through the scripted
+// server (no auth, no TLS) — locks the manual client rewrite in sendViaServer.
+func TestSendViaServerPlainExchange(t *testing.T) {
+	s := newScriptedSMTP(t)
+	err := sendViaServer(smtpServer{
+		Host: "127.0.0.1", Port: s.ln.Addr().(*net.TCPAddr).Port, FromAddr: "from@x.com",
+	}, "rcpt@x.com", "主题", "正文")
+	if err != nil {
+		t.Fatalf("sendViaServer: %v", err)
+	}
+	// SMTP 协议会把地址转大写(MAIL FROM:<FROM@X.COM>),用不区分大小写断言。
+	lowerMail := strings.ToLower(s.gotMail)
+	lowerRcpt := strings.ToLower(s.gotRcpt)
+	if !strings.Contains(lowerMail, "from@x.com") || !strings.Contains(lowerRcpt, "rcpt@x.com") {
+		t.Fatalf("mail/rcpt not seen: mail=%q rcpt=%q", s.gotMail, s.gotRcpt)
+	}
+	if !s.gotData {
+		t.Fatal("DATA phase not reached")
+	}
+}
+
+// TestBuildMessageRFC5322: From/To headers must keep a parseable mailbox —
+// the whole-address RFC2047 encoding breaks QQ (550 "From header missing").
+func TestBuildMessageRFC5322(t *testing.T) {
+	msg := buildMessage("托孤 <noreply@qq.com>", "rcpt@163.com", "主题", "正文")
+	for _, h := range []string{"From: ", "To: rcpt@163.com\r\n"} {
+		if !strings.Contains(msg, h) {
+			t.Fatalf("message missing %q:\n%s", h, msg)
+		}
+	}
+	// From 头必须含可解析邮箱且地址保持明文(仅显示名可编码):
+	// QQ 拒绝的是整个地址被编码(无尖括号、无裸邮箱)。
+	if !strings.Contains(msg, "From: =?UTF-8?B?5omY5a2k?= <noreply@qq.com>") {
+		t.Fatalf("From header not RFC5322-parseable:\n%s", msg)
+	}
+	// 信封地址剥离显示名。
+	if got := extractMailbox("托孤 <noreply@qq.com>"); got != "noreply@qq.com" {
+		t.Fatalf("extractMailbox = %q, want noreply@qq.com", got)
+	}
+}
+
+// TestSendViaServerUnreachable: connection refused must surface as an error
+// (so sendCustomForUser can fall back to system SMTP instead of swallowing it).
+func TestSendViaServerUnreachable(t *testing.T) {
+	err := sendViaServer(smtpServer{Host: "127.0.0.1", Port: 1}, "a@b.c", "s", "b")
+	if err == nil {
+		t.Fatal("want error for unreachable host, got nil")
+	}
+}
+
+// TestSendCustomForUserFallsBackOnFailure: unreachable user SMTP -> returns
+// false so the caller (reset-code / notify) falls back to system SMTP.
+func TestSendCustomForUserFallsBackOnFailure(t *testing.T) {
+	t.Setenv("ENCRYPTION_KEY", "")
+	ts, db := newTestServer(t)
+	reg := doReq(t, ts, http.MethodPost, "/api/v1/auth/register",
+		`{"username":"fallback","email":"fb@x.com","password":"password123"}`, "")
+	if reg.Code != http.StatusCreated {
+		t.Fatalf("register status = %d, want 201", reg.Code)
+	}
+	var regResp struct {
+		User struct {
+			ID int64 `json:"id"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(reg.Body.Bytes(), &regResp); err != nil {
+		t.Fatalf("parse register response: %v", err)
+	}
+	enc, err := encryptSecret("pass")
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO user_smtp (user_id, host, port, user, password_enc, from_addr, enabled)
+		VALUES (?, '127.0.0.1', 1, 'fb@x.com', ?, 'fb@x.com', 1)`, regResp.User.ID, enc); err != nil {
+		t.Fatalf("insert user smtp: %v", err)
+	}
+	if sendCustomForUser(db, regResp.User.ID, "fb@x.com", "s", "b") {
+		t.Fatal("unreachable user SMTP must return false (fall back to system)")
+	}
 }

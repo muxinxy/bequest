@@ -153,7 +153,41 @@ class SecureStore {
     await _storage.delete(key: _patternSaltKey);
   }
 
-  Future<void> clearAll() => _storage.deleteAll();
+  /// 清除会话数据(退出登录/换号)。以下为设备级配置与加密状态,默认保留:
+  /// - 服务器地址/最近地址:每次登录都要重填太烦;
+  /// - 主密钥/盐/包装密钥/提示语:退出登录不该当作"换新设备",
+  ///   否则同一设备每次登录都要重新恢复加密密钥。
+  /// 会话凭据(JWT)与 PIN/图案锁全部清除。
+  ///
+  /// [keepKeys] 为 false 时连加密凭据一并清除(公共电脑/彻底退出场景,
+  /// 由退出登录确认对话框让用户选择)。
+  Future<void> clearAll({bool keepKeys = true}) async {
+    final serverUrl = await readServerUrl();
+    final recentUrls = await readRecentUrls();
+    final masterKey = keepKeys ? await readMasterKey() : null;
+    final masterSalt = keepKeys ? await readMasterSalt() : null;
+    final wrappingKey = keepKeys ? await readWrappingKey() : null;
+    final masterHint = keepKeys ? await readMasterHint() : null;
+    await _storage.deleteAll();
+    if (serverUrl != null && serverUrl.isNotEmpty) {
+      await saveServerUrl(serverUrl);
+    }
+    if (recentUrls.isNotEmpty) {
+      await saveRecentUrls(recentUrls);
+    }
+    if (masterKey != null && masterKey.isNotEmpty) {
+      await saveMasterKey(masterKey);
+    }
+    if (masterSalt != null && masterSalt.isNotEmpty) {
+      await saveMasterSalt(masterSalt);
+    }
+    if (wrappingKey != null && wrappingKey.isNotEmpty) {
+      await saveWrappingKey(wrappingKey);
+    }
+    if (masterHint != null && masterHint.isNotEmpty) {
+      await saveMasterHint(masterHint);
+    }
+  }
 
   // 同步配置仅保存在本机(隐私优先),绝不发送给托孤服务端。
   Future<void> saveSyncConfig(String json) =>

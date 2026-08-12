@@ -311,14 +311,14 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   children: [
                     Expanded(
                       child: FilledButton(
-                        onPressed: _testConnection,
+                        onPressed: _busy ? null : _testConnection,
                         child: const Text('测试连接'),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: FilledButton.tonal(
-                        onPressed: _syncNow,
+                        onPressed: _busy ? null : _syncNow,
                         child: const Text('立即同步'),
                       ),
                     ),
@@ -329,14 +329,14 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: _restore,
+                        onPressed: _busy ? null : _restore,
                         child: const Text('从备份恢复'),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: _save,
+                        onPressed: _busy ? null : _save,
                         child: const Text('保存配置'),
                       ),
                     ),

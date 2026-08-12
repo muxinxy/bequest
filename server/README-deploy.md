@@ -60,28 +60,30 @@ volumes:
 
 ## 3. config.json(多 SMTP 示例)
 
-> 说明: 当前代码仍以 `SMTP_*` 环境变量提供单 SMTP 支持; 多 SMTP 通过 `config.json` 配置(示例格式, 以实际实现为准)。
+> 说明: 当前代码仍以 `SMTP_*` 环境变量提供单 SMTP 支持; 多 SMTP 通过 `config.json` 配置。
 
 ```json
 {
-  "smtp": [
+  "smtp_servers": [
     {
       "host": "smtp.qq.com",
       "port": 465,
       "user": "noreply@qq.com",
-      "pass": "SMTP 授权码",
-      "from": "托孤通知 <noreply@qq.com>"
+      "password": "SMTP 授权码",
+      "from_addr": "noreply@qq.com"
     },
     {
       "host": "smtp.163.com",
       "port": 465,
       "user": "noreply@163.com",
-      "pass": "SMTP 授权码",
-      "from": "托孤通知 <noreply@163.com>"
+      "password": "SMTP 授权码",
+      "from_addr": "noreply@163.com"
     }
   ]
 }
 ```
+
+> 端口: 465 为隐式 TLS, 587 为 STARTTLS, 均支持。QQ/163 等需在邮箱设置中获取「授权码」而非登录密码。
 
 将以上内容保存为 `server/config.json`(或按上文挂载为 `/data/config.json`)即可, 服务器启动时会自动读取 CWD 下的 `config.json`。
 

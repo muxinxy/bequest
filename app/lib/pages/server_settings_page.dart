@@ -71,35 +71,43 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
       _snack('请输入服务器地址');
       return;
     }
+    // 先验证连接,验证有效才保存。
+    if (!await _testConnection(quiet: false)) {
+      _snack('无法连接服务器,请检查地址');
+      return;
+    }
     // 记入最近地址(去重置顶,最多 5 条)。
     final recent = [url, ..._recentUrls.where((u) => u != url)];
     await _store.saveRecentUrls(recent.take(5).toList());
     await ApiConfig.setBaseUrl(url);
     if (!mounted) return;
     setState(() => _recentUrls = recent.take(5).toList());
-    // 保存时自动测试连接。
-    await _testConnection(quiet: false);
+    _snack('已保存');
   }
 
-  Future<void> _testConnection({bool quiet = false}) async {
-    final url = _urlController.text.trim();
+  /// 测试与指定地址的连接,返回是否可达;更新指示灯。
+  Future<bool> _testConnection({bool quiet = false}) async {
+    final url = _urlController.text.trim().replaceFirst(RegExp(r'/+$'), '');
     if (url.isEmpty) {
       if (!quiet) _snack('请输入服务器地址');
-      return;
+      return false;
     }
     if (!quiet) setState(() => _busy = true);
+    var ok = false;
     try {
       final res = await http
           .get(Uri.parse('$url/api/v1/version'))
           .timeout(const Duration(seconds: 3));
-      if (!mounted) return;
-      setState(() => _connectionOk =
-          res.statusCode >= 200 && res.statusCode < 300);
+      ok = res.statusCode >= 200 && res.statusCode < 300;
     } catch (_) {
-      if (mounted) setState(() => _connectionOk = false);
-    } finally {
-      if (mounted && !quiet) setState(() => _busy = false);
+      ok = false;
     }
+    if (!mounted) return ok;
+    setState(() {
+      _connectionOk = ok;
+      if (!quiet) _busy = false;
+    });
+    return ok;
   }
 
   Future<void> _switchMode(StorageMode next) async {

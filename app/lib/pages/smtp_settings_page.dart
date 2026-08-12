@@ -23,6 +23,7 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
   final _fromAddr = TextEditingController();
   bool _enabled = false;
   bool _loading = true;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -64,6 +65,7 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     final jwt = await _store.readJwt();
     if (jwt == null) {
       _snack('登录状态已失效,请重新登录');
@@ -78,11 +80,14 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
       // 密码留空 = 保持现有凭据。
       if (_password.text.isNotEmpty) 'password': _password.text,
     };
+    setState(() => _saving = true);
     try {
       await _api.updateSmtpSettings(jwt, body);
       _snack('已保存');
     } catch (_) {
       _snack('保存失败,请检查网络后重试');
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -160,12 +165,12 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
                 ),
                 const SizedBox(height: 8),
                 FilledButton(
-                  onPressed: _save,
-                  child: const Text('保存'),
+                  onPressed: _saving ? null : _save,
+                  child: Text(_saving ? '保存中...' : '保存'),
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton(
-                  onPressed: _clear,
+                  onPressed: _saving ? null : _clear,
                   child: const Text('清除设置'),
                 ),
               ],

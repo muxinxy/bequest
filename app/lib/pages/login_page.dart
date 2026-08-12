@@ -21,7 +21,10 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
-  late final Future<ApiClient> _api = ApiConfig.client();
+
+  /// 每次访问按当前配置构造客户端:从服务器设置页返回后地址变更立即生效
+  /// (不能用 late final 缓存,否则改地址后验证码仍请求旧地址)。
+  Future<ApiClient> get _api => ApiConfig.client();
   final _store = SecureStore();
 
   final _usernameController = TextEditingController();
@@ -137,10 +140,16 @@ class _LoginPageState extends State<LoginPage> {
         }
       }
 
-      // 跨设备登录:本机无主密钥且服务端存有盐 → 弹恢复对话框
-      // (主密钥/盐/WK 只在注册时写入本机;新设备需主密码+盐重新派生)。
+      // 恢复加密密钥:仅当本机确无主密钥(真·新设备),或本机盐与服务端
+      // 不一致(主密码已在其他设备修改/重置)时弹窗;同设备重复登录
+      // 主密钥已保留(clearAll 不清加密凭据),不再弹。
       final localMk = await _store.readMasterKey();
-      if ((localMk == null || localMk.isEmpty) && serverSalt.isNotEmpty) {
+      final mkMissing = localMk == null || localMk.isEmpty;
+      final saltMismatch = localSalt != null &&
+          localSalt.isNotEmpty &&
+          serverSalt.isNotEmpty &&
+          localSalt != serverSalt;
+      if ((mkMissing || saltMismatch) && serverSalt.isNotEmpty) {
         final choice = await _recoverKeys(token, serverSalt);
         if (choice == _RecoveryChoice.reset) {
           // 忘记主密码:重置只需账户密码,不需要旧主密码。
@@ -216,7 +225,13 @@ class _LoginPageState extends State<LoginPage> {
     if (!mounted) return _RecoveryChoice.cancelled;
     final creds = await showDialog<({String? master, String? account, bool reset})>(
       context: context,
-      builder: (_) => const _RecoveryDialog(),
+      // 键盘弹出时整体上移,避免底部按钮遮挡输入框。
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: const _RecoveryDialog(),
+      ),
     );
     if (creds == null || !mounted) return _RecoveryChoice.cancelled;
     if (creds.reset) return _RecoveryChoice.reset;
@@ -375,12 +390,14 @@ class _LoginPageState extends State<LoginPage> {
               TextButton(
                 onPressed: _submitting
                     ? null
-                    : () {
-                        Navigator.of(context).push(
+                    : () async {
+                        await Navigator.of(context).push(
                           MaterialPageRoute<void>(
                             builder: (_) => const ServerSettingsPage(),
                           ),
                         );
+                        // 返回后地址可能已变更:刷新验证码走新地址。
+                        await _refreshCaptcha();
                       },
                 child: const Text(
                   '服务器设置',
@@ -423,10 +440,11 @@ class _RecoveryDialogState extends State<_RecoveryDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('恢复加密密钥'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           const Text(
             '此设备首次登录,请输入主密码恢复本机加密密钥(资产凭据不受影响)。',
             style: TextStyle(fontSize: 13),
@@ -451,6 +469,7 @@ class _RecoveryDialogState extends State<_RecoveryDialog> {
             ),
           ),
         ],
+        ),
       ),
       actions: [
         TextButton(
