@@ -21,9 +21,9 @@ type smtpServer struct {
 // provider is a reserved SMS/phone provider entry from config.json. Sending is
 // not implemented yet — the count is logged at startup so the channel is visible.
 type provider struct {
-	Name      string
-	APIKey    string
-	APISecret string
+	Name      string `json:"name"`
+	APIKey    string `json:"api_key"`
+	APISecret string `json:"api_secret"`
 }
 
 type appConfig struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,10 +13,23 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
-//go:embed admin.html
+//go:embed admin.html claim.html
 var adminFS embed.FS
+
+// serveClaimPage: GET /claim -> 继承人交接领取页(无鉴权,领取校验在 API)。
+func serveClaimPage(w http.ResponseWriter, r *http.Request) {
+	page, err := adminFS.ReadFile("claim.html")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "claim page missing")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write(page)
+}
 
 // ---------- bootstrap ----------
 
@@ -71,19 +85,23 @@ func requireAdmin(db *sql.DB, next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "missing bearer token")
 			return
 		}
-		uid, err := verifyToken(strings.TrimPrefix(auth, "Bearer "))
-		if err != nil {
+		c, err := verifyToken(strings.TrimPrefix(auth, "Bearer "))
+		if err != nil || c.Pending2FA {
 			writeError(w, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}
 		var role string
-		var disabled int
-		if err := db.QueryRow(`SELECT role, disabled FROM users WHERE id = ?`, uid).Scan(&role, &disabled); err != nil {
+		var disabled, tokenVersion int
+		if err := db.QueryRow(`SELECT role, disabled, token_version FROM users WHERE id = ?`, c.UserID).Scan(&role, &disabled, &tokenVersion); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				writeError(w, http.StatusUnauthorized, "user no longer exists")
 				return
 			}
 			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if c.TokenVersion != tokenVersion {
+			writeError(w, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}
 		if disabled == 1 {
@@ -94,7 +112,7 @@ func requireAdmin(db *sql.DB, next http.Handler) http.Handler {
 			writeError(w, http.StatusForbidden, "admin required")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxUserIDKey, uid)))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxUserIDKey, c.UserID)))
 	})
 }
 
@@ -416,10 +434,209 @@ func handleAdminAuditLog(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// ---------- 2FA (TOTP) ----------
+
+// handleAdmin2FAStatus: GET /api/v1/admin/2fa -> {enabled}
+func handleAdmin2FAStatus(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		var secret string
+		db.QueryRow(`SELECT totp_secret FROM users WHERE id = ?`, uid).Scan(&secret)
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": secret != ""})
+	}
+}
+
+// handleAdmin2FASetup: POST /api/v1/admin/2fa/setup -> {secret, otpauth_uri}
+// 密钥仅返回给客户端(未落库);用确认接口校验通过后才启用。
+func handleAdmin2FASetup(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		var username string
+		if err := db.QueryRow(`SELECT username FROM users WHERE id = ?`, uid).Scan(&username); err != nil {
+			username = "admin"
+		}
+		secret, err := generateTOTPSecret()
+		if err != nil {
+			log.Printf("gen totp secret: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		uri := fmt.Sprintf("otpauth://totp/bequest:%s?secret=%s&issuer=bequest&digits=6&period=30", username, secret)
+		writeJSON(w, http.StatusOK, map[string]any{"secret": secret, "otpauth_uri": uri})
+	}
+}
+
+// handleAdmin2FAConfirm: POST /api/v1/admin/2fa/confirm {secret, code} -> 启用
+func handleAdmin2FAConfirm(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		var req struct {
+			Secret string `json:"secret"`
+			Code   string `json:"code"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if !verifyTOTP(req.Secret, strings.TrimSpace(req.Code), time.Now()) {
+			writeError(w, http.StatusBadRequest, "验证码错误")
+			return
+		}
+		if _, err := db.Exec(`UPDATE users SET totp_secret = ?, updated_at = datetime('now') WHERE id = ?`,
+			req.Secret, uid); err != nil {
+			log.Printf("enable 2fa: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		auditAdmin(db, uid, "admin_2fa_enabled", "")
+		writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
+	}
+}
+
+// handleAdmin2FADisable: POST /api/v1/admin/2fa/disable {code} -> 停用
+func handleAdmin2FADisable(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		var req struct {
+			Code string `json:"code"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		var secret string
+		if err := db.QueryRow(`SELECT totp_secret FROM users WHERE id = ?`, uid).Scan(&secret); err != nil || secret == "" {
+			writeError(w, http.StatusBadRequest, "2FA 未启用")
+			return
+		}
+		if !verifyTOTP(secret, strings.TrimSpace(req.Code), time.Now()) {
+			writeError(w, http.StatusUnauthorized, "验证码错误")
+			return
+		}
+		if _, err := db.Exec(`UPDATE users SET totp_secret = NULL, updated_at = datetime('now') WHERE id = ?`, uid); err != nil {
+			log.Printf("disable 2fa: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		auditAdmin(db, uid, "admin_2fa_disabled", "")
+		writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
+	}
+}
+
+// ---------- 用户资产明细 ----------
+
+// handleAdminListUserAssets: GET /api/v1/admin/users/{id}/assets ->
+// 该用户的资产元数据清单(不含密文与密钥包装,服务端本就不见明文)。
+func handleAdminListUserAssets(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := pathID(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid user id")
+			return
+		}
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE id = ?`, id).Scan(&n); err != nil || n == 0 {
+			writeError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		rows, err := db.Query(`SELECT a.id, a.name, a.asset_type, a.expiry_date, a.created_at, a.updated_at, COALESCE(c.name, '')
+			FROM assets a LEFT JOIN categories c ON c.id = a.category_id
+			WHERE a.user_id = ? ORDER BY a.id DESC`, id)
+		if err != nil {
+			log.Printf("admin list user assets: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		defer rows.Close()
+		type assetMeta struct {
+			ID         int64   `json:"id"`
+			Name       string  `json:"name"`
+			AssetType  string  `json:"asset_type"`
+			Category   string  `json:"category"`
+			ExpiryDate *string `json:"expiry_date"`
+			CreatedAt  string  `json:"created_at"`
+			UpdatedAt  string  `json:"updated_at"`
+		}
+		list := []assetMeta{}
+		for rows.Next() {
+			var a assetMeta
+			var cat sql.NullString
+			var expiry sql.NullString
+			if err := rows.Scan(&a.ID, &a.Name, &a.AssetType, &expiry, &a.CreatedAt, &a.UpdatedAt, &cat); err != nil {
+				log.Printf("admin scan user asset: %v", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			a.Category = cat.String
+			if expiry.Valid {
+				a.ExpiryDate = &expiry.String
+			}
+			list = append(list, a)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"user_id": id, "assets": list})
+	}
+}
+
+// ---------- 审计日志导出 ----------
+
+// handleAdminAuditExport: GET /api/v1/admin/audit-log/export?user_id=&limit= -> CSV 附件
+func handleAdminAuditExport(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		limit := atoiDefault(r.URL.Query().Get("limit"), 10000)
+		if limit > 100000 {
+			limit = 100000
+		}
+		cond := "1=1"
+		args := []any{}
+		if uid := strings.TrimSpace(r.URL.Query().Get("user_id")); uid != "" {
+			cond = "user_id = ?"
+			args = append(args, uid)
+		}
+		rows, err := db.Query(`SELECT id, user_id, actor, action, detail, created_at FROM audit_logs
+			WHERE `+cond+` ORDER BY id DESC LIMIT ?`, append(args, limit)...)
+		if err != nil {
+			log.Printf("admin export audit: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		defer rows.Close()
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition",
+			fmt.Sprintf(`attachment; filename="audit-log-%s.csv"`, time.Now().Format("20060102-150405")))
+		// UTF-8 BOM:Excel 直接打开不乱码。
+		w.Write([]byte{0xEF, 0xBB, 0xBF})
+		cw := csv.NewWriter(w)
+		cw.Write([]string{"id", "user_id", "actor", "action", "detail", "created_at"})
+		for rows.Next() {
+			var id, uid int64
+			var actor, action, detail, createdAt string
+			if err := rows.Scan(&id, &uid, &actor, &action, &detail, &createdAt); err != nil {
+				log.Printf("admin scan audit export: %v", err)
+				continue
+			}
+			cw.Write([]string{fmt.Sprint(id), fmt.Sprint(uid), actor, action, detail, createdAt})
+		}
+		cw.Flush()
+	}
+}
+
 // ---------- system config ----------
 
+// maskProviders 隐藏密钥,只暴露名称与"是否已配置"。
+func maskProviders(ps []provider) []map[string]any {
+	out := make([]map[string]any, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, map[string]any{
+			"name":            p.Name,
+			"api_key_set":     p.APIKey != "",
+			"api_secret_set":  p.APISecret != "",
+		})
+	}
+	return out
+}
+
 // handleAdminGetConfig: GET /api/v1/admin/config -> effective system settings
-// (SMTP passwords are never returned; only password_set flags).
+// (SMTP 密码与 provider 密钥均不回显,只给 *_set 标记)。
 func handleAdminGetConfig(w http.ResponseWriter, r *http.Request) {
 	servers := make([]map[string]any, 0, len(systemServers))
 	for _, s := range systemServers {
@@ -432,10 +649,10 @@ func handleAdminGetConfig(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"smtp_servers":         servers,
-		"free_asset_quota":     freeAssetQuota,
-		"sms_provider_count":   len(smsProviders),
-		"phone_provider_count": len(phoneProviders),
+		"smtp_servers":     servers,
+		"free_asset_quota": freeAssetQuota,
+		"sms_providers":    maskProviders(smsProviders),
+		"phone_providers":  maskProviders(phoneProviders),
 	})
 }
 
@@ -447,13 +664,47 @@ type smtpServerInput struct {
 	FromAddr string `json:"from_addr"`
 }
 
+type providerInput struct {
+	Name      string `json:"name"`
+	APIKey    string `json:"api_key"`    // empty on update = keep existing
+	APISecret string `json:"api_secret"` // empty on update = keep existing
+}
+
 type adminConfigInput struct {
 	SMTPServers    []smtpServerInput `json:"smtp_servers"`
+	SMSProviders   []providerInput   `json:"sms_providers"`
+	PhoneProviders []providerInput   `json:"phone_providers"`
 	FreeAssetQuota int               `json:"free_asset_quota"`
 }
 
+// mergeProviders 按名称合并:留空的 key/secret 保留原值。
+func mergeProviders(inputs []providerInput, existing []provider) []provider {
+	keep := map[string]provider{}
+	for _, p := range existing {
+		keep[p.Name] = p
+	}
+	out := make([]provider, 0, len(inputs))
+	for _, in := range inputs {
+		name := strings.TrimSpace(in.Name)
+		if name == "" {
+			continue
+		}
+		key, secret := in.APIKey, in.APISecret
+		if prev, ok := keep[name]; ok {
+			if key == "" {
+				key = prev.APIKey
+			}
+			if secret == "" {
+				secret = prev.APISecret
+			}
+		}
+		out = append(out, provider{Name: name, APIKey: key, APISecret: secret})
+	}
+	return out
+}
+
 // handleAdminPutConfig: PUT /api/v1/admin/config -> persist config.json and
-// reload in-memory providers. Blank passwords keep the stored secret.
+// reload in-memory providers. Blank passwords/keys keep the stored secrets.
 func handleAdminPutConfig(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		actor := r.Context().Value(ctxUserIDKey).(int64)
@@ -480,6 +731,8 @@ func handleAdminPutConfig(db *sql.DB) http.HandlerFunc {
 			servers = append(servers, smtpServer{Host: in.Host, Port: in.Port, User: in.User, Password: pass, FromAddr: in.FromAddr})
 		}
 		cfg.SMTPServers = servers
+		cfg.SMSProviders = mergeProviders(req.SMSProviders, cfg.SMSProviders)
+		cfg.PhoneProviders = mergeProviders(req.PhoneProviders, cfg.PhoneProviders)
 		if req.FreeAssetQuota > 0 {
 			cfg.FreeAssetQuota = req.FreeAssetQuota
 		}
@@ -488,8 +741,9 @@ func handleAdminPutConfig(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "cannot write config.json")
 			return
 		}
-		loadConfig() // reload systemServers/freeAssetQuota in memory
-		auditAdmin(db, actor, "admin_config_update", fmt.Sprintf("smtp_servers:%d quota:%d", len(servers), freeAssetQuota))
+		loadConfig() // reload systemServers/freeAssetQuota/providers in memory
+		auditAdmin(db, actor, "admin_config_update", fmt.Sprintf("smtp_servers:%d sms:%d phone:%d quota:%d",
+			len(servers), len(cfg.SMSProviders), len(cfg.PhoneProviders), freeAssetQuota))
 		writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
 	}
 }

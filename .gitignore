@@ -26,3 +26,6 @@ Thumbs.db
 
 # 工具目录
 .omo/
+
+# 运行期配置(可能含 SMTP 密钥), 运维按需提供
+server/config.json

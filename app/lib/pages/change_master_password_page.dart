@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../crypto/asset_crypto.dart';
 import '../crypto/attempt_guard.dart';
 import '../crypto/key_derivation.dart';
 import '../crypto/master_key_change.dart';
@@ -73,6 +74,8 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _submitting = true);
     try {
+      // 先取旧主密钥:云端逐资产重包用。
+      final oldMk = await _store.readMasterKey();
       final result = await changeMasterPasswordLocal(
         store: _store,
         vault: LocalVault(),
@@ -88,7 +91,7 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
         return;
       }
       if (!mounted) return;
-      await _syncToCloud(result.newMk!);
+      await _syncToCloud(result.newMk!, oldMk ?? '');
       _clearSensitiveFields();
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -96,7 +99,11 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
   }
 
   /// 已登录:用新主密钥重新包装并同步云端;未登录/失败均不阻断本地更新。
-  Future<void> _syncToCloud(String newMk) async {
+  ///
+  /// 除更新 master_key_wrapped 外,还必须逐资产用新 MK 重包
+  /// asset_key_wrapped_mk(旧 MK 已不可用,否则改密后云端资产无法解密);
+  /// 凭据密文与 asset_key_wrapped_wk 原样保留(非破坏性)。
+  Future<void> _syncToCloud(String newMk, String oldMk) async {
     if (!_loggedIn) {
       _showMessage('已更新本地主密码');
       return;
@@ -119,6 +126,36 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
         _accountPasswordController.text,
         wrapped,
       );
+      // 同步新盐:否则服务端盐是旧的,新设备恢复会用旧盐派生 → 误报主密码错误。
+      final newSalt = await _store.readMasterSalt();
+      if (newSalt != null && newSalt.isNotEmpty) {
+        await api.updateMasterSalt(jwt, newSalt);
+      }
+      // 逐资产用新 MK 重包 AK(旧 MK 已换,不重包则解不开)。
+      if (oldMk.isNotEmpty) {
+        final assets = await api.listAssets(jwt);
+        for (final a in assets) {
+          final id = '${a['id']}';
+          try {
+            final full = await api.getAsset(jwt, id);
+            final wrappedMk = full['asset_key_wrapped_mk']?.toString() ?? '';
+            if (wrappedMk.isEmpty) continue; // 老资产无 AK 包装,跳过
+            final ak = unwrapAssetKey(wrappedMk, oldMk);
+            await api.updateAsset(jwt, id, {
+              'name': full['name']?.toString() ?? '',
+              'asset_type': full['asset_type']?.toString() ?? 'physical',
+              'category_id': full['category_id'],
+              'expiry_date': full['expiry_date'],
+              'encrypted_data': full['encrypted_data']?.toString() ?? '',
+              'asset_key_wrapped_mk': wrapAssetKey(ak, newMk),
+              'asset_key_wrapped_wk':
+                  full['asset_key_wrapped_wk']?.toString() ?? '',
+            });
+          } catch (_) {
+            // 单条失败不阻断整体(该资产旧包无法解开,可手动重加)。
+          }
+        }
+      }
       _showMessage('云端已同步');
     } on ApiException catch (e) {
       _showMessage(

@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // hashAccessCode stores access codes as sha256 hex. Codes are 256-bit random
@@ -224,6 +225,11 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 			FROM inheritance_events e JOIN users u ON u.id = e.user_id WHERE e.event_key = ?`, req.EventKey).
 			Scan(&eventID, &status, &codeHash, &ownerID, &mkw, &assetID)
 		if errors.Is(err, sql.ErrNoRows) {
+			// 未知 event_key:审计(ownerID 未知,user_id 记 0;actor 区分来源)。
+			if _, aerr := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (0, 'system', 'claim_failed', ?)`,
+				"unknown event_key"); aerr != nil {
+				log.Printf("audit claim fail: %v", aerr)
+			}
 			writeError(w, http.StatusUnauthorized, "invalid event_key or access_code")
 			return
 		}
@@ -233,6 +239,10 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		if !accessCodeMatches(codeHash, req.AccessCode) {
+			if _, aerr := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'inheritor', 'claim_failed', ?)`,
+				ownerID, "wrong access_code"); aerr != nil {
+				log.Printf("audit claim fail: %v", aerr)
+			}
 			writeError(w, http.StatusUnauthorized, "invalid event_key or access_code")
 			return
 		}
@@ -240,7 +250,8 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusConflict, "event already claimed or reversed")
 			return
 		}
-		res, err := db.Exec(`UPDATE inheritance_events SET status = 'claimed', claimed_at = datetime('now')
+		res, err := db.Exec(`UPDATE inheritance_events SET status = 'claimed', claimed_at = datetime('now'),
+				reversable_until = datetime('now', '+72 hours')
 			WHERE id = ? AND status = 'pending'`, eventID)
 		if err != nil {
 			log.Printf("claim event: %v", err)
@@ -260,6 +271,7 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 		}
 		// 资产级事件:只发放该资产的继承包装密钥(继承人凭 WK 解出该资产 AK);
 		// 全量事件:发放用户级主密钥包装(现有行为)。
+		revUntil := time.Now().UTC().Add(72 * time.Hour).Format("2006-01-02 15:04:05")
 		if assetID.Valid {
 			var wk string
 			if err := db.QueryRow(`SELECT asset_key_wrapped_wk FROM assets WHERE id = ?`, assetID.Int64).Scan(&wk); err != nil || wk == "" {
@@ -271,24 +283,27 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 				"asset_key_wrapped_wk": wk,
 				"asset_id":             assetID.Int64,
 				"status":               "claimed",
+				"reversable_until":     revUntil,
 			})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"master_key_wrapped": base64.StdEncoding.EncodeToString(mkw),
 			"status":             "claimed",
+			"reversable_until":   revUntil,
 		})
 	}
 }
 
 type eventJSON struct {
-	ID         int64   `json:"id"`
-	Status     string  `json:"status"`
-	AssetID    *int64  `json:"asset_id"`
-	AssetName  *string `json:"asset_name"`
-	CreatedAt  string  `json:"created_at"`
-	ClaimedAt  *string `json:"claimed_at"`
-	ReversedAt *string `json:"reversed_at"`
+	ID              int64   `json:"id"`
+	Status          string  `json:"status"`
+	AssetID         *int64  `json:"asset_id"`
+	AssetName       *string `json:"asset_name"`
+	CreatedAt       string  `json:"created_at"`
+	ClaimedAt       *string `json:"claimed_at"`
+	ReversedAt      *string `json:"reversed_at"`
+	ReversableUntil *string `json:"reversable_until"` // claimed 事件的反悔截止
 }
 
 // handleInheritanceStatus: GET /api/v1/inheritance/status -> 200
@@ -309,7 +324,7 @@ func handleInheritanceStatus(db *sql.DB) http.HandlerFunc {
 		if lastLogin.Valid {
 			ll = &lastLogin.String
 		}
-		rows, err := db.Query(`SELECT e.id, e.status, e.created_at, e.claimed_at, e.reversed_at,
+		rows, err := db.Query(`SELECT e.id, e.status, e.created_at, e.claimed_at, e.reversed_at, e.reversable_until,
 				e.asset_id, a.name
 			FROM inheritance_events e LEFT JOIN assets a ON a.id = e.asset_id
 			WHERE e.user_id = ? ORDER BY e.id DESC`, uid)
@@ -322,10 +337,10 @@ func handleInheritanceStatus(db *sql.DB) http.HandlerFunc {
 		events := []eventJSON{}
 		for rows.Next() {
 			var e eventJSON
-			var claimed, reversed sql.NullString
+			var claimed, reversed, revUntil sql.NullString
 			var assetID sql.NullInt64
 			var assetName sql.NullString
-			if err := rows.Scan(&e.ID, &e.Status, &e.CreatedAt, &claimed, &reversed, &assetID, &assetName); err != nil {
+			if err := rows.Scan(&e.ID, &e.Status, &e.CreatedAt, &claimed, &reversed, &revUntil, &assetID, &assetName); err != nil {
 				log.Printf("scan event: %v", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
@@ -335,6 +350,9 @@ func handleInheritanceStatus(db *sql.DB) http.HandlerFunc {
 			}
 			if reversed.Valid {
 				e.ReversedAt = &reversed.String
+			}
+			if revUntil.Valid {
+				e.ReversableUntil = &revUntil.String
 			}
 			if assetID.Valid {
 				e.AssetID = &assetID.Int64

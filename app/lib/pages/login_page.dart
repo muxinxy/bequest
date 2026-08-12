@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../crypto/recover_keys.dart';
 import '../storage/secure_store.dart';
 import 'forgot_password_page.dart';
 import 'home_page.dart';
 import 'local_unlock_page.dart';
 import 'register_page.dart';
+import 'reset_master_password_page.dart';
 import 'server_settings_page.dart';
 
 /// 登录页:提交用户名与密码,成功后进入主页。
@@ -29,11 +31,44 @@ class _LoginPageState extends State<LoginPage> {
   bool _submitting = false;
   String _captchaId = '';
   String _captchaQuestion = '';
+  bool _captchaFailed = false;
 
   @override
   void initState() {
     super.initState();
     _refreshCaptcha();
+    _restoreSession();
+  }
+
+  /// 冷启动/Web 刷新时恢复已登录会话:
+  /// - 云端:本地存有 JWT → 直接进主页(token 有效性由主页 GET /me 校验,失效回登录页);
+  /// - 本地模式:有当前本地账户 → 进账户选择页(须验证该账户主密码才能进入),
+  ///   否则留在登录页走「进入本地模式」。
+  Future<void> _restoreSession() async {
+    try {
+      final store = SecureStore();
+      final jwt = await store.readJwt();
+      final mk = await store.readMasterKey();
+      final mode = await store.readStorageMode();
+      if (mode == 'local') {
+        final active = await store.readActiveLocalProfileId();
+        if (active == null || active.isEmpty || mk == null || mk.isEmpty) {
+          return;
+        }
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(builder: (_) => const LocalUnlockPage()),
+        );
+        return;
+      }
+      if (jwt == null || jwt.isEmpty) return;
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(builder: (_) => const HomePage()),
+      );
+    } catch (_) {
+      // 存储读取失败:留在登录页。
+    }
   }
 
   @override
@@ -44,7 +79,7 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  /// 获取算术验证码(注册/登录共用;失败不阻塞,服务端校验兜底)。
+  /// 获取算术验证码(注册/登录共用;失败显示重试,服务端校验兜底)。
   Future<void> _refreshCaptcha() async {
     try {
       final c = await (await _api).getCaptcha();
@@ -52,15 +87,17 @@ class _LoginPageState extends State<LoginPage> {
         setState(() {
           _captchaId = c['captcha_id']?.toString() ?? '';
           _captchaQuestion = c['question']?.toString() ?? '';
+          _captchaFailed = _captchaQuestion.isEmpty;
           _captchaController.clear();
         });
       }
     } catch (_) {
-      // 验证码获取失败:提交时服务端会要求验证码,提示用户重试。
+      // 验证码获取失败:展示重试入口,不无限转圈。
       if (mounted) {
         setState(() {
           _captchaId = '';
           _captchaQuestion = '';
+          _captchaFailed = true;
         });
       }
     }
@@ -87,6 +124,54 @@ class _LoginPageState extends State<LoginPage> {
       await _store.saveJwt(token);
       // 登录即云端模式:避免沿用上次的本地模式设置。
       await _store.saveStorageMode('cloud');
+
+      // 跨设备恢复所需的服务端盐。
+      final serverSalt = response['master_salt']?.toString() ?? '';
+      // 老账号回填:注册前无盐上传,本机有盐而服务端缺 → 上传,之后新设备可恢复。
+      final localSalt = await _store.readMasterSalt();
+      if (serverSalt.isEmpty && localSalt != null && localSalt.isNotEmpty) {
+        try {
+          await api.updateMasterSalt(token, localSalt);
+        } catch (_) {
+          // 回填失败不影响登录。
+        }
+      }
+
+      // 跨设备登录:本机无主密钥且服务端存有盐 → 弹恢复对话框
+      // (主密钥/盐/WK 只在注册时写入本机;新设备需主密码+盐重新派生)。
+      final localMk = await _store.readMasterKey();
+      if ((localMk == null || localMk.isEmpty) && serverSalt.isNotEmpty) {
+        final choice = await _recoverKeys(token, serverSalt);
+        if (choice == _RecoveryChoice.reset) {
+          // 忘记主密码:重置只需账户密码,不需要旧主密码。
+          if (!mounted) return;
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const ResetMasterPasswordPage(),
+            ),
+          );
+          if (!mounted) return;
+          final mk = await _store.readMasterKey();
+          if (!mounted) return;
+          if (mk != null && mk.isNotEmpty) {
+            // 重置成功:本地已有新密钥,直接进主页。
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute<void>(builder: (_) => const HomePage()),
+            );
+          } else {
+            // 用户未完成重置:清凭据留在登录页。
+            await _store.clearAll();
+            if (mounted) _showError('未恢复加密密钥,请重新登录重试');
+          }
+          return;
+        }
+        if (choice != _RecoveryChoice.recovered) {
+          if (!mounted) return;
+          _showError('未恢复加密密钥,请重新登录重试');
+          await _store.clearAll();
+          return;
+        }
+      }
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -123,13 +208,35 @@ class _LoginPageState extends State<LoginPage> {
     throw ApiException('服务器未返回登录凭证');
   }
 
+  /// 跨设备恢复结果。
+  /// [recovered] = 主密码+盐重新派生成功;[reset] = 用户选择重置主密码;
+  /// [cancelled] = 取消/失败。
+  Future<_RecoveryChoice> _recoverKeys(String jwt, String salt) async {
+    final api = await _api;
+    if (!mounted) return _RecoveryChoice.cancelled;
+    final creds = await showDialog<({String? master, String? account, bool reset})>(
+      context: context,
+      builder: (_) => const _RecoveryDialog(),
+    );
+    if (creds == null || !mounted) return _RecoveryChoice.cancelled;
+    if (creds.reset) return _RecoveryChoice.reset;
+    final r = await recoverMasterKeys(
+      store: _store,
+      api: api,
+      jwt: jwt,
+      masterSalt: salt,
+      masterPassword: creds.master ?? '',
+      accountPassword: creds.account ?? '',
+    );
+    if (!r.ok && mounted) _showError(r.error!);
+    return r.ok ? _RecoveryChoice.recovered : _RecoveryChoice.cancelled;
+  }
+
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  @override
+  }  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SingleChildScrollView(
@@ -205,7 +312,9 @@ class _LoginPageState extends State<LoginPage> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        _captchaQuestion.isEmpty ? '加载中' : _captchaQuestion,
+                        _captchaQuestion.isEmpty
+                            ? (_captchaFailed ? '加载失败,点此重试' : '加载中')
+                            : _captchaQuestion,
                         style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold),
                       ),
@@ -282,6 +391,85 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 跨设备恢复结果。
+enum _RecoveryChoice { recovered, cancelled, reset }
+
+/// 跨设备恢复对话框:主密码(重派生主密钥)+ 账户密码(更新继承交接密钥);
+/// 提供「忘记主密码?去重置」出口(重置只需账户密码)。
+/// controller 随 State 释放,避免对话框退场动画期间访问已释放的 controller。
+class _RecoveryDialog extends StatefulWidget {
+  const _RecoveryDialog();
+
+  @override
+  State<_RecoveryDialog> createState() => _RecoveryDialogState();
+}
+
+class _RecoveryDialogState extends State<_RecoveryDialog> {
+  final _masterController = TextEditingController();
+  final _accountController = TextEditingController();
+
+  @override
+  void dispose() {
+    _masterController.dispose();
+    _accountController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('恢复加密密钥'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '此设备首次登录,请输入主密码恢复本机加密密钥(资产凭据不受影响)。',
+            style: TextStyle(fontSize: 13),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _masterController,
+            obscureText: true,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: '主密码',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _accountController,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: '账户密码(用于更新继承交接密钥)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop((master: '', account: '', reset: true)),
+          child: const Text('忘记主密码?去重置', style: TextStyle(color: Colors.grey)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop((
+            master: _masterController.text,
+            account: _accountController.text,
+            reset: false,
+          )),
+          child: const Text('恢复'),
+        ),
+      ],
     );
   }
 }

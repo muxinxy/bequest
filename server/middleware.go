@@ -13,7 +13,8 @@ type ctxKey int
 const ctxUserIDKey ctxKey = 0
 
 // requireAuth enforces a valid Bearer token and a non-disabled account,
-// placing user_id into the request context.
+// placing user_id into the request context. 2FA pending tokens are rejected
+// (they exist only for the /auth/2fa/verify step, never as a session).
 func requireAuth(db *sql.DB, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
@@ -21,13 +22,13 @@ func requireAuth(db *sql.DB, next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "missing bearer token")
 			return
 		}
-		uid, err := verifyToken(strings.TrimPrefix(auth, "Bearer "))
-		if err != nil {
+		c, err := verifyToken(strings.TrimPrefix(auth, "Bearer "))
+		if err != nil || c.Pending2FA {
 			writeError(w, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}
-		var disabled int
-		if err := db.QueryRow(`SELECT disabled FROM users WHERE id = ?`, uid).Scan(&disabled); err != nil {
+		var disabled, tokenVersion int
+		if err := db.QueryRow(`SELECT disabled, token_version FROM users WHERE id = ?`, c.UserID).Scan(&disabled, &tokenVersion); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				writeError(w, http.StatusUnauthorized, "user no longer exists")
 				return
@@ -35,11 +36,16 @@ func requireAuth(db *sql.DB, next http.Handler) http.Handler {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+		if c.TokenVersion != tokenVersion {
+			// 改密后旧 token 失效。
+			writeError(w, http.StatusUnauthorized, "invalid or expired token")
+			return
+		}
 		if disabled == 1 {
 			writeError(w, http.StatusForbidden, "账号已被禁用")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxUserIDKey, uid)))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxUserIDKey, c.UserID)))
 	})
 }
 

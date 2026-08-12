@@ -23,11 +23,13 @@ func parseID(r *http.Request) (int64, error) {
 // ---------- categories ----------
 
 type categoryJSON struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	AssetType string `json:"asset_type"`
-	IsPreset  int    `json:"is_preset"`
-	CreatedAt string `json:"created_at"`
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	AssetType  string `json:"asset_type"`
+	IsPreset   int    `json:"is_preset"`
+	CreatedAt  string `json:"created_at"`
+	SortOrder  int    `json:"sort_order"`
+	AssetCount int    `json:"asset_count"`
 }
 
 // validAssetType reports whether s is a supported category type.
@@ -35,10 +37,22 @@ func validAssetType(s string) bool {
 	return s == "physical" || s == "virtual"
 }
 
-// handleListCategories: GET /api/v1/categories -> 200 []
+// scanCategory fills a categoryJSON from the canonical column order:
+// id, name, asset_type, is_preset, created_at, sort_order, asset_count.
+func scanCategory(scanner interface{ Scan(...any) error }) (*categoryJSON, error) {
+	var c categoryJSON
+	if err := scanner.Scan(&c.ID, &c.Name, &c.AssetType, &c.IsPreset, &c.CreatedAt, &c.SortOrder, &c.AssetCount); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// handleListCategories: GET /api/v1/categories -> 200 [] (按 sort_order 排序)
 func handleListCategories(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rows, err := db.Query(`SELECT id, name, asset_type, is_preset, created_at FROM categories WHERE user_id = ? ORDER BY id`, userID(r))
+		rows, err := db.Query(`SELECT c.id, c.name, c.asset_type, c.is_preset, c.created_at, c.sort_order,
+				(SELECT COUNT(*) FROM assets a WHERE a.category_id = c.id) AS asset_count
+			FROM categories c WHERE c.user_id = ? ORDER BY c.sort_order, c.id`, userID(r))
 		if err != nil {
 			log.Printf("list categories: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -47,13 +61,13 @@ func handleListCategories(db *sql.DB) http.HandlerFunc {
 		defer rows.Close()
 		cats := []categoryJSON{}
 		for rows.Next() {
-			var c categoryJSON
-			if err := rows.Scan(&c.ID, &c.Name, &c.AssetType, &c.IsPreset, &c.CreatedAt); err != nil {
+			c, err := scanCategory(rows)
+			if err != nil {
 				log.Printf("scan category: %v", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
-			cats = append(cats, c)
+			cats = append(cats, *c)
 		}
 		writeJSON(w, http.StatusOK, cats)
 	}
@@ -95,14 +109,15 @@ func handleCreateCategory(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		id, _ := res.LastInsertId()
-		var c categoryJSON
-		if err := db.QueryRow(`SELECT name, asset_type, is_preset, created_at FROM categories WHERE id = ?`, id).
-			Scan(&c.Name, &c.AssetType, &c.IsPreset, &c.CreatedAt); err != nil {
+		// 新分组排最后(sort_order 用 id 即单调递增)。
+		db.Exec(`UPDATE categories SET sort_order = ? WHERE id = ?`, id, id)
+		c, err := scanCategory(db.QueryRow(`SELECT id, name, asset_type, is_preset, created_at, sort_order,
+			(SELECT COUNT(*) FROM assets a WHERE a.category_id = categories.id) FROM categories WHERE id = ?`, id))
+		if err != nil {
 			log.Printf("fetch created category: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		c.ID = id
 		writeJSON(w, http.StatusCreated, c)
 	}
 }
@@ -155,19 +170,62 @@ func handleUpdateCategory(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, "category not found")
 			return
 		}
-		var c categoryJSON
-		if err := db.QueryRow(`SELECT name, asset_type, is_preset, created_at FROM categories WHERE id = ?`, id).
-			Scan(&c.Name, &c.AssetType, &c.IsPreset, &c.CreatedAt); err != nil {
+		c, err := scanCategory(db.QueryRow(`SELECT id, name, asset_type, is_preset, created_at, sort_order,
+			(SELECT COUNT(*) FROM assets a WHERE a.category_id = categories.id) FROM categories WHERE id = ?`, id))
+		if err != nil {
 			log.Printf("fetch updated category: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		c.ID = id
 		writeJSON(w, http.StatusOK, c)
 	}
 }
 
-// handleDeleteCategory: DELETE /api/v1/categories/{id} -> 204; 404 not owned
+// handleReorderCategories: PUT /api/v1/categories/order {ids:[...]} ->
+// 200 {"ok":true}. 按给定顺序写入 sort_order(0,1,2,...)。
+func handleReorderCategories(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		var req struct {
+			IDs []int64 `json:"ids"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if len(req.IDs) == 0 {
+			writeError(w, http.StatusBadRequest, "ids required")
+			return
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		defer tx.Rollback()
+		for i, id := range req.IDs {
+			res, err := tx.Exec(`UPDATE categories SET sort_order = ? WHERE id = ? AND user_id = ?`, i, id, uid)
+			if err != nil {
+				log.Printf("reorder categories: %v", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				writeError(w, http.StatusNotFound, "category not found")
+				return
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	}
+}
+
+// handleDeleteCategory: DELETE /api/v1/categories/{id}?move_to={target} -> 204
+// (或 200 {"moved":n} 当带 move_to)。move_to 先把该分组资产移入目标分组再删,
+// 防止误删后资产散落"未分类"。分组继承人绑定由 ON DELETE CASCADE 清理。
 func handleDeleteCategory(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
@@ -175,14 +233,40 @@ func handleDeleteCategory(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid id")
 			return
 		}
-		res, err := db.Exec(`DELETE FROM categories WHERE id = ? AND user_id = ?`, id, userID(r))
-		if err != nil {
+		uid := userID(r)
+		// 确认分组存在且属于当前用户
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND user_id = ?`, id, uid).Scan(&n); err != nil || n == 0 {
+			writeError(w, http.StatusNotFound, "category not found")
+			return
+		}
+		moved := int64(0)
+		if moveTo := strings.TrimSpace(r.URL.Query().Get("move_to")); moveTo != "" {
+			target, err := strconv.ParseInt(moveTo, 10, 64)
+			if err != nil || target == id {
+				writeError(w, http.StatusBadRequest, "invalid move_to")
+				return
+			}
+			var m int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND user_id = ?`, target, uid).Scan(&m); err != nil || m == 0 {
+				writeError(w, http.StatusNotFound, "target category not found")
+				return
+			}
+			res, err := db.Exec(`UPDATE assets SET category_id = ? WHERE category_id = ? AND user_id = ?`, target, id, uid)
+			if err != nil {
+				log.Printf("move assets before delete: %v", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			moved, _ = res.RowsAffected()
+		}
+		if _, err := db.Exec(`DELETE FROM categories WHERE id = ? AND user_id = ?`, id, uid); err != nil {
 			log.Printf("delete category: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "category not found")
+		if moved > 0 {
+			writeJSON(w, http.StatusOK, map[string]int64{"moved": moved})
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

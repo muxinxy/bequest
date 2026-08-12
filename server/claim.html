@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>托孤 · 继承交接领取</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: #f4f5f7; color: #1f2328; }
+  .wrap { max-width: 560px; margin: 64px auto; padding: 0 20px; }
+  .card { background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 28px; }
+  h1 { font-size: 18px; margin-bottom: 6px; }
+  .sub { color: #57606a; font-size: 13px; margin-bottom: 20px; line-height: 1.6; }
+  label { display: block; font-size: 13px; color: #57606a; margin: 14px 0 6px; }
+  input { width: 100%; font-size: 14px; padding: 9px 12px; border: 1px solid #d0d7de; border-radius: 6px; }
+  button { margin-top: 20px; width: 100%; padding: 10px; font-size: 14px; border-radius: 6px; border: none; background: #0969da; color: #fff; cursor: pointer; }
+  button:hover { background: #075fc4; }
+  button:disabled { opacity: .5; cursor: default; }
+  #result { margin-top: 20px; display: none; }
+  #result h2 { font-size: 14px; margin-bottom: 10px; }
+  .keybox { background: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 6px; padding: 12px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; margin-bottom: 10px; }
+  .note { font-size: 12px; color: #57606a; line-height: 1.6; }
+  .err { color: #cf222e; font-size: 13px; margin-top: 12px; display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>继承交接领取</h1>
+    <p class="sub">受信人凭交接凭证(事件密钥 + 访问码)领取加密密钥。领取后请妥善保存,离线保管。</p>
+    <label>事件密钥 (event_key)</label>
+    <input id="event-key" autocomplete="off" spellcheck="false">
+    <label>访问码</label>
+    <input id="access-code" autocomplete="off" spellcheck="false">
+    <button id="btn">领取密钥</button>
+    <p class="err" id="err"></p>
+    <div id="result">
+      <h2>领取成功,请复制保存以下密钥</h2>
+      <div id="keys"></div>
+      <p class="note" id="note"></p>
+    </div>
+  </div>
+</div>
+<script>
+'use strict';
+document.getElementById('btn').addEventListener('click', async function () {
+  var btn = this;
+  var err = document.getElementById('err');
+  err.style.display = 'none';
+  document.getElementById('result').style.display = 'none';
+  var eventKey = document.getElementById('event-key').value.trim();
+  var code = document.getElementById('access-code').value.trim();
+  if (!eventKey || !code) {
+    err.textContent = '请填写事件密钥与访问码';
+    err.style.display = 'block';
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = '领取中...';
+  try {
+    var resp = await fetch('/api/v1/inheritance/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_key: eventKey, access_code: code }),
+    });
+    var data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+    var html = '';
+    if (data.master_key_wrapped) {
+      html += '<div class="keybox">' + data.master_key_wrapped + '</div>';
+      html += '<p class="note">这是被继承包装密钥加密后的主密钥,需与「继承包装密钥 WK」(号主线下交付)配合使用。</p>';
+    }
+    if (data.asset_key_wrapped_wk) {
+      html += '<div class="keybox">' + data.asset_key_wrapped_wk + '</div>';
+      html += '<p class="note">资产 #' + data.asset_id + ' 的继承包装密钥,同样需配合 WK 使用。</p>';
+    }
+    document.getElementById('keys').innerHTML = html;
+    document.getElementById('note').textContent = '状态:已领取 (claimed) · 号主可在 ' + (data.reversable_until || '') + ' 前登录反悔';
+    document.getElementById('result').style.display = 'block';
+  } catch (e) {
+    err.textContent = e.message || '领取失败';
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '领取密钥';
+  }
+});
+</script>
+</body>
+</html>

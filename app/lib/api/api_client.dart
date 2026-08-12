@@ -39,6 +39,7 @@ class ApiClient {
     required String email,
     required String password,
     required String masterKeyWrapped,
+    String masterSalt = '',
     String captchaId = '',
     String captcha = '',
   }) {
@@ -47,6 +48,7 @@ class ApiClient {
       'email': email,
       'password': password,
       'master_key_wrapped': masterKeyWrapped,
+      'master_salt': masterSalt,
       'captcha_id': captchaId,
       'captcha': captcha,
     });
@@ -88,6 +90,18 @@ class ApiClient {
   /// PUT /api/v1/me:改用户名/邮箱
   Future<Map<String, dynamic>> updateProfile(String jwt, Map<String, dynamic> body) {
     return _put('/api/v1/me', body, jwt);
+  }
+
+  /// PUT /api/v1/me/password:修改账户密码(改密后旧 token 立即失效)。
+  Future<void> changePassword(
+    String jwt,
+    String password,
+    String newPassword,
+  ) {
+    return _put('/api/v1/me/password', {
+      'password': password,
+      'new_password': newPassword,
+    }, jwt);
   }
 
   /// POST /api/v1/auth/reset-request:请求重置验证码到邮箱
@@ -136,9 +150,33 @@ class ApiClient {
     return _put('/api/v1/categories/$id', body, jwt);
   }
 
-  /// DELETE /api/v1/categories/{id}
-  Future<void> deleteCategory(String jwt, String id) {
-    return _delete('/api/v1/categories/$id', jwt);
+  /// DELETE /api/v1/categories/{id};moveTo 非空时先把资产移入该分组再删。
+  Future<void> deleteCategory(String jwt, String id, {int? moveTo}) {
+    final q = moveTo == null ? '' : '?move_to=$moveTo';
+    return _delete('/api/v1/categories/$id$q', jwt);
+  }
+
+  /// PUT /api/v1/categories/order {ids} 自定义分组排序。
+  Future<void> reorderCategories(String jwt, List<int> ids) {
+    return _put('/api/v1/categories/order', {'ids': ids}, jwt);
+  }
+
+  /// POST /api/v1/assets/move 批量移动资产到分组(null = 未分类)。
+  Future<Map<String, dynamic>> moveAssets(
+    String jwt,
+    List<int> ids,
+    int? categoryId,
+  ) {
+    return _postAuth('/api/v1/assets/move', {'ids': ids, 'category_id': categoryId}, jwt);
+  }
+
+  /// GET /api/v1/categories/{id}/inheritors/{iid}/assets 分组继承预览。
+  Future<Map<String, dynamic>> listCategoryInheritorAssets(
+    String jwt,
+    String categoryId,
+    String iid,
+  ) {
+    return _get('/api/v1/categories/$categoryId/inheritors/$iid/assets', jwt);
   }
 
   /// GET /api/v1/assets
@@ -335,6 +373,12 @@ class ApiClient {
       'password': accountPassword,
       'master_key_wrapped': wrappedB64,
     }, jwt);
+  }
+
+  /// PUT /api/v1/settings/master-salt(老账号回填:注册前无盐上传,
+  /// 本机有盐而服务端缺 → 登录时回填,供其他设备跨设备恢复)。
+  Future<void> updateMasterSalt(String jwt, String salt) {
+    return _put('/api/v1/settings/master-salt', {'master_salt': salt}, jwt);
   }
 
   Future<Map<String, dynamic>> _post(

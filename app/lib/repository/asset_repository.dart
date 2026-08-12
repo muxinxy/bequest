@@ -4,7 +4,9 @@ abstract class AssetRepository {
   Future<List<Map<String, dynamic>>> listCategories();
   Future<Map<String, dynamic>> createCategory(String name, {String assetType = 'physical'});
   Future<Map<String, dynamic>> updateCategory(String id, Map<String, dynamic> body);
-  Future<void> deleteCategory(String id);
+  Future<void> deleteCategory(String id, {int? moveTo});
+  Future<void> reorderCategories(List<String> ids);
+  Future<Map<String, dynamic>> moveAssets(List<String> ids, int? categoryId);
   Future<List<Map<String, dynamic>>> listAssets(); // metadata only
   Future<Map<String, dynamic>> getAsset(String id); // incl encrypted_data
   Future<Map<String, dynamic>> createAsset(Map<String, dynamic> body);
@@ -20,4 +22,7 @@ abstract class AssetRepository {
   Future<void> deleteCategoryInheritor(String categoryId, String iid);
   // 某继承人绑定的所有资产(直接 + 经分组)。
   Future<List<Map<String, dynamic>>> listInheritorAssets(String inheritorId);
+  // 分组绑定继承预览:经该分组继承的具体资产列表(响应形状 {assets:[...]})。
+  Future<Map<String, dynamic>> listCategoryInheritorAssets(
+      String categoryId, String iid);
 }

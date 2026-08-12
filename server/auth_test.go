@@ -232,6 +232,65 @@ func TestMeUnauthorized(t *testing.T) {
 	}
 }
 
+func TestLoginReturnsMasterSalt(t *testing.T) {
+	ts, _ := newTestServer(t)
+
+	// 注册时上传盐(跨设备恢复用),登录应原样返回。
+	regBody := `{"username":"salty","email":"salty@example.com","password":"password123","master_salt":"abc123salt"}`
+	if rr := doReq(t, ts, http.MethodPost, "/api/v1/auth/register", regBody, ""); rr.Code != http.StatusCreated {
+		t.Fatalf("register: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	rr := doReq(t, ts, http.MethodPost, "/api/v1/auth/login", `{"username":"salty","password":"password123"}`, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("login: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		MasterSalt string `json:"master_salt"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse login: %v", err)
+	}
+	if resp.MasterSalt != "abc123salt" {
+		t.Fatalf("login master_salt = %q, want abc123salt", resp.MasterSalt)
+	}
+
+	// 老用户(无盐):返回空串,不报错。
+	regBody2 := `{"username":"nosalt","email":"nosalt@example.com","password":"password123"}`
+	if rr := doReq(t, ts, http.MethodPost, "/api/v1/auth/register", regBody2, ""); rr.Code != http.StatusCreated {
+		t.Fatalf("register nosalt: status=%d", rr.Code)
+	}
+	rr = doReq(t, ts, http.MethodPost, "/api/v1/auth/login", `{"username":"nosalt","password":"password123"}`, "")
+	var resp2 struct {
+		MasterSalt string `json:"master_salt"`
+	}
+	json.Unmarshal(rr.Body.Bytes(), &resp2)
+	if resp2.MasterSalt != "" {
+		t.Fatalf("nosalt user master_salt = %q, want empty", resp2.MasterSalt)
+	}
+
+	// 老账号回填:本机有盐 → PUT master-salt → 登录返回新盐。
+	rr = doReq(t, ts, http.MethodPost, "/api/v1/auth/login", `{"username":"nosalt","password":"password123"}`, "")
+	var login2 struct {
+		Token string `json:"token"`
+	}
+	json.Unmarshal(rr.Body.Bytes(), &login2)
+	if login2.Token == "" {
+		t.Fatalf("login nosalt: no token")
+	}
+	rr = doReq(t, ts, http.MethodPut, "/api/v1/settings/master-salt", `{"master_salt":"backfilled-salt"}`, login2.Token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("put master-salt: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = doReq(t, ts, http.MethodPost, "/api/v1/auth/login", `{"username":"nosalt","password":"password123"}`, "")
+	var resp3 struct {
+		MasterSalt string `json:"master_salt"`
+	}
+	json.Unmarshal(rr.Body.Bytes(), &resp3)
+	if resp3.MasterSalt != "backfilled-salt" {
+		t.Fatalf("after backfill master_salt = %q, want backfilled-salt", resp3.MasterSalt)
+	}
+}
+
 func TestRegisterValidation(t *testing.T) {
 	ts, _ := newTestServer(t)
 	cases := []string{

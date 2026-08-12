@@ -41,7 +41,16 @@ class CloudAssetRepository implements AssetRepository {
       _api.updateCategory(jwt, id, body);
 
   @override
-  Future<void> deleteCategory(String id) => _api.deleteCategory(jwt, id);
+  Future<void> deleteCategory(String id, {int? moveTo}) =>
+      _api.deleteCategory(jwt, id, moveTo: moveTo);
+
+  @override
+  Future<void> reorderCategories(List<String> ids) =>
+      _api.reorderCategories(jwt, ids.map(int.parse).toList());
+
+  @override
+  Future<Map<String, dynamic>> moveAssets(List<String> ids, int? categoryId) =>
+      _api.moveAssets(jwt, ids.map(int.parse).toList(), categoryId);
 
   @override
   Future<List<Map<String, dynamic>>> listAssets() => _api.listAssets(jwt);
@@ -90,4 +99,9 @@ class CloudAssetRepository implements AssetRepository {
   @override
   Future<List<Map<String, dynamic>>> listInheritorAssets(String inheritorId) =>
       _api.listInheritorAssets(jwt, inheritorId);
+
+  @override
+  Future<Map<String, dynamic>> listCategoryInheritorAssets(
+          String categoryId, String iid) =>
+      _api.listCategoryInheritorAssets(jwt, categoryId, iid);
 }

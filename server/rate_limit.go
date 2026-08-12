@@ -8,7 +8,7 @@ import (
 )
 
 // ---------- 按 IP 频率限制(内存滑动窗口) ----------
-// 登录/注册:5 次/分钟/IP;其他 API:120 次/分钟/IP。
+// 登录/注册/继承领取/2FA:5 次/分钟/IP;其他 API:120 次/分钟/IP。
 // 单机内存计数;多实例部署需换共享存储(本项目单二进制,足够)。
 
 type rateWindow struct {
@@ -113,7 +113,11 @@ func rateLimit(next http.Handler) http.Handler {
 		globalLimiter.reset()
 		ip := clientIP(r)
 		isAuth := r.URL.Path == "/api/v1/auth/login" ||
-			r.URL.Path == "/api/v1/auth/register"
+			r.URL.Path == "/api/v1/auth/register" ||
+			r.URL.Path == "/api/v1/auth/2fa/verify" ||
+			r.URL.Path == "/api/v1/auth/reset-request" ||
+			r.URL.Path == "/api/v1/auth/reset" ||
+			r.URL.Path == "/api/v1/inheritance/claim"
 		allowed := globalLimiter.allow(globalLimiter.api, ip, apiLimit, apiWindow)
 		if isAuth {
 			// 严格限制叠加:登录/注册也计入常规窗口,但独立计数更紧。

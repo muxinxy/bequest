@@ -12,6 +12,7 @@ import '../crypto/pin_hash.dart';
 import '../logger.dart';
 import '../storage/secure_store.dart';
 import '../widgets/pattern_lock.dart';
+import 'login_page.dart';
 
 /// 锁屏:按已配置的解锁方式展示——图案、PIN、生物识别(可同时存在)。
 /// 解锁成功后回调 [onUnlocked]。
@@ -50,6 +51,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
   bool _hasPin = false;
   bool _hasPattern = false;
   bool _hasMasterKey = false;
+  bool _hasJwt = false;
   String _patternSalt = '';
   String _patternHash = '';
   bool _verifying = false;
@@ -76,6 +78,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
           : await _store.readLockBiometric();
       final hasPin = (await _store.readPinHash()) != null;
       final masterKey = await _store.readMasterKey();
+      final jwt = await _store.readJwt();
       final patternHash = await _store.readPatternHash();
       final patternSalt = await _store.readPatternSalt();
       if (mounted) {
@@ -83,6 +86,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
           _hasPin = hasPin;
           _hasPattern = patternHash != null && patternSalt != null;
           _hasMasterKey = masterKey != null && masterKey.isNotEmpty;
+          _hasJwt = jwt != null && jwt.isNotEmpty;
           _patternHash = patternHash ?? '';
           _patternSalt = patternSalt ?? '';
           _biometricEnabled = biometricEnabled;
@@ -91,14 +95,15 @@ class _AppLockScreenState extends State<AppLockScreen> {
       if (_biometricEnabled) {
         await _tryBiometric();
       }
-      // 未配置任何可校验方式(存储被清空等):视为解锁,避免被锁死。
-      // 注意:主密码也是可校验方式——只设主密码的用户不能自动放行,
-      // 否则手动锁定立即失效(web 端锁定无效的根因)。
+      // 未配置任何可校验方式且未登录(如已退出登录/全新浏览器):视为解锁,避免被锁死。
+      // 已登录用户即使本机读不到主密钥(跨设备登录后主密钥仅注册时写入)
+      // 也不放行——锁屏提供主密码解锁与退出登录出口,防止锁定形同虚设。
       if (mounted &&
           !_hasPin &&
           !_hasPattern &&
           !_hasMasterKey &&
-          !_biometricEnabled) {
+          !_biometricEnabled &&
+          !_hasJwt) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) widget.onUnlocked();
         });
@@ -344,7 +349,9 @@ class _AppLockScreenState extends State<AppLockScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  _hasPattern ? '请绘制图案解锁' : '请输入 PIN 码解锁',
+                  _hasPattern
+                      ? '请绘制图案解锁'
+                      : (_hasPin ? '请输入 PIN 码解锁' : '请输入主密码解锁'),
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.grey),
                 ),
@@ -422,7 +429,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                     label: const Text('生物识别解锁'),
                   ),
                 ],
-                if (_hasMasterKey) ...[
+                if (_hasMasterKey || _hasJwt) ...[
                   const SizedBox(height: 12),
                   TextButton(
                     onPressed: _verifying ? null : _unlockWithMasterPassword,
@@ -439,6 +446,32 @@ class _AppLockScreenState extends State<AppLockScreen> {
                       ),
                     ),
                   ],
+                ],
+                // 已登录但本机无主密钥(跨设备登录,主密钥仅注册时写入):
+                // 主密码解锁无法校验,提供退出登录出口避免锁死。
+                if (_hasJwt && !_hasMasterKey && !_hasPin && !_hasPattern) ...[
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: _verifying
+                        ? null
+                        : () async {
+                            final navigator = Navigator.of(
+                              context,
+                              rootNavigator: true,
+                            );
+                            await _store.clearAll();
+                            if (!mounted) return;
+                            widget.onUnlocked(); // 解除锁定遮罩
+                            // 清栈回登录页(锁屏在独立 Navigator 内,须用根导航器)。
+                            navigator.pushAndRemoveUntil(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const LoginPage(),
+                              ),
+                              (route) => false,
+                            );
+                          },
+                    child: const Text('退出登录', style: TextStyle(color: Colors.grey)),
+                  ),
                 ],
               ],
             ),

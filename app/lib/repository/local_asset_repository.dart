@@ -93,13 +93,15 @@ class LocalAssetRepository implements AssetRepository {
   }
 
   @override
-  Future<void> deleteCategory(String id) async {
+  Future<void> deleteCategory(String id, {int? moveTo}) async {
     final data = await _load();
     (data['categories'] as List)
         .removeWhere((c) => '${(c as Map)['id']}' == id);
-    // 镜像服务器 ON DELETE SET NULL:引用该分类的资产解除关联。
+    // 镜像服务器语义:moveTo 指定则移入目标分组,否则解关联(未分类)。
     for (final asset in _asMaps(data['assets'])) {
-      if ('${asset['category_id']}' == id) asset['category_id'] = null;
+      if ('${asset['category_id']}' == id) {
+        asset['category_id'] = moveTo?.toString();
+      }
     }
     await _save(data);
   }
@@ -205,4 +207,46 @@ class LocalAssetRepository implements AssetRepository {
   @override
   Future<List<Map<String, dynamic>>> listInheritorAssets(
       String inheritorId) async => const [];
+
+  @override
+  Future<Map<String, dynamic>> listCategoryInheritorAssets(
+          String categoryId, String iid) async =>
+      const {};
+
+  // 本地模式:排序/批量移动直接操作本机 vault(无网络)。
+  @override
+  Future<void> reorderCategories(List<String> ids) async {
+    final data = await _load();
+    final cats = _asMaps(data['categories']);
+    final byId = {for (final c in cats) '${c['id']}': c};
+    final ordered = <Map<String, dynamic>>[];
+    for (final id in ids) {
+      final c = byId.remove(id);
+      if (c != null) ordered.add(c);
+    }
+    ordered.addAll(byId.values);
+    data['categories'] = ordered;
+    await _save(data);
+  }
+
+  @override
+  Future<Map<String, dynamic>> moveAssets(List<String> ids, int? categoryId) async {
+    final data = await _load();
+    final cats = _asMaps(data['categories']);
+    final target = categoryId?.toString();
+    // 目标分类必须存在(与云端一致);未分类(categoryId null)允许。
+    if (target != null && !cats.any((c) => '${c['id']}' == target)) {
+      throw StateError('目标分类不存在');
+    }
+    final idSet = ids.toSet();
+    var moved = 0;
+    for (final asset in _asMaps(data['assets'])) {
+      if (idSet.contains('${asset['id']}')) {
+        asset['category_id'] = target;
+        moved++;
+      }
+    }
+    await _save(data);
+    return {'moved': moved};
+  }
 }

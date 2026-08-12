@@ -124,27 +124,83 @@ class _CategoryPageState extends State<CategoryPage> {
     );
   }
 
+  /// 上移/下移分组(乐观更新,失败回滚重载)。
+  Future<void> _move(int index, int delta) async {
+    final list = [..._categories];
+    final tmp = list[index];
+    list[index] = list[index + delta];
+    list[index + delta] = tmp;
+    setState(() => _categories = list);
+    try {
+      await widget.repository
+          .reorderCategories(list.map((c) => c.id).toList());
+    } catch (_) {
+      _showError('排序保存失败,请检查网络后重试');
+      await _load();
+    }
+  }
+
+  /// 删除分组:确认框显示受影响资产数,可选"移入目标分组"(合并/防误删)。
   Future<void> _deleteCategory(Category category) async {
+    final others = _categories.where((c) => c.id != category.id).toList();
+    String? moveToId; // null = 未分类
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('删除分类'),
-        content: Text('确定删除分类「${category.name}」吗?关联资产将变为未分类。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('删除分类'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('「${category.name}」含 ${category.assetCount} 个资产。'),
+              const SizedBox(height: 8),
+              Text(
+                '删除后这些资产将移入所选分组(默认未分类)。',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 12),
+              if (others.isNotEmpty)
+                DropdownButtonFormField<String?>(
+                  initialValue: null,
+                  decoration: const InputDecoration(
+                    labelText: '资产移入',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('未分类')),
+                    ...others.map(
+                      (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
+                    ),
+                  ],
+                  onChanged: (v) => setDialogState(() => moveToId = v),
+                )
+              else
+                Text(
+                  '无可移入的分组,资产将变为未分类。',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除'),
-          ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('删除'),
+            ),
+          ],
+        ),
       ),
     );
     if (confirmed != true) return;
     try {
-      await widget.repository.deleteCategory(category.id);
+      await widget.repository.deleteCategory(
+        category.id,
+        moveTo: moveToId == null ? null : int.tryParse(moveToId!),
+      );
       await _load();
     } catch (_) {
       _showError('删除失败,请检查网络后重试');
@@ -184,9 +240,24 @@ class _CategoryPageState extends State<CategoryPage> {
                         color: Theme.of(context).colorScheme.primary,
                       ),
                       title: Text(category.name),
+                      subtitle: Text('${category.assetCount} 个资产'),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          IconButton(
+                            tooltip: '上移',
+                            icon: const Icon(Icons.arrow_upward),
+                            onPressed: index == 0
+                                ? null
+                                : () => _move(index, -1),
+                          ),
+                          IconButton(
+                            tooltip: '下移',
+                            icon: const Icon(Icons.arrow_downward),
+                            onPressed: index == _categories.length - 1
+                                ? null
+                                : () => _move(index, 1),
+                          ),
                           if (category.isPreset)
                             Container(
                               padding: const EdgeInsets.symmetric(

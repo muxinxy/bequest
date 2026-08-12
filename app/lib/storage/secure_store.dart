@@ -27,6 +27,16 @@ class SecureStore {
   static const _storageModeKey = 'bequest_storage_mode';
   static const _masterHintKey = 'bequest_master_hint';
 
+  // ---- 本地账户(多账户本地模式) ----
+  static const _localProfilesKey = 'bequest_local_profiles';
+  static const _activeProfileKey = 'bequest_active_local_profile';
+  // 进入本地账户前暂存的标准槽(退出时恢复,避免云端密钥被本地密钥覆盖)。
+  static const _preLocalMkKey = 'bequest_pre_local_mk';
+  static const _preLocalSaltKey = 'bequest_pre_local_salt';
+  static const _preLocalWkKey = 'bequest_pre_local_wk';
+
+  static String _profileKey(String kind, String id) => 'bequest_local_${kind}_$id';
+
   final FlutterSecureStorage _storage;
 
   /// 通用整数读写:失败限流计数与锁定时间戳(millis epoch)。
@@ -180,4 +190,150 @@ class SecureStore {
 
   Future<void> saveStorageMode(String mode) =>
       _storage.write(key: _storageModeKey, value: mode);
+
+  // ---------- 本地账户(多账户本地模式) ----------
+
+  /// 本地账户列表:[{id, name}],空 = 尚未建立任何本地账户。
+  Future<List<Map<String, String>>> readLocalProfiles() async {
+    final raw = await _storage.read(key: _localProfilesKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map<String, dynamic>>()
+            .map((m) => m.map((k, v) => MapEntry(k, v.toString())))
+            .toList(growable: false);
+      }
+    } catch (_) {
+      // 数据损坏:按无账户处理。
+    }
+    return const [];
+  }
+
+  Future<String?> readActiveLocalProfileId() =>
+      _storage.read(key: _activeProfileKey);
+
+  /// 进入本地账户前暂存当前标准槽(只存一次,嵌套进入不覆盖)。
+  Future<void> _stashStandardSlots() async {
+    if (await _storage.read(key: _preLocalMkKey) != null) return;
+    final mk = await _storage.read(key: _masterKeyKey);
+    final salt = await _storage.read(key: _masterSaltKey);
+    final wk = await _storage.read(key: _wrappingKeyKey);
+    if (mk != null) await _storage.write(key: _preLocalMkKey, value: mk);
+    if (salt != null) await _storage.write(key: _preLocalSaltKey, value: salt);
+    if (wk != null) await _storage.write(key: _preLocalWkKey, value: wk);
+  }
+
+  /// 退出本地模式:恢复暂存的标准槽并清除。
+  Future<void> _restoreStashedSlots() async {
+    for (final (key, slot) in [
+      (_preLocalMkKey, _masterKeyKey),
+      (_preLocalSaltKey, _masterSaltKey),
+      (_preLocalWkKey, _wrappingKeyKey),
+    ]) {
+      final v = await _storage.read(key: key);
+      if (v != null) {
+        await _storage.write(key: slot, value: v);
+      } else {
+        await _storage.delete(key: slot);
+      }
+      await _storage.delete(key: key);
+    }
+  }
+
+  Future<void> _writeStandardSlots(String mk, String salt, String wk) async {
+    await _storage.write(key: _masterKeyKey, value: mk);
+    await _storage.write(key: _masterSaltKey, value: salt);
+    await _storage.write(key: _wrappingKeyKey, value: wk);
+  }
+
+  /// 新建本地账户:账户密钥入专属槽位,并写入标准槽(现有本地代码无感)、设为当前账户。
+  Future<void> createLocalProfile({
+    required String id,
+    required String name,
+    required String masterKey,
+    required String salt,
+    required String wrappingKey,
+    String hint = '',
+  }) async {
+    await _stashStandardSlots();
+    await _storage.write(key: _profileKey('mk', id), value: masterKey);
+    await _storage.write(key: _profileKey('salt', id), value: salt);
+    await _storage.write(key: _profileKey('wk', id), value: wrappingKey);
+    if (hint.isNotEmpty) {
+      await _storage.write(key: _profileKey('hint', id), value: hint);
+    }
+    await _writeStandardSlots(masterKey, salt, wrappingKey);
+    final profiles = [...await readLocalProfiles()];
+    profiles.add({'id': id, 'name': name});
+    await _storage.write(key: _localProfilesKey, value: jsonEncode(profiles));
+    await _storage.write(key: _activeProfileKey, value: id);
+  }
+
+  /// 切换本地账户:该账户密钥写入标准槽并设为当前账户。
+  Future<void> activateLocalProfile(String id) async {
+    await _stashStandardSlots();
+    final mk = await _storage.read(key: _profileKey('mk', id));
+    final salt = await _storage.read(key: _profileKey('salt', id));
+    final wk = await _storage.read(key: _profileKey('wk', id));
+    await _writeStandardSlots(mk ?? '', salt ?? '', wk ?? '');
+    await _storage.write(key: _activeProfileKey, value: id);
+  }
+
+  /// 退出本地模式:恢复进入前暂存的标准槽(云端密钥),清空当前账户标记。
+  Future<void> deactivateLocalProfile() async {
+    await _restoreStashedSlots();
+    await _storage.delete(key: _activeProfileKey);
+  }
+
+  /// 读取账户密钥(进入验证用)。
+  Future<({String? mk, String? salt, String? wk, String? hint})>
+      readLocalProfile(String id) async {
+    final mk = await _storage.read(key: _profileKey('mk', id));
+    final salt = await _storage.read(key: _profileKey('salt', id));
+    final wk = await _storage.read(key: _profileKey('wk', id));
+    final hint = await _storage.read(key: _profileKey('hint', id));
+    return (mk: mk, salt: salt, wk: wk, hint: hint);
+  }
+
+  /// 删除本地账户:清账户密钥与列表项;若为当前账户先退出。
+  /// vault 文件残留无害(读不到即空库)。
+  Future<void> deleteLocalProfile(String id) async {
+    if (await readActiveLocalProfileId() == id) {
+      await deactivateLocalProfile();
+    }
+    for (final kind in const ['mk', 'salt', 'wk', 'hint']) {
+      await _storage.delete(key: _profileKey(kind, id));
+    }
+    final profiles = [...await readLocalProfiles()];
+    profiles.removeWhere((p) => p['id'] == id);
+    await _storage.write(key: _localProfilesKey, value: jsonEncode(profiles));
+  }
+
+  /// 旧版单账户迁移:标准槽已有本地主密钥但无账户列表 →
+  /// 登记为 'legacy' 账户(沿用原 vault.bq,零数据迁移)。
+  Future<bool> migrateLegacyLocalProfile() async {
+    final profiles = await readLocalProfiles();
+    if (profiles.isNotEmpty) return false;
+    final mk = await _storage.read(key: _masterKeyKey);
+    final salt = await _storage.read(key: _masterSaltKey);
+    if (mk == null || mk.isEmpty || salt == null || salt.isEmpty) return false;
+    final wk = await _storage.read(key: _wrappingKeyKey) ?? '';
+    await _storage.write(key: _profileKey('mk', 'legacy'), value: mk);
+    await _storage.write(key: _profileKey('salt', 'legacy'), value: salt);
+    await _storage.write(key: _profileKey('wk', 'legacy'), value: wk);
+    final hint = await _storage.read(key: _masterHintKey);
+    if (hint != null) {
+      await _storage.write(key: _profileKey('hint', 'legacy'), value: hint);
+    }
+    await _storage.write(
+      key: _localProfilesKey,
+      value: jsonEncode([
+        {'id': 'legacy', 'name': '本地账户'}
+      ]),
+    );
+    await _storage.write(key: _activeProfileKey, value: 'legacy');
+    return true;
+  }
 }

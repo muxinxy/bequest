@@ -4,9 +4,12 @@ import '../crypto/asset_crypto.dart';
 import '../platform/string_store.dart';
 import '../platform/string_store_io.dart'
     if (dart.library.js_interop) '../platform/string_store_web.dart';
+import '../storage/secure_store.dart';
 
-/// 本地加密快照:单文件存储加密 JSON(AES-256-GCM)。VM 落文件 vault.bq,
-/// Web 落 localStorage。
+/// 本地加密快照:单文件存储加密 JSON(AES-256-GCM)。VM 落文件,Web 落 localStorage。
+///
+/// 文件按当前本地账户隔离:旧账户(legacy)沿用 vault.bq(零迁移),
+/// 新建账户用 vault_<账户id>.bq;云端备份(无当前账户)用 vault.bq。
 ///
 /// 同一存储两种用途(互斥覆盖):
 /// - 备份串(backup.dart 的 loadVault/saveVault):最近一次全量备份 JSON;
@@ -17,15 +20,30 @@ class LocalVault {
   /// 测试可注入临时目录;默认使用应用文档目录。
   final String? directory;
 
-  StringStore get _store => makeStringStore(
-    fileName: 'vault.bq',
-    directoryProvider: directory == null ? null : () async => directory!,
-  );
+  StringStore? _cached;
+
+  Future<StringStore> _store() async {
+    if (_cached != null) return _cached!;
+    var name = 'vault.bq';
+    try {
+      final active = await SecureStore().readActiveLocalProfileId();
+      if (active != null && active.isNotEmpty && active != 'legacy') {
+        name = 'vault_$active.bq';
+      }
+    } catch (_) {
+      // 测试环境无 secure storage 平台:回退默认文件。
+    }
+    _cached = makeStringStore(
+      fileName: name,
+      directoryProvider: directory == null ? null : () async => directory!,
+    );
+    return _cached!;
+  }
 
   /// 读取并解密快照原文;存储缺失/密钥错误/数据被篡改均返回 null。
   Future<String?> _readDecrypted(String masterKeyB64) async {
     try {
-      final raw = await _store.read();
+      final raw = await (await _store()).read();
       if (raw == null) return null;
       return decryptSensitiveData(raw, masterKeyB64);
     } catch (_) {
@@ -38,7 +56,7 @@ class LocalVault {
 
   /// 加密并写入快照。注意:会覆盖本地库对象,两者互斥。
   Future<void> saveVault(String backupJson, String masterKeyB64) async {
-    await _store.write(encryptSensitiveData(backupJson, masterKeyB64));
+    await (await _store()).write(encryptSensitiveData(backupJson, masterKeyB64));
   }
 
   /// 读取本地库对象(解密 + JSON 解码)。无存储/密钥错误 → null。
@@ -70,7 +88,7 @@ class LocalVault {
     String? salt,
   }) async {
     if (salt != null) data['salt'] = salt;
-    await _store.write(
+    await (await _store()).write(
       encryptSensitiveData(jsonEncode(data), masterKeyB64),
     );
   }
@@ -82,5 +100,5 @@ class LocalVault {
   }
 
   /// 删除本地快照(存在才删)。
-  Future<void> clearVault() => _store.delete();
+  Future<void> clearVault() async => (await _store()).delete();
 }

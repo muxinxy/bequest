@@ -246,6 +246,35 @@ func handleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"version": version})
 }
 
+// ---------- /api/v1/settings/master-salt ----------
+
+// handlePutMasterSalt: PUT /api/v1/settings/master-salt -> 200 {"ok":true}.
+// 老账号回填:注册时未上传盐,客户端在登录时检测服务端缺盐而本机有 → 回填,
+// 之后新设备即可凭「主密码 + 盐」跨设备恢复密钥。
+func handlePutMasterSalt(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		var req struct {
+			MasterSalt string `json:"master_salt"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if strings.TrimSpace(req.MasterSalt) == "" {
+			writeError(w, http.StatusBadRequest, "master_salt required")
+			return
+		}
+		if _, err := db.Exec(`UPDATE users SET master_salt = ?, updated_at = datetime('now') WHERE id = ?`,
+			req.MasterSalt, uid); err != nil {
+			log.Printf("update master salt: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	}
+}
+
 // ---------- /api/v1/settings/master-key ----------
 
 type masterKeyPutRequest struct {

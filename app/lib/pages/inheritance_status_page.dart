@@ -136,6 +136,11 @@ class _InheritanceStatusPageState extends State<InheritanceStatusPage> {
                                   Text('领取:${formatServerTime(e.claimedAt)}'),
                                 if (e.reversedAt != null)
                                   Text('撤销:${formatServerTime(e.reversedAt)}'),
+                                if (e.status == 'claimed' && e.reversableUntil != null)
+                                  Text(
+                                    '反悔截止:${formatServerTime(e.reversableUntil)}(过期后交接最终完成)',
+                                    style: const TextStyle(color: Colors.orange),
+                                  ),
                               ],
                             ),
                           ),

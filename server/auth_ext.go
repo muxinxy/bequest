@@ -122,6 +122,55 @@ func handleUpdateProfile(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// ---------- 登录后修改账户密码 ----------
+
+// handleChangePassword: PUT /api/v1/me/password {"password","new_password"}
+// 校验当前密码 → 更新哈希 → 递增 token_version(旧 token 全部失效)→ 审计。
+func handleChangePassword(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		var req struct {
+			Password    string `json:"password"`
+			NewPassword string `json:"new_password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if msg := validateCredentials("change-password", "pw@"+req.Password, req.NewPassword); msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+		var hash string
+		if err := db.QueryRow(`SELECT password_hash FROM users WHERE id = ?`, uid).Scan(&hash); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		ok, err := verifyPassword(hash, req.Password)
+		if err != nil || !ok {
+			writeError(w, http.StatusUnauthorized, "当前密码错误")
+			return
+		}
+		newHash, err := hashPassword(req.NewPassword)
+		if err != nil {
+			log.Printf("hash new password: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if _, err := db.Exec(`UPDATE users SET password_hash = ?, token_version = token_version + 1, updated_at = datetime('now') WHERE id = ?`,
+			newHash, uid); err != nil {
+			log.Printf("change password: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if _, err := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'owner', 'password_changed', ?)`,
+			uid, clientIP(r)); err != nil {
+			log.Printf("audit password change: %v", err)
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	}
+}
+
 // ---------- 忘记密码:邮箱验证码 ----------
 
 // handleRequestPasswordReset: POST /api/v1/auth/reset-request {"email":...}
@@ -184,15 +233,16 @@ func handleResetPassword(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, msg)
 			return
 		}
-		codeHash := sha256.Sum256([]byte(strings.TrimSpace(req.Code)))
-		hashHex := hex.EncodeToString(codeHash[:])
+		// 定位该用户最新一条未使用且未过期的验证码:先做尝试次数检查,
+		// 再比对验证码(5 次失败作废,防穷举)。
 		var uid int64
-		var expires string
-		var used int
-		err := db.QueryRow(`SELECT pr.user_id, pr.expires_at, pr.used FROM password_resets pr
+		var resetID int64
+		var attempts int
+		var storedHash string
+		err := db.QueryRow(`SELECT pr.user_id, pr.id, pr.attempts, pr.code_hash FROM password_resets pr
 			JOIN users u ON u.id = pr.user_id
-			WHERE u.email = ? AND pr.code_hash = ?
-			ORDER BY pr.id DESC LIMIT 1`, email, hashHex).Scan(&uid, &expires, &used)
+			WHERE u.email = ? AND pr.used = 0 AND pr.expires_at > datetime('now')
+			ORDER BY pr.id DESC LIMIT 1`, email).Scan(&uid, &resetID, &attempts, &storedHash)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusUnauthorized, "invalid or expired code")
 			return
@@ -202,13 +252,23 @@ func handleResetPassword(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		if used != 0 {
-			writeError(w, http.StatusUnauthorized, "code already used")
+		if attempts >= 5 {
+			// 已超过尝试上限:作废该码。
+			db.Exec(`UPDATE password_resets SET used = 1 WHERE id = ?`, resetID)
+			writeError(w, http.StatusTooManyRequests, "尝试次数过多,请重新获取验证码")
 			return
 		}
-		expTime, perr := time.Parse("2006-01-02 15:04:05", expires)
-		if perr != nil || time.Now().UTC().After(expTime) {
-			writeError(w, http.StatusUnauthorized, "code expired")
+		codeHash := sha256.Sum256([]byte(strings.TrimSpace(req.Code)))
+		if hex.EncodeToString(codeHash[:]) != storedHash {
+			attempts++
+			used := 0
+			if attempts >= 5 {
+				used = 1
+			}
+			if _, err := db.Exec(`UPDATE password_resets SET attempts = ?, used = ? WHERE id = ?`, attempts, used, resetID); err != nil {
+				log.Printf("count reset attempt: %v", err)
+			}
+			writeError(w, http.StatusUnauthorized, "invalid or expired code")
 			return
 		}
 		hash, err := hashPassword(req.NewPassword)
@@ -230,8 +290,7 @@ func handleResetPassword(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		if _, err := tx.Exec(`UPDATE password_resets SET used = 1 WHERE user_id = ? AND code_hash = ?`,
-			uid, hashHex); err != nil {
+		if _, err := tx.Exec(`UPDATE password_resets SET used = 1 WHERE id = ?`, resetID); err != nil {
 			tx.Rollback()
 			log.Printf("mark reset used: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")

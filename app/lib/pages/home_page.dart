@@ -44,6 +44,12 @@ class _HomePageState extends State<HomePage> {
   bool _isLocal = false;
   bool _hasJwt = false;
 
+  /// 云端 tier(free/member),来自 GET /api/v1/me;本地模式为 null(访客权益)。
+  String? _tier;
+
+  /// 应用锁是否已设置(设置页完成 PIN/图案配置后为 true);未设置则不显示锁定按钮。
+  bool _lockEnabled = false;
+
   /// 折叠的分组 id 集合(分组视图下点击分组标题折叠/展开)。
   final Set<String> _collapsedGroups = {};
 
@@ -86,11 +92,14 @@ class _HomePageState extends State<HomePage> {
       _repo = repo;
       final categories = await repo.listCategories();
       final assets = await repo.listAssets();
+      final lockEnabled = await _store.readLockEnabled();
       var unread = 0;
+      String? tier;
       if (!isLocal) {
         // 会话校验与站内提醒仅云端有;ApiClient 走配置的服务器地址。
         final api = await ApiConfig.client();
-        await api.me(jwt!);
+        final me = await api.me(jwt!);
+        tier = (me['user'] as Map<String, dynamic>?)?['tier'] as String?;
         final reminders = await api.listReminders(jwt);
         unread = reminders
             .map(Reminder.fromJson)
@@ -106,8 +115,23 @@ class _HomePageState extends State<HomePage> {
         _unreadReminders = unread;
         _isLocal = isLocal;
         _hasJwt = !isLocal && jwt != null;
+        _tier = tier;
+        _lockEnabled = lockEnabled;
         _loading = false;
       });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      // JWT 失效/过期(如后台禁用账号):清凭据回登录页,避免卡在错误页。
+      if (e.statusCode == 401) {
+        await _logout();
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(
+        content: Text(isLocal ? '加载失败,本地数据读取异常' : '加载失败,请检查网络后重试'),
+      ));
+      if (mounted) setState(() => _loading = false);
     } catch (_) {
       if (!mounted) return;
       // 本地模式读取加密库失败与网络无关,提示语要准确。
@@ -143,7 +167,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// 本地模式退出:不清空本机数据,仅返回登录页。
+  /// 恢复进入前暂存的标准槽(云端密钥),并清空当前本地账户标记——
+  /// 否则登录页的会话恢复会因 mode=='local' + 有主密钥而弹回本地主页。
   Future<void> _exitLocal() async {
+    await _store.deactivateLocalProfile();
+    await _store.saveStorageMode('cloud');
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(builder: (_) => const LoginPage()),
@@ -197,7 +225,7 @@ class _HomePageState extends State<HomePage> {
     if (repo == null) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AssetEditPage(asset: asset, repository: repo),
+        builder: (_) => AssetEditPage(asset: asset, repository: repo, tier: _tier),
       ),
     );
     if (mounted) _load();
@@ -212,7 +240,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _tierBadge() {
-    final ent = Entitlements.forJwtAndTier(hasJwt: _hasJwt, tier: null);
+    final ent = Entitlements.forJwtAndTier(hasJwt: _hasJwt, tier: _tier);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
@@ -249,11 +277,12 @@ class _HomePageState extends State<HomePage> {
             ),
             onPressed: () => _openPage(const RemindersPage()),
           ),
-          IconButton(
-            tooltip: '锁定',
-            icon: const Icon(Icons.lock_outline),
-            onPressed: LockGate.lockNow,
-          ),
+          if (_lockEnabled)
+            IconButton(
+              tooltip: '锁定',
+              icon: const Icon(Icons.lock_outline),
+              onPressed: LockGate.lockNow,
+            ),
           IconButton(
             tooltip: '设置',
             icon: const Icon(Icons.settings_outlined),
@@ -342,12 +371,50 @@ class _HomePageState extends State<HomePage> {
                               }
                             }),
                             onTapAsset: _openEditor,
+                            onOrganizeUncategorized: _organizeUncategorized,
                           ),
                         ),
                 ),
               ],
             ),
     );
+  }
+
+  /// 未分类批量整理:把未分类资产全部移至目标分组。
+  Future<void> _organizeUncategorized() async {
+    final targets = _categories;
+    if (targets.isEmpty) return;
+    final target = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('未分类资产移至'),
+        children: [
+          for (final c in targets)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(c.id),
+              child: Text(c.name),
+            ),
+        ],
+      ),
+    );
+    if (target == null || !mounted) return;
+    final ids = _assets
+        .where((a) => a.categoryId == null || a.categoryId!.isEmpty)
+        .map((a) => a.id)
+        .where((i) => i.isNotEmpty)
+        .toList();
+    if (ids.isEmpty) return;
+    final repo = _repo;
+    if (repo == null) return;
+    try {
+      await repo.moveAssets(ids, int.tryParse(target));
+      await _load();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('移动失败,请检查网络后重试')),
+      );
+    }
   }
 
   List<DropdownMenuItem<String>> _filterItems() {
@@ -369,6 +436,7 @@ class _GroupedAssetList extends StatelessWidget {
     required this.collapsed,
     required this.onToggle,
     required this.onTapAsset,
+    this.onOrganizeUncategorized,
   });
 
   final List<(String, String, List<Asset>)> groups;
@@ -376,11 +444,27 @@ class _GroupedAssetList extends StatelessWidget {
   final void Function(String groupId) onToggle;
   final void Function(Asset) onTapAsset;
 
+  /// 未分类整理入口(仅未分类分组显示)。
+  final VoidCallback? onOrganizeUncategorized;
+
+  /// 资产是否 30 天内到期(日期粒度,本地时区)。
+  bool _expiresSoon(Asset a) {
+    final d = a.expiryDate;
+    if (d == null || d.isEmpty) return false;
+    final exp = DateTime.tryParse(d);
+    if (exp == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final days = exp.difference(today).inDays;
+    return days >= 0 && days <= 30;
+  }
+
   @override
   Widget build(BuildContext context) {
     final children = <Widget>[];
     for (final (id, name, assets) in groups) {
       final isCollapsed = collapsed.contains(id);
+      final hasExpirySoon = assets.any(_expiresSoon);
       children.add(
         InkWell(
           onTap: () => onToggle(id),
@@ -402,10 +486,36 @@ class _GroupedAssetList extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (hasExpirySoon)
+                  Tooltip(
+                    message: '有资产 30 天内到期',
+                    child: Icon(
+                      Icons.warning_amber_rounded,
+                      size: 18,
+                      color: Colors.orange.shade700,
+                    ),
+                  ),
+                const SizedBox(width: 6),
                 Text(
                   '${assets.length}',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
+                // 未分类整理:全部移至目标分组。
+                if (id == '' && assets.isNotEmpty && onOrganizeUncategorized != null)
+                  InkWell(
+                    onTap: onOrganizeUncategorized,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Tooltip(
+                        message: '未分类资产移至分组',
+                        child: Icon(
+                          Icons.drive_file_move_outline,
+                          size: 18,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

@@ -22,6 +22,56 @@ func nullable(s string) any {
 	return s
 }
 
+// handleBatchMoveAssets: POST /api/v1/assets/move {ids:[], category_id:null} ->
+// {"moved":n}. 批量移动资产到目标分组(未分类整理);category_id 传 null = 移到未分类。
+func handleBatchMoveAssets(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		var req struct {
+			IDs        []int64 `json:"ids"`
+			CategoryID *int64  `json:"category_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if len(req.IDs) == 0 {
+			writeError(w, http.StatusBadRequest, "ids required")
+			return
+		}
+		if len(req.IDs) > 500 {
+			writeError(w, http.StatusBadRequest, "too many ids")
+			return
+		}
+		if req.CategoryID != nil {
+			var n int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND user_id = ?`, *req.CategoryID, uid).Scan(&n); err != nil || n == 0 {
+				writeError(w, http.StatusNotFound, "target category not found")
+				return
+			}
+		}
+		placeholders := strings.Repeat("?,", len(req.IDs)-1) + "?"
+		args := make([]any, 0, len(req.IDs)+1)
+		for _, id := range req.IDs {
+			args = append(args, id)
+		}
+		args = append(args, uid)
+		var cat any
+		if req.CategoryID != nil {
+			cat = *req.CategoryID
+		}
+		res, err := db.Exec(`UPDATE assets SET category_id = ?, updated_at = datetime('now')
+			WHERE id IN (`+placeholders+`) AND user_id = ?`, append([]any{cat}, args...)...)
+		if err != nil {
+			log.Printf("batch move assets: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		n, _ := res.RowsAffected()
+		writeJSON(w, http.StatusOK, map[string]int64{"moved": n})
+	}
+}
+
 // ---------- assets ----------
 
 // assetListJSON is the metadata-only shape returned by the list endpoint

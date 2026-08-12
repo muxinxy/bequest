@@ -86,14 +86,20 @@ func verifyPassword(encoded, password string) (bool, error) {
 // ---------- JWT ----------
 
 type claims struct {
-	UserID int64 `json:"user_id"`
+	UserID       int64 `json:"user_id"`
+	TokenVersion int   `json:"token_version"` // 改密后旧 token 失效
+	Pending2FA   bool  `json:"pending_2fa,omitempty"` // 2FA 待验证短命令牌
 	jwt.RegisteredClaims
 }
 
-func signToken(userID int64) (string, error) {
+// signToken issues a session token carrying the user's current token_version;
+// requireAuth rejects tokens whose version differs from the DB (password change
+// bumps the version, invalidating all previously issued tokens).
+func signToken(userID int64, version int) (string, error) {
 	now := time.Now()
 	c := claims{
-		UserID: userID,
+		UserID:       userID,
+		TokenVersion: version,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(tokenTTL)),
@@ -102,8 +108,23 @@ func signToken(userID int64) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString(jwtSecret)
 }
 
-// verifyToken returns the user_id from a valid HS256 token.
-func verifyToken(tokenStr string) (int64, error) {
+// sign2FAPendingToken issues a 5-minute token valid ONLY for the 2FA step;
+// requireAuth rejects tokens carrying Pending2FA, so it can't be reused as a session.
+func sign2FAPendingToken(userID int64) (string, error) {
+	now := time.Now()
+	c := claims{
+		UserID:     userID,
+		Pending2FA: true,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(5 * time.Minute)),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString(jwtSecret)
+}
+
+// verifyToken returns the parsed claims of a valid HS256 token.
+func verifyToken(tokenStr string) (*claims, error) {
 	tok, err := jwt.ParseWithClaims(tokenStr, &claims{}, func(t *jwt.Token) (any, error) {
 		if t.Method != jwt.SigningMethodHS256 {
 			return nil, errors.New("unexpected signing method")
@@ -111,13 +132,13 @@ func verifyToken(tokenStr string) (int64, error) {
 		return jwtSecret, nil
 	})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	c, ok := tok.Claims.(*claims)
 	if !ok || !tok.Valid {
-		return 0, errors.New("invalid token")
+		return nil, errors.New("invalid token")
 	}
-	return c.UserID, nil
+	return c, nil
 }
 
 // ---------- handlers ----------
@@ -159,6 +180,7 @@ type registerRequest struct {
 	Email            string `json:"email"`
 	Password         string `json:"password"`
 	MasterKeyWrapped string `json:"master_key_wrapped"`
+	MasterSalt       string `json:"master_salt"` // 明文不敏感,跨设备登录恢复用
 	CaptchaID        string `json:"captcha_id"`
 	Captcha          string `json:"captcha"`
 }
@@ -203,8 +225,8 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		res, err := tx.Exec(`INSERT INTO users (username, email, password_hash, master_key_wrapped) VALUES (?, ?, ?, ?)`,
-			req.Username, req.Email, hash, mkw)
+		res, err := tx.Exec(`INSERT INTO users (username, email, password_hash, master_key_wrapped, master_salt) VALUES (?, ?, ?, ?, ?)`,
+			req.Username, req.Email, hash, mkw, nullable(req.MasterSalt))
 		if err != nil {
 			tx.Rollback()
 			if isUniqueViolation(err) {
@@ -233,7 +255,7 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]any{
-			"token": mustSign(id),
+			"token": mustSign(id, 0),
 			"user":  userJSON{ID: id, Username: req.Username, Email: req.Email, Tier: "free", Role: "user"},
 		})
 	}
@@ -261,11 +283,12 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 		}
 		var id int64
 		var username, email, hash, tier, role string
-		var disabled int
+		var disabled, tokenVersion int
+		var salt sql.NullString
 		identifier := strings.TrimSpace(req.Username)
-		err := db.QueryRow(`SELECT id, username, email, password_hash, tier, role, disabled FROM users
+		err := db.QueryRow(`SELECT id, username, email, password_hash, tier, role, disabled, master_salt, token_version FROM users
 			WHERE username = ? OR email = ?`, identifier, identifier).
-			Scan(&id, &username, &email, &hash, &tier, &role, &disabled)
+			Scan(&id, &username, &email, &hash, &tier, &role, &disabled, &salt, &tokenVersion)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusUnauthorized, "invalid username or password")
 			return
@@ -296,8 +319,13 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 			log.Printf("update login state: %v", err)
 		}
 		if stage != "" && stage != "inactive" {
+			// 第三重窗口:登录即反转。pending 事件无条件反转;claimed 事件
+			// 仅在 72h 反悔期内可反转(交接最终完成),无截止时间的历史事件可反转。
 			if _, err := db.Exec(`UPDATE inheritance_events SET status = 'reversed', reversed_at = datetime('now')
-				WHERE user_id = ? AND status IN ('pending','claimed')`, id); err != nil {
+				WHERE user_id = ? AND (
+					status = 'pending'
+					OR (status = 'claimed' AND (reversable_until IS NULL OR reversable_until > datetime('now')))
+				)`, id, id); err != nil {
 				log.Printf("reverse inheritance events: %v", err)
 			}
 			if _, err := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'owner', 'login_reset', ?)`,
@@ -305,9 +333,86 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 				log.Printf("audit login reset: %v", err)
 			}
 		}
+		// 管理后台 2FA:管理员且已启用 TOTP → 先发 5 分钟待验证令牌,
+		// 完成 2FA 后才签发正式会话令牌。
+		var totpSecret sql.NullString
+		if err := db.QueryRow(`SELECT totp_secret FROM users WHERE id = ?`, id).Scan(&totpSecret); err != nil {
+			log.Printf("query totp: %v", err)
+		}
+		if role == "admin" && totpSecret.Valid && totpSecret.String != "" {
+			pending, err := sign2FAPendingToken(id)
+			if err != nil {
+				log.Printf("sign pending token: %v", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"totp_required": true,
+				"pending_token": pending,
+			})
+			return
+		}
+		// 管理后台安全:管理员完整登录(无 TOTP 或 2FA 通过)记审计。
+		if role == "admin" {
+			if _, err := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'owner', 'admin_login', ?)`,
+				id, clientIP(r)); err != nil {
+				log.Printf("audit admin login: %v", err)
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"token": mustSign(id),
-			"user":  userJSON{ID: id, Username: username, Email: email, Tier: tier, Role: role, Disabled: disabled == 1},
+			"token":       mustSign(id, tokenVersion),
+			"user":        userJSON{ID: id, Username: username, Email: email, Tier: tier, Role: role, Disabled: disabled == 1},
+			"master_salt": salt.String,
+		})
+	}
+}
+
+type verify2FARequest struct {
+	PendingToken string `json:"pending_token"`
+	Code         string `json:"code"`
+}
+
+// handleVerify2FA: POST /api/v1/auth/2fa/verify -> 200 {token, user}.
+// 用待验证令牌 + TOTP 码完成 2FA,签发正式会话令牌。
+func handleVerify2FA(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req verify2FARequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		c, err := verifyToken(req.PendingToken)
+		if err != nil || !c.Pending2FA {
+			writeError(w, http.StatusUnauthorized, "invalid or expired token")
+			return
+		}
+		var role, secret string
+		var tokenVersion int
+		if err := db.QueryRow(`SELECT role, totp_secret, token_version FROM users WHERE id = ?`, c.UserID).Scan(&role, &secret, &tokenVersion); err != nil {
+			writeError(w, http.StatusUnauthorized, "user no longer exists")
+			return
+		}
+		if role != "admin" || secret == "" {
+			writeError(w, http.StatusForbidden, "2FA not enabled")
+			return
+		}
+		if !verifyTOTP(secret, strings.TrimSpace(req.Code), time.Now()) {
+			writeError(w, http.StatusUnauthorized, "invalid code")
+			return
+		}
+		var username, email, tier string
+		if err := db.QueryRow(`SELECT username, email, tier FROM users WHERE id = ?`, c.UserID).Scan(&username, &email, &tier); err != nil {
+			log.Printf("query 2fa user: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if _, err := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'owner', 'admin_login', ?)`,
+			c.UserID, clientIP(r)); err != nil {
+			log.Printf("audit admin login: %v", err)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"token": mustSign(c.UserID, tokenVersion),
+			"user":  userJSON{ID: c.UserID, Username: username, Email: email, Tier: tier, Role: role},
 		})
 	}
 }
@@ -336,8 +441,8 @@ func handleMe(db *sql.DB) http.HandlerFunc {
 }
 
 // mustSign signs a token; panics on failure — token signing failing is a server misconfig.
-func mustSign(id int64) string {
-	s, err := signToken(id)
+func mustSign(id int64, version int) string {
+	s, err := signToken(id, version)
 	if err != nil {
 		panic(fmt.Sprintf("sign token: %v", err))
 	}

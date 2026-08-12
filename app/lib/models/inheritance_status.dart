@@ -35,6 +35,7 @@ class InheritanceEvent {
     this.createdAt,
     this.claimedAt,
     this.reversedAt,
+    this.reversableUntil,
   });
 
   factory InheritanceEvent.fromJson(Map<String, dynamic> json) =>
@@ -44,6 +45,7 @@ class InheritanceEvent {
         createdAt: json['created_at']?.toString(),
         claimedAt: json['claimed_at']?.toString(),
         reversedAt: json['reversed_at']?.toString(),
+        reversableUntil: json['reversable_until']?.toString(),
       );
 
   final String id;
@@ -51,4 +53,7 @@ class InheritanceEvent {
   final String? createdAt;
   final String? claimedAt;
   final String? reversedAt;
+
+  /// 领取后的反悔截止时间(72h 窗口);过期后交接最终完成,登录不再撤销。
+  final String? reversableUntil;
 }

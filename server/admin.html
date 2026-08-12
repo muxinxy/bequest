@@ -75,12 +75,19 @@
 <div id="msg" class="msg"></div>
 
 <main id="login-view" class="login-wrap">
-  <h2>管理后台登录</h2>
-  <div class="form-row"><label>账号</label><input id="lg-user" autocomplete="username"></div>
-  <div class="form-row"><label>密码</label><input id="lg-pass" type="password" autocomplete="current-password"></div>
-  <div class="form-row"><label>验证码</label><span id="lg-question" class="muted"></span></div>
-  <div class="form-row"><label></label><input id="lg-captcha" placeholder="输入算式结果" style="width:140px"></div>
-  <button class="primary" id="lg-btn">登 录</button>
+  <div id="lg-form">
+    <h2>管理后台登录</h2>
+    <div class="form-row"><label>账号</label><input id="lg-user" autocomplete="username"></div>
+    <div class="form-row"><label>密码</label><input id="lg-pass" type="password" autocomplete="current-password"></div>
+    <div class="form-row"><label>验证码</label><span id="lg-question" class="muted"></span></div>
+    <div class="form-row"><label></label><input id="lg-captcha" placeholder="输入算式结果" style="width:140px"></div>
+    <button class="primary" id="lg-btn">登 录</button>
+  </div>
+  <div id="lg-2fa" class="hidden">
+    <h2>两步验证</h2>
+    <div class="form-row"><label>动态码</label><input id="lg-totp" inputmode="numeric" maxlength="6" placeholder="6 位数字" style="width:140px"></div>
+    <button class="primary" id="lg-2fa-btn">验 证</button>
+  </div>
 </main>
 
 <main id="app" class="hidden">
@@ -109,25 +116,33 @@
   </section>
 
   <section id="tab-config" class="card hidden">
-    <h3 style="margin-bottom:12px">SMTP 服务器（系统发件，轮询负载均衡）</h3>
+    <h3 style="margin-bottom:12px">SMTP 服务器(系统发件,轮询负载均衡)</h3>
     <div id="smtp-rows"></div>
     <button id="smtp-add">+ 添加服务器</button>
+    <h3 style="margin:18px 0 12px">短信服务商(预留,发送未实现)</h3>
+    <div id="sms-rows"></div>
+    <button id="sms-add">+ 添加服务商</button>
+    <h3 style="margin:18px 0 12px">电话服务商(预留,发送未实现)</h3>
+    <div id="phone-rows"></div>
+    <button id="phone-add">+ 添加服务商</button>
     <h3 style="margin:18px 0 12px">免费用户权益</h3>
     <div class="form-row">
       <label>资产上限</label>
       <input id="cfg-quota" class="md" type="number" min="1">
-      <span class="muted">免费档最多可创建的资产数；会员不限</span>
+      <span class="muted">免费档最多可创建的资产数;会员不限</span>
     </div>
     <div class="form-row" style="margin-top:16px">
       <button class="primary" id="cfg-save">保存配置</button>
     </div>
-    <p class="muted" id="cfg-providers"></p>
+    <h3 style="margin:18px 0 12px">管理后台两步验证 (2FA)</h3>
+    <div id="2fa-box" class="muted">加载中...</div>
   </section>
 
   <section id="tab-audit" class="card hidden">
     <div class="toolbar">
       <input id="a-uid" type="text" placeholder="按 user_id 筛选">
       <button class="primary" id="a-search">查询</button>
+      <button id="a-export">导出 CSV</button>
     </div>
     <table>
       <thead><tr><th>ID</th><th>user_id</th><th>actor</th><th>action</th><th>detail</th><th>时间</th></tr></thead>
@@ -142,12 +157,21 @@
 <script>
 'use strict';
 var TOKEN_KEY = 'bequest_admin_token';
-var state = { users: { page: 1, q: '', role: '', tier: '' }, audit: { page: 1, uid: '' } };
+var state = { users: { page: 1, q: '', role: '', tier: '' }, audit: { page: 1, uid: '' }, pendingToken: '' };
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
   });
+}
+// 服务端时间为 UTC('YYYY-MM-DD HH:MM:SS',无时区标记):补 Z 转客户端本地显示。
+// 注意:expiry_date 是日历日期(非时间戳),不要用本函数。
+function fmtTime(s) {
+  if (!s) return '';
+  var d = new Date(s.length === 19 ? s.replace(' ', 'T') + 'Z' : s);
+  if (isNaN(d.getTime())) return s;
+  var p = function (n) { return (n < 10 ? '0' : '') + n; };
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
 }
 function toast(msg, ok) {
   var el = document.getElementById('msg');
@@ -188,6 +212,15 @@ function loadCaptcha() {
     document.getElementById('lg-question').textContent = '验证码加载失败,请刷新页面';
   });
 }
+function enterApp(d) {
+  localStorage.setItem(TOKEN_KEY, d.token);
+  document.getElementById('who').textContent = d.user.username;
+  document.getElementById('login-view').classList.add('hidden');
+  document.getElementById('appbar').classList.remove('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  switchTab('dash');
+  loadStats();
+}
 function doLogin() {
   var u = document.getElementById('lg-user').value.trim();
   var p = document.getElementById('lg-pass').value;
@@ -200,21 +233,32 @@ function doLogin() {
     })
   })
     .then(function (d) {
+      if (d.totp_required) {
+        // 2FA 第二步:切换为动态码输入。
+        state.pendingToken = d.pending_token;
+        document.getElementById('lg-form').classList.add('hidden');
+        document.getElementById('lg-2fa').classList.remove('hidden');
+        document.getElementById('lg-totp').focus();
+        return;
+      }
       if (d.user && d.user.role !== 'admin') throw new Error('该账号不是管理员');
-      localStorage.setItem(TOKEN_KEY, d.token);
-      document.getElementById('who').textContent = d.user.username;
-      document.getElementById('login-view').classList.add('hidden');
-      document.getElementById('appbar').classList.remove('hidden');
-      document.getElementById('app').classList.remove('hidden');
-      switchTab('dash');
-      loadStats();
+      enterApp(d);
     })
     .catch(function (e) { toast(e.message, false); loadCaptcha(); }); // 验证码一次性,失败即换
 }
+function verify2FA() {
+  var code = document.getElementById('lg-totp').value.trim();
+  if (!code) return toast('请输入动态码', false);
+  api('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ pending_token: state.pendingToken, code: code }) })
+    .then(function (d) { enterApp(d); })
+    .catch(function (e) { toast(e.message, false); });
+}
 loadCaptcha();
 document.getElementById('lg-btn').addEventListener('click', doLogin);
+document.getElementById('lg-2fa-btn').addEventListener('click', verify2FA);
 document.getElementById('lg-pass').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
 document.getElementById('lg-captcha').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+document.getElementById('lg-totp').addEventListener('keydown', function (e) { if (e.key === 'Enter') verify2FA(); });
 document.getElementById('logout').addEventListener('click', logout);
 
 /* ---------- tabs ---------- */
@@ -264,7 +308,7 @@ function loadUsers(page) {
         return '<tr><td>' + u.id + '</td><td>' + esc(u.username) + '</td><td>' + esc(u.email) + '</td>' +
           '<td>' + tierB + '</td><td>' + roleB + '</td><td>' + stB + '</td>' +
           '<td>' + u.asset_count + '</td><td>' + u.inheritor_count + '</td>' +
-          '<td>' + esc(u.last_login_at || '') + '</td><td>' + esc(u.created_at || '') + '</td>' +
+          '<td>' + esc(fmtTime(u.last_login_at)) + '</td><td>' + esc(fmtTime(u.created_at)) + '</td>' +
           '<td>' + userActions(u) + '</td></tr>';
       }).join('');
       document.getElementById('u-body').innerHTML = rows || '<tr><td colspan="11" class="muted">无匹配用户</td></tr>';
@@ -276,6 +320,7 @@ function loadUsers(page) {
 }
 function userActions(u) {
   var a = [];
+  a.push('<button data-act="assets" data-id="' + u.id + '">资产</button>');
   if (u.tier !== 'member') a.push('<button data-act="member" data-id="' + u.id + '">设会员</button>');
   else a.push('<button data-act="unmember" data-id="' + u.id + '">取消会员</button>');
   if (u.role !== 'admin') a.push('<button data-act="admin" data-id="' + u.id + '">设管理员</button>');
@@ -289,6 +334,16 @@ document.getElementById('u-body').addEventListener('click', function (e) {
   var btn = e.target.closest('button[data-act]');
   if (!btn) return;
   var id = btn.dataset.id, act = btn.dataset.act;
+  if (act === 'assets') {
+    api('/admin/users/' + id + '/assets').then(function (d) {
+      var rows = d.assets.map(function (a) {
+        return '<tr><td>' + a.id + '</td><td>' + esc(a.name) + '</td><td>' + esc(a.asset_type) + '</td>' +
+          '<td>' + esc(a.category) + '</td><td>' + esc(a.expiry_date || '') + '</td><td>' + esc(fmtTime(a.created_at)) + '</td></tr>';
+      }).join('');
+      alertUserAssets(id, rows);
+    }).catch(function (er) { toast(er.message, false); });
+    return;
+  }
   var body = null;
   if (act === 'member') body = { tier: 'member' };
   if (act === 'unmember') body = { tier: 'free' };
@@ -317,6 +372,20 @@ document.getElementById('u-search').addEventListener('click', setUserFilter);
 document.getElementById('u-prev').addEventListener('click', function () { loadUsers(state.users.page - 1); });
 document.getElementById('u-next').addEventListener('click', function () { loadUsers(state.users.page + 1); });
 
+// 用户资产明细弹窗(仅元数据:名称/分类/类型/到期;凭据密文服务端不可见)。
+function alertUserAssets(userId, rowsHtml) {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:8px;padding:20px;max-width:720px;width:90%;max-height:80vh;overflow:auto">' +
+    '<h3 style="margin-bottom:12px">用户 #' + userId + ' 的资产(元数据)</h3>' +
+    '<table><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>分类</th><th>到期</th><th>创建</th></tr></thead>' +
+    '<tbody>' + (rowsHtml || '<tr><td colspan="6" class="muted">无资产</td></tr>') + '</tbody></table>' +
+    '<div style="text-align:right;margin-top:14px"><button id="asset-dlg-close">关闭</button></div></div>';
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay || e.target.id === 'asset-dlg-close') overlay.remove(); });
+}
+
 /* ---------- config ---------- */
 function smtpRow(s, hasPass) {
   s = s || {};
@@ -338,30 +407,109 @@ function loadConfig() {
     wrap.innerHTML = '';
     (c.smtp_servers || []).forEach(function (s) { wrap.appendChild(smtpRow(s, s.password_set)); });
     if (!c.smtp_servers.length) wrap.appendChild(smtpRow());
+    ['sms', 'phone'].forEach(function (kind) {
+      var box = document.getElementById(kind + '-rows');
+      box.innerHTML = '';
+      (c[kind + '_providers'] || []).forEach(function (p) { box.appendChild(providerRow(p)); });
+      if (!c[kind + '_providers'].length) box.appendChild(providerRow());
+    });
     document.getElementById('cfg-quota').value = c.free_asset_quota;
-    document.getElementById('cfg-providers').textContent =
-      'SMS 服务商 ' + c.sms_provider_count + ' 个 · 电话服务商 ' + c.phone_provider_count + ' 个（预留，暂未实现发送）';
   }).catch(function (e) { toast(e.message, false); });
+  load2FA();
+}
+function providerRow(p) {
+  p = p || {};
+  var keyNote = p.api_key_set ? '<span class="muted">已设置</span>' : '';
+  var secNote = p.api_secret_set ? '<span class="muted">已设置</span>' : '';
+  var row = document.createElement('div');
+  row.className = 'form-row';
+  row.innerHTML =
+    '<input class="md" placeholder="name" value="' + esc(p.name || '') + '">' +
+    '<input class="md" type="password" placeholder="api_key(留空保留)" value="">' + keyNote +
+    '<input class="md" type="password" placeholder="api_secret(留空保留)" value="">' + secNote +
+    '<button type="button">移除</button>';
+  return row;
+}
+function collectRows(boxId) {
+  return Array.prototype.map.call(document.querySelectorAll('#' + boxId + ' .form-row'), function (row) {
+    var inp = row.querySelectorAll('input');
+    return { host: inp[0].value.trim(), port: parseInt(inp[1].value, 10) || 0, user: inp[2].value.trim(), password: inp[3].value, from_addr: inp[4].value.trim() };
+  });
+}
+function collectProviders(boxId) {
+  return Array.prototype.map.call(document.querySelectorAll('#' + boxId + ' .form-row'), function (row) {
+    var inp = row.querySelectorAll('input');
+    return { name: inp[0].value.trim(), api_key: inp[1].value, api_secret: inp[2].value };
+  });
 }
 document.getElementById('smtp-add').addEventListener('click', function () {
   document.getElementById('smtp-rows').appendChild(smtpRow());
 });
-document.getElementById('smtp-rows').addEventListener('click', function (e) {
-  if (e.target.textContent === '移除') e.target.closest('.form-row').remove();
+document.getElementById('sms-add').addEventListener('click', function () {
+  document.getElementById('sms-rows').appendChild(providerRow());
+});
+document.getElementById('phone-add').addEventListener('click', function () {
+  document.getElementById('phone-rows').appendChild(providerRow());
+});
+document.querySelectorAll('#smtp-rows, #sms-rows, #phone-rows').forEach(function (box) {
+  box.addEventListener('click', function (e) {
+    if (e.target.textContent === '移除') e.target.closest('.form-row').remove();
+  });
 });
 document.getElementById('cfg-save').addEventListener('click', function () {
-  var servers = Array.prototype.map.call(document.querySelectorAll('#smtp-rows .form-row'), function (row) {
-    var inp = row.querySelectorAll('input');
-    return {
-      host: inp[0].value.trim(), port: parseInt(inp[1].value, 10) || 0,
-      user: inp[2].value.trim(), password: inp[3].value, from_addr: inp[4].value.trim()
-    };
-  });
-  var quota = parseInt(document.getElementById('cfg-quota').value, 10) || 0;
-  api('/admin/config', { method: 'PUT', body: JSON.stringify({ smtp_servers: servers, free_asset_quota: quota }) })
+  api('/admin/config', {
+    method: 'PUT',
+    body: JSON.stringify({
+      smtp_servers: collectRows('smtp-rows'),
+      sms_providers: collectProviders('sms-rows'),
+      phone_providers: collectProviders('phone-rows'),
+      free_asset_quota: parseInt(document.getElementById('cfg-quota').value, 10) || 0
+    })
+  })
     .then(function () { toast('配置已保存', true); loadConfig(); })
     .catch(function (e) { toast(e.message, false); });
 });
+
+/* ---------- 2FA ---------- */
+function load2FA() {
+  api('/admin/2fa').then(function (s) {
+    var box = document.getElementById('2fa-box');
+    box.innerHTML = '';
+    if (s.enabled) {
+      box.innerHTML =
+        '<span class="badge on">已启用</span> ' +
+        '<span class="muted">登录管理后台需身份验证器动态码</span>' +
+        '<div class="form-row" style="margin-top:10px"><input id="2fa-off-code" class="md" placeholder="输入当前动态码" inputmode="numeric" maxlength="6">' +
+        '<button class="danger" id="2fa-off-btn">停用 2FA</button></div>';
+      document.getElementById('2fa-off-btn').addEventListener('click', function () {
+        var code = document.getElementById('2fa-off-code').value.trim();
+        if (!code) return toast('请输入动态码', false);
+        api('/admin/2fa/disable', { method: 'POST', body: JSON.stringify({ code: code }) })
+          .then(function () { toast('已停用 2FA', true); load2FA(); })
+          .catch(function (e) { toast(e.message, false); });
+      });
+    } else {
+      box.innerHTML = '<span class="badge off">未启用</span> ' +
+        '<button id="2fa-on-btn" style="margin-left:8px">启用 2FA</button>';
+      document.getElementById('2fa-on-btn').addEventListener('click', function () {
+        api('/admin/2fa/setup', { method: 'POST' }).then(function (d) {
+          box.innerHTML =
+            '<div class="muted" style="margin-bottom:8px">用身份验证器 App(Google Authenticator / Authy 等)手动添加,密钥: <code>' + esc(d.secret) + '</code></div>' +
+            '<div class="muted" style="margin-bottom:8px;word-break:break-all">' + esc(d.otpauth_uri) + '</div>' +
+            '<div class="form-row"><input id="2fa-on-code" class="md" placeholder="输入验证器中的 6 位动态码" inputmode="numeric" maxlength="6">' +
+            '<button class="primary" id="2fa-on-confirm">确认启用</button></div>';
+          document.getElementById('2fa-on-confirm').addEventListener('click', function () {
+            var code = document.getElementById('2fa-on-code').value.trim();
+            if (!code) return toast('请输入动态码', false);
+            api('/admin/2fa/confirm', { method: 'POST', body: JSON.stringify({ secret: d.secret, code: code }) })
+              .then(function () { toast('2FA 已启用', true); load2FA(); })
+              .catch(function (e) { toast(e.message, false); });
+          });
+        }).catch(function (e) { toast(e.message, false); });
+      });
+    }
+  }).catch(function (e) { toast(e.message, false); });
+}
 
 /* ---------- audit ---------- */
 function loadAudit(page) {
@@ -372,7 +520,7 @@ function loadAudit(page) {
     .then(function (d) {
       var rows = d.entries.map(function (e) {
         return '<tr><td>' + e.id + '</td><td>' + e.user_id + '</td><td>' + esc(e.actor) + '</td>' +
-          '<td>' + esc(e.action) + '</td><td>' + esc(e.detail) + '</td><td>' + esc(e.created_at) + '</td></tr>';
+          '<td>' + esc(e.action) + '</td><td>' + esc(e.detail) + '</td><td>' + esc(fmtTime(e.created_at)) + '</td></tr>';
       }).join('');
       document.getElementById('a-body').innerHTML = rows || '<tr><td colspan="6" class="muted">无记录</td></tr>';
       document.getElementById('a-info').textContent = '共 ' + d.total + ' 条 · 第 ' + d.page + ' 页';
@@ -388,6 +536,23 @@ document.getElementById('a-search').addEventListener('click', function () {
 });
 document.getElementById('a-prev').addEventListener('click', function () { loadAudit(state.audit.page - 1); });
 document.getElementById('a-next').addEventListener('click', function () { loadAudit(state.audit.page + 1); });
+
+// 导出审计日志 CSV(原始 fetch,响应是文件而非 JSON)。
+document.getElementById('a-export').addEventListener('click', function () {
+  var uid = encodeURIComponent(state.audit.uid);
+  fetch('/api/v1/admin/audit-log/export?user_id=' + uid, {
+    headers: { Authorization: 'Bearer ' + localStorage.getItem(TOKEN_KEY) }
+  }).then(function (resp) {
+    if (!resp.ok) throw new Error('导出失败');
+    return resp.blob();
+  }).then(function (blob) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'audit-log.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }).catch(function (e) { toast(e.message, false); });
+});
 </script>
 </body>
 </html>

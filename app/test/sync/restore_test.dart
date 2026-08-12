@@ -21,9 +21,9 @@ void main() {
     store = SecureStore();
   });
 
-  test('localUnlockStep:已有主密钥 → 解锁,否则 → 设置', () {
-    expect(localUnlockStep(hasMasterKey: false), LocalUnlockStep.setup);
-    expect(localUnlockStep(hasMasterKey: true), LocalUnlockStep.unlock);
+  test('localUnlockStep:已有本地账户 → 选择/验证,否则 → 新建', () {
+    expect(localUnlockStep(hasProfiles: false), LocalUnlockStep.setup);
+    expect(localUnlockStep(hasProfiles: true), LocalUnlockStep.pick);
   });
 
   group('extractBackupJsonAny', () {

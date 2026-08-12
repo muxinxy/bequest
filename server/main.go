@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -23,12 +24,26 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
+	// 备份子命令:VACUUM INTO 生成一致性快照(含 WAL 数据,可直接冷启动)。
+	if len(os.Args) > 1 && os.Args[1] == "backup" {
+		out := "bequest-backup-" + time.Now().Format("20060102-150405") + ".db"
+		if _, err := db.Exec("VACUUM INTO '" + out + "'"); err != nil {
+			log.Fatalf("backup: %v", err)
+		}
+		log.Printf("backup written to %s", out)
+		return
+	}
+
 	ensureAdmin(db) // ADMIN_USERNAME/ADMIN_PASSWORD bootstrap (if set)
 
 	go runScheduler(db)
 
-	log.Println("bequest server listening on :8080")
-	log.Fatal(http.ListenAndServe(":8080", cors(rateLimit(newMux(db)))))
+	addr := ":8080"
+	if p := os.Getenv("PORT"); p != "" {
+		addr = ":" + p
+	}
+	log.Printf("bequest server listening on %s", addr)
+	log.Fatal(http.ListenAndServe(addr, cors(rateLimit(newMux(db)))))
 }
 
 // runScheduler ticks the dead-man's-switch scan every 60s.
@@ -42,12 +57,20 @@ func runScheduler(db *sql.DB) {
 
 func newMux(db *sql.DB) *http.ServeMux {
 	mux := http.NewServeMux()
+	// 探活:查 DB 可达性(容器探活据此判断健康,而非只看进程在)。
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		if err := db.PingContext(r.Context()); err != nil {
+			writeError(w, http.StatusServiceUnavailable, "db unavailable")
+			return
+		}
 		w.Write([]byte("ok"))
 	})
-	// 管理后台（内嵌单页,无需构建）。
+	// 管理后台(内嵌单页,无需构建)。
 	mux.HandleFunc("GET /admin", serveAdminPage)
 	mux.HandleFunc("GET /admin/", serveAdminPage)
+	// 继承人交接领取页(无鉴权;领取校验在 claim API)。
+	mux.HandleFunc("GET /claim", serveClaimPage)
+	mux.HandleFunc("GET /claim/", serveClaimPage)
 	// Flutter web 客户端(同源托管,免 CORS);未构建 web 时静默跳过。
 	if dir := webDir(); dir != "" {
 		mux.Handle("GET /", spaHandler(dir))
@@ -62,7 +85,9 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/auth/check-email", handleCheckEmail(db))
 	mux.HandleFunc("POST /api/v1/auth/reset-request", handleRequestPasswordReset(db))
 	mux.HandleFunc("POST /api/v1/auth/reset", handleResetPassword(db))
+	mux.HandleFunc("POST /api/v1/auth/2fa/verify", handleVerify2FA(db))
 	mux.Handle("PUT /api/v1/me", auth(handleUpdateProfile(db)))
+	mux.Handle("PUT /api/v1/me/password", auth(handleChangePassword(db)))
 	mux.Handle("GET /api/v1/me", auth(handleMe(db)))
 	mux.Handle("GET /api/v1/categories", auth(handleListCategories(db)))
 	mux.Handle("POST /api/v1/categories", auth(handleCreateCategory(db)))
@@ -79,6 +104,9 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("GET /api/v1/categories/{id}/inheritors", auth(handleListCategoryInheritors(db)))
 	mux.Handle("POST /api/v1/categories/{id}/inheritors", auth(handleCreateCategoryInheritor(db)))
 	mux.Handle("DELETE /api/v1/categories/{id}/inheritors/{iid}", auth(handleDeleteCategoryInheritor(db)))
+	mux.Handle("GET /api/v1/categories/{id}/inheritors/{iid}/assets", auth(handleListCategoryInheritorAssets(db)))
+	mux.Handle("PUT /api/v1/categories/order", auth(handleReorderCategories(db)))
+	mux.Handle("POST /api/v1/assets/move", auth(handleBatchMoveAssets(db)))
 	mux.Handle("GET /api/v1/inheritors/{id}/assets", auth(handleListInheritorAssets(db)))
 	mux.Handle("GET /api/v1/inheritors", auth(handleListInheritors(db)))
 	mux.Handle("POST /api/v1/inheritors", auth(handleCreateInheritor(db)))
@@ -99,13 +127,20 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("GET /api/v1/settings/inheritance", auth(handleGetInheritanceToggle(db)))
 	mux.Handle("PUT /api/v1/settings/inheritance", auth(handlePutInheritanceToggle(db)))
 	mux.Handle("PUT /api/v1/settings/master-key", auth(handlePutMasterKey(db)))
+	mux.Handle("PUT /api/v1/settings/master-salt", auth(handlePutMasterSalt(db)))
 	// 管理后台 API（requireAdmin）。
 	mux.Handle("GET /api/v1/admin/stats", admin(handleAdminStats(db)))
 	mux.Handle("GET /api/v1/admin/users", admin(handleAdminListUsers(db)))
 	mux.Handle("GET /api/v1/admin/users/{id}", admin(handleAdminGetUser(db)))
+	mux.Handle("GET /api/v1/admin/users/{id}/assets", admin(handleAdminListUserAssets(db)))
 	mux.Handle("PUT /api/v1/admin/users/{id}", admin(handleAdminUpdateUser(db)))
 	mux.Handle("DELETE /api/v1/admin/users/{id}", admin(handleAdminDeleteUser(db)))
 	mux.Handle("GET /api/v1/admin/audit-log", admin(handleAdminAuditLog(db)))
+	mux.Handle("GET /api/v1/admin/audit-log/export", admin(handleAdminAuditExport(db)))
+	mux.Handle("GET /api/v1/admin/2fa", admin(handleAdmin2FAStatus(db)))
+	mux.Handle("POST /api/v1/admin/2fa/setup", admin(handleAdmin2FASetup(db)))
+	mux.Handle("POST /api/v1/admin/2fa/confirm", admin(handleAdmin2FAConfirm(db)))
+	mux.Handle("POST /api/v1/admin/2fa/disable", admin(handleAdmin2FADisable(db)))
 	mux.Handle("GET /api/v1/admin/config", admin(http.HandlerFunc(handleAdminGetConfig)))
 	mux.Handle("PUT /api/v1/admin/config", admin(handleAdminPutConfig(db)))
 	mux.HandleFunc("GET /api/v1/version", handleVersion)

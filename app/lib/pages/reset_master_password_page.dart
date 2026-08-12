@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../crypto/reset_master_password.dart';
 import '../storage/secure_store.dart';
+import 'change_master_password_page.dart';
 
 /// 忘记主密码 → 用账户密码重置。
 ///
@@ -39,13 +40,28 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    // 先取资产数(云模式),确认框明示受影响范围。
+    int? assetCount;
+    try {
+      final jwt = await _store.readJwt();
+      if (jwt != null && jwt.isNotEmpty) {
+        assetCount = (await (await ApiConfig.client()).listAssets(jwt)).length;
+      }
+    } catch (_) {
+      // 取数失败不影响确认流程。
+    }
+    if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('确认重置主密码?'),
-        content: const Text(
-          '重置后将无法解密现有的资产凭据与备注(端到端加密),'
-          '资产将保留名称/分类,凭据需重新填写。此操作不可撤销。',
+        content: Text(
+          assetCount == null
+              ? '重置后将无法解密现有的资产凭据与备注(端到端加密),'
+                  '资产将保留名称/分类,凭据需重新填写。此操作不可撤销。'
+              : '将影响 ${assetCount == 0 ? '0' : assetCount} 条资产:'
+                  '重置后无法解密其凭据与备注(端到端加密),'
+                  '资产将保留名称/分类,凭据需重新填写。此操作不可撤销。',
         ),
         actions: [
           TextButton(
@@ -114,6 +130,35 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // 还记得主密码 → 用非破坏的「修改」。
+              Card(
+                color: Colors.orange.shade50,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.lightbulb_outline,
+                          color: Colors.orange.shade800),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          '如果还记得当前主密码,建议用「修改主密码」——数据不丢失。',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ChangeMasterPasswordPage(),
+                          ),
+                        ),
+                        child: const Text('去修改'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
               const Text(
                 '忘记主密码时,用账户密码重置。'
                 '端到端加密意味着旧数据不可恢复:重置后资产保留名称/分类,'

@@ -35,6 +35,8 @@ Future<({bool ok, String? error, String? newMk})> resetMasterPassword({
 
     // 2. 云端:账户密码验证 + 更新 master_key_wrapped(失败=账户密码错/网络)。
     await api.updateMasterKeyWrapped(jwt, accountPassword, wrapped);
+    // 同步新盐:否则服务端盐是旧的,新设备恢复会用旧盐派生 → 误报主密码错误。
+    await api.updateMasterSalt(jwt, newSalt);
 
     // 3. 重加密云端资产:保留元数据,清空凭据,换新 AK。
     final assets = await api.listAssets(jwt);

@@ -14,11 +14,13 @@ import 'asset_inheritors_page.dart';
 
 /// 资产编辑页:新建(asset 为 null)或编辑(asset 非空)。
 /// 凭据与备注用主密钥加密后经仓储写入(云端或本地库)。
+/// tier 为云端权益层级(free/member),本地模式传 null(访客权益)。
 class AssetEditPage extends StatefulWidget {
-  const AssetEditPage({super.key, this.asset, required this.repository});
+  const AssetEditPage({super.key, this.asset, required this.repository, this.tier});
 
   final Asset? asset;
   final AssetRepository repository;
+  final String? tier;
 
   @override
   State<AssetEditPage> createState() => _AssetEditPageState();
@@ -205,7 +207,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
     if (!_isEdit) {
       // 权益上限:新建时校验(访客 20 / 免费用户 50,会员不限)。
       final jwt = await _store.readJwt();
-      final ent = Entitlements.forJwtAndTier(hasJwt: jwt != null, tier: null);
+      final ent = Entitlements.forJwtAndTier(hasJwt: jwt != null, tier: widget.tier);
       final limit = ent.assetLimit;
       if (limit != null) {
         final count = (await widget.repository.listAssets()).length;

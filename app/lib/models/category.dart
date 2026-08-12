@@ -7,6 +7,7 @@ class Category {
     this.assetType = 'physical',
     this.isPreset = false,
     this.createdAt,
+    this.assetCount = 0,
   });
 
   factory Category.fromJson(Map<String, dynamic> json) => Category(
@@ -15,6 +16,7 @@ class Category {
         assetType: json['asset_type']?.toString() ?? 'physical',
         isPreset: json['is_preset'] == 1 || json['is_preset'] == true,
         createdAt: json['created_at']?.toString(),
+        assetCount: (json['asset_count'] as num?)?.toInt() ?? 0,
       );
 
   final String id;
@@ -22,4 +24,7 @@ class Category {
   final String assetType; // physical | virtual
   final bool isPreset;
   final String? createdAt;
+
+  /// 分组内资产数(服务端统计)。
+  final int assetCount;
 }

@@ -34,6 +34,7 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _submitting = false;
   String _captchaId = '';
   String _captchaQuestion = '';
+  bool _captchaFailed = false;
 
   /// 实时查重结果:null = 未查/检查中;false = 已被占用。
   bool? _usernameAvailable;
@@ -49,7 +50,7 @@ class _RegisterPageState extends State<RegisterPage> {
     _refreshCaptcha();
   }
 
-  /// 获取算术验证码。
+  /// 获取算术验证码(失败显示重试,服务端校验兜底)。
   Future<void> _refreshCaptcha() async {
     try {
       final c = await (await _api).getCaptcha();
@@ -57,6 +58,7 @@ class _RegisterPageState extends State<RegisterPage> {
         setState(() {
           _captchaId = c['captcha_id']?.toString() ?? '';
           _captchaQuestion = c['question']?.toString() ?? '';
+          _captchaFailed = _captchaQuestion.isEmpty;
           _captchaController.clear();
         });
       }
@@ -65,6 +67,7 @@ class _RegisterPageState extends State<RegisterPage> {
         setState(() {
           _captchaId = '';
           _captchaQuestion = '';
+          _captchaFailed = true;
         });
       }
     }
@@ -152,6 +155,7 @@ class _RegisterPageState extends State<RegisterPage> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
         masterKeyWrapped: wrapped,
+        masterSalt: salt,
         captchaId: _captchaId,
         captcha: _captchaController.text.trim(),
       );
@@ -345,7 +349,9 @@ class _RegisterPageState extends State<RegisterPage> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        _captchaQuestion.isEmpty ? '加载中' : _captchaQuestion,
+                        _captchaQuestion.isEmpty
+                      ? (_captchaFailed ? '加载失败,点此重试' : '加载中')
+                      : _captchaQuestion,
                         style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold),
                       ),

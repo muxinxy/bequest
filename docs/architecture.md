@@ -106,6 +106,7 @@ bequest/
 - 管理：`server/asset_inheritors.go` 三 handler（list/create/delete），校验继承人属于同一用户；API `GET/POST /api/v1/assets/{id}/inheritors`、`DELETE /api/v1/assets/{id}/inheritors/{iid}`
 - 分组（分类）级继承（迁移 007 `category_inheritors`：`category_id × inheritor_id × priority × trigger_days`，`UNIQUE(category_id, inheritor_id)`）：分组绑定 = 该分组下未资产级绑定的资产的默认继承人，资产级绑定优先级更高
 - 调度器 `triggerInheritance`：资产无资产级绑定时按所属分组 `category_inheritors` 交接（JOIN inheritors/assets，`NOT EXISTS` 过滤已资产级绑定的资产）；分组绑定资产同样逐资产建事件、计入 boundAssets；有资产级/分组级配置的资产不进全量事件
+- 「继承人绑定资产」列表返回**绑定条目实体**（分组一行 + 资产一行，不再把分组展开成逐资产）：分组行含 `asset_count`（经该分组继承的资产数，排除已资产级绑定），空分组同样可见、可解绑
 
 ### ADR-13 Web 客户端
 
@@ -159,6 +160,39 @@ bequest/
 - **根因**：web argon2 绑定 `js_util.callMethod(argon2id, 'call', [options])` 编译为 `argon2id.call(options)`，JS `.call()` 把 options 当 **thisArg** 而非参数，hash-wasm 收到空参数抛 `Invalid options parameter`——注册与本地模式设置主密码（都调 `deriveMasterKey`）因此失败
 - **修复**：`callMethod(hashwasm, 'argon2id', [options])`（= `hashwasm.argon2id(options)`）；用 Node 加载 Dart 编译产物验证派生结果与锚值逐字节一致
 - 教训：web 专属绑定逻辑需真实执行验证（`dart compile js` + Node 跑），仅 `flutter build web` 编译通过不够（dart2js 不校验运行时参数语义）
+
+### ADR-17 跨设备密钥恢复
+
+- 背景：主密钥 MK/盐/WK 只在注册时写入本机（ADR-1），换设备登录后只有 JWT——资产详情解密失败、保存缺 WK
+- 迁移 010：`users.master_salt`（明文不敏感，ADR-11 同款）；注册上传、登录返回
+- 恢复（`crypto/recover_keys.dart`）：主密码 + 盐 → 重新派生 MK（与注册逐字节一致）→ 用任一资产的 `asset_key_wrapped_mk` 做 AES-GCM 认证校验主密码 → 保存 MK/盐；WK 缺失 → 生成新 WK → 账户密码验证更新 `master_key_wrapped`（复用 PUT /settings/master-key）→ 逐资产把 AK 用新 WK 重包装（凭据密文原样保留，非破坏性）→ 保存新 WK。号主需重新线下交付新 WK
+- 老账号回填：`PUT /api/v1/settings/master-salt`——本机有盐而服务端缺（注册早于本 ADR）时登录自动上传
+- 触发：登录页检测「本机无主密钥且服务端有盐」→ 弹「恢复加密密钥」对话框（主密码 + 账户密码）；取消/失败 → 清凭据留在登录页
+
+### ADR-18 管理后台 2FA 与继承安全增强
+
+- **claim 限流 + 审计**：`/inheritance/claim`、`/auth/2fa/verify` 与登录/注册同窗(5 次/分/IP)；claim 失败审计(未知 event_key → actor 'system'、错误访问码 → actor 'inheritor')
+- **管理员登录审计**：完整登录(含 2FA 通过)记 `admin_login`(detail=来源 IP)
+- **TOTP 2FA**：`users.totp_secret`(迁移 011, base32)；RFC 6238 纯标准库(HMAC-SHA1, 30s, ±1 步)；登录两步：账号密码 → `{totp_required, pending_token}`(5 分钟、带 `pending_2fa` claim 的待验证令牌) → `POST /auth/2fa/verify` 换正式令牌；requireAuth/requireAdmin 拒绝 pending 令牌(不能当会话用)；启用流程 setup(返回密钥,不落库)→ confirm(动态码验证后落库)/disable(动态码验证后清空)
+- **72h 反悔窗口**：claim 时落 `reversable_until = claimed_at + 72h`(迁移 011)；号主登录撤销的第三重窗口改为窗口内可撤销、超期后交接最终完成；状态接口返回 `reversable_until`
+- **继承人领取页**：`GET /claim` 内嵌单页(无鉴权,领取校验在 API),继承人不需装 App 即可领取密钥
+- **运维**：`/healthz` 实际 `PingContext` 查 DB；`bequest-server backup` 子命令 `VACUUM INTO` 一致性快照;`PORT` env 可换监听端口
+
+### ADR-19 多本地账户与密钥隔离
+
+- 背景：本地模式原为单账户（标准密钥槽 + vault.bq 共用）；进入本地会覆盖云端密钥槽、再次进入自动放行无验证
+- **账户体系**（SecureStore）：`bequest_local_profiles`=[{id,name}]、账户密钥入专属槽 `bequest_local_{mk,salt,wk,hint}_<id>`；创建/切换账户时把该账户密钥写入标准槽（现有本地代码无感），进入前把原标准槽暂存到 `bequest_pre_local_*`，退出（`deactivateLocalProfile`）恢复——云端与本地密钥互不覆盖
+- **数据隔离**：LocalVault 按当前账户选文件——legacy 账户沿用 `vault.bq`（旧版单账户自动迁移，零数据移动），新账户 `vault_<id>.bq`；云端备份（无当前账户）仍用 vault.bq
+- **进入流程**：本地模式入口 = 账户选择 → 验证该账户主密码（账户盐派生比对）→ 激活进入；冷启动恢复本地会话同样过账户选择页（不再自动放行）
+- 本地模式排序/批量移动直接在 vault 内操作（仓储实现,无网络依赖）
+
+### ADR-20 账户密码安全
+
+- **登录后修改密码**：`PUT /api/v1/me/password`（当前密码校验 → argon2id 新哈希 → 审计）
+- **token_version（迁移 013）**：改密/重置时递增；JWT 携带签发时版本，requireAuth/requireAdmin 与 DB 比对——改密后所有旧 token 立即失效（不再依赖 24h TTL）
+- **忘记密码加固**：`reset-request`/`reset` 纳入严格限流窗口；验证码 5 次错误自动作废（`password_resets.attempts`）；验证码 sha256 哈希存储、10 分钟、一次性、防枚举（不存在邮箱也返回 200）
+- **主密码盐同步**：修改/重置主密码生成新盐时必须 `PUT /settings/master-salt` 同步服务端,否则新设备跨设备恢复用旧盐派生 → 误报主密码错误（ADR-17 的配套不变量）
+- **主密码修改非破坏性**：逐资产用新 MK 重包 `asset_key_wrapped_mk`（凭据密文与 WK 包装原样保留）——与重置（破坏性、凭据清空）形成「记得旧密码用修改、忘记用重置」两条路径
 
 ### ADR-7 导入导出（纯客户端 E2E）
 
