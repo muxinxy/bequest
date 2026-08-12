@@ -7,7 +7,7 @@ void main() {
     await tester.pumpWidget(const BequestApp());
 
     expect(find.text('登录'), findsOneWidget);
-    expect(find.text('用户名'), findsOneWidget);
+    expect(find.text('用户名/邮箱'), findsOneWidget);
     expect(find.text('密码'), findsOneWidget);
   });
 }

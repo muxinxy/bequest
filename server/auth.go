@@ -127,6 +127,8 @@ type userJSON struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
 	Tier     string `json:"tier"`
+	Role     string `json:"role"`
+	Disabled bool   `json:"disabled"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -157,6 +159,8 @@ type registerRequest struct {
 	Email            string `json:"email"`
 	Password         string `json:"password"`
 	MasterKeyWrapped string `json:"master_key_wrapped"`
+	CaptchaID        string `json:"captcha_id"`
+	Captcha          string `json:"captcha"`
 }
 
 // handleRegister: POST /api/v1/auth/register -> 201 {token, user}; 409 dup; 400 validation
@@ -165,6 +169,10 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 		var req registerRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if !verifyCaptcha(req.CaptchaID, req.Captcha) {
+			writeError(w, http.StatusBadRequest, "验证码错误或已过期")
 			return
 		}
 		if msg := validateCredentials(req.Username, req.Email, req.Password); msg != "" {
@@ -226,17 +234,20 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"token": mustSign(id),
-			"user":  userJSON{ID: id, Username: req.Username, Email: req.Email, Tier: "free"},
+			"user":  userJSON{ID: id, Username: req.Username, Email: req.Email, Tier: "free", Role: "user"},
 		})
 	}
 }
 
 type loginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	CaptchaID string `json:"captcha_id"`
+	Captcha   string `json:"captcha"`
 }
 
 // handleLogin: POST /api/v1/auth/login -> 200 {token, user}; 401 bad creds
+// 用户名或邮箱均可登录(identifier 匹配 username 或 email);需通过算术验证码。
 func handleLogin(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req loginRequest
@@ -244,10 +255,17 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
+		if !verifyCaptcha(req.CaptchaID, req.Captcha) {
+			writeError(w, http.StatusBadRequest, "验证码错误或已过期")
+			return
+		}
 		var id int64
-		var username, email, hash, tier string
-		err := db.QueryRow(`SELECT id, username, email, password_hash, tier FROM users WHERE username = ?`, req.Username).
-			Scan(&id, &username, &email, &hash, &tier)
+		var username, email, hash, tier, role string
+		var disabled int
+		identifier := strings.TrimSpace(req.Username)
+		err := db.QueryRow(`SELECT id, username, email, password_hash, tier, role, disabled FROM users
+			WHERE username = ? OR email = ?`, identifier, identifier).
+			Scan(&id, &username, &email, &hash, &tier, &role, &disabled)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusUnauthorized, "invalid username or password")
 			return
@@ -255,6 +273,10 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 		if err != nil {
 			log.Printf("query user: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if disabled == 1 {
+			writeError(w, http.StatusForbidden, "账号已被禁用")
 			return
 		}
 		ok, err := verifyPassword(hash, req.Password)
@@ -285,7 +307,7 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"token": mustSign(id),
-			"user":  userJSON{ID: id, Username: username, Email: email, Tier: tier},
+			"user":  userJSON{ID: id, Username: username, Email: email, Tier: tier, Role: role, Disabled: disabled == 1},
 		})
 	}
 }
@@ -294,9 +316,10 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 func handleMe(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uid := r.Context().Value(ctxUserIDKey).(int64)
-		var username, email, tier string
-		err := db.QueryRow(`SELECT username, email, tier FROM users WHERE id = ?`, uid).
-			Scan(&username, &email, &tier)
+		var username, email, tier, role string
+		var disabled int
+		err := db.QueryRow(`SELECT username, email, tier, role, disabled FROM users WHERE id = ?`, uid).
+			Scan(&username, &email, &tier, &role, &disabled)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusUnauthorized, "user no longer exists")
 			return
@@ -307,7 +330,7 @@ func handleMe(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"user": userJSON{ID: uid, Username: username, Email: email, Tier: tier},
+			"user": userJSON{ID: uid, Username: username, Email: email, Tier: tier, Role: role, Disabled: disabled == 1},
 		})
 	}
 }

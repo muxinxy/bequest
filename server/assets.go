@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -180,8 +181,8 @@ func handleGetAsset(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// freeAssetQuota is the asset cap for free-tier users; members are unlimited.
-const freeAssetQuota = 50
+// freeAssetQuota is defined as a package var in config.go (admin-configurable
+// via config.json free_asset_quota); default 50.
 
 // assetCount returns how many assets uid owns.
 func assetCount(db *sql.DB, uid int64) (int, error) {
@@ -222,7 +223,7 @@ func handleCreateAsset(db *sql.DB) http.HandlerFunc {
 				return
 			}
 			if n >= freeAssetQuota {
-				writeError(w, http.StatusForbidden, "免费用户最多 50 条资产,升级会员可解锁")
+				writeError(w, http.StatusForbidden, fmt.Sprintf("免费用户最多 %d 条资产,升级会员可解锁", freeAssetQuota))
 				return
 			}
 		}

@@ -37,6 +37,9 @@ services:
       # SMTP_USER: ${SMTP_USER:-}
       # SMTP_PASS: ${SMTP_PASS:-}
       # SMTP_FROM: ${SMTP_FROM:-}
+      # 可选: 首个管理员引导(见 README「管理后台」)
+      # ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      # ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
 
 volumes:
   bequest_data:

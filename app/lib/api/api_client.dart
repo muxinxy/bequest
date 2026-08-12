@@ -17,18 +17,38 @@ class ApiClient {
   final http.Client _client;
   final String baseUrl;
 
+  /// GET /healthz:服务器可用性快速检查(2s 超时由调用方控制)。
+  Future<bool> checkServerHealth() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/healthz'),
+    ).timeout(const Duration(seconds: 2));
+    return response.statusCode == 200;
+  }
+
+  /// GET /api/v1/auth/captcha -> {"captcha_id","question"}
+  Future<Map<String, dynamic>> getCaptcha() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/v1/auth/captcha'),
+    );
+    return _decode(response);
+  }
+
   /// POST /api/v1/auth/register
   Future<Map<String, dynamic>> register({
     required String username,
     required String email,
     required String password,
     required String masterKeyWrapped,
+    String captchaId = '',
+    String captcha = '',
   }) {
     return _post('/api/v1/auth/register', {
       'username': username,
       'email': email,
       'password': password,
       'master_key_wrapped': masterKeyWrapped,
+      'captcha_id': captchaId,
+      'captcha': captcha,
     });
   }
 
@@ -36,10 +56,55 @@ class ApiClient {
   Future<Map<String, dynamic>> login({
     required String username,
     required String password,
+    String captchaId = '',
+    String captcha = '',
   }) {
     return _post('/api/v1/auth/login', {
       'username': username,
       'password': password,
+      'captcha_id': captchaId,
+      'captcha': captcha,
+    });
+  }
+
+  /// GET /api/v1/auth/check?username=xxx -> {"available":bool}
+  Future<Map<String, dynamic>> checkUsername(String username) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/v1/auth/check')
+          .replace(queryParameters: {'username': username}),
+    );
+    return _decode(response);
+  }
+
+  /// GET /api/v1/auth/check-email?email=xxx -> {"available":bool}
+  Future<Map<String, dynamic>> checkEmail(String email) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/v1/auth/check-email')
+          .replace(queryParameters: {'email': email}),
+    );
+    return _decode(response);
+  }
+
+  /// PUT /api/v1/me:改用户名/邮箱
+  Future<Map<String, dynamic>> updateProfile(String jwt, Map<String, dynamic> body) {
+    return _put('/api/v1/me', body, jwt);
+  }
+
+  /// POST /api/v1/auth/reset-request:请求重置验证码到邮箱
+  Future<Map<String, dynamic>> requestPasswordReset(String email) {
+    return _post('/api/v1/auth/reset-request', {'email': email});
+  }
+
+  /// POST /api/v1/auth/reset:验证码重置密码
+  Future<Map<String, dynamic>> resetPassword({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) {
+    return _post('/api/v1/auth/reset', {
+      'email': email,
+      'code': code,
+      'new_password': newPassword,
     });
   }
 

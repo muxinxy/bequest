@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -35,7 +36,76 @@ func newTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 }
 
 // doReq performs a request against the test server through the real HTTP stack.
+// 对 /auth/register 与 /auth/login 自动注入验证码(测试便利;生产 handler 校验)。
 func doReq(t *testing.T, ts *httptest.Server, method, path, body, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	if body != "" && (path == "/api/v1/auth/register" || path == "/api/v1/auth/login") {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(body), &m); err == nil {
+			if _, hasID := m["captcha_id"]; !hasID {
+				c := fetchCaptcha(t, ts)
+				m["captcha_id"] = c["captcha_id"]
+				m["captcha"] = c["captcha"]
+				out, _ := json.Marshal(m)
+				body = string(out)
+			}
+		}
+	}
+	req, err := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
+	rr := httptest.NewRecorder()
+	rr.Code = resp.StatusCode
+	for k, vv := range resp.Header {
+		for _, v := range vv {
+			rr.Header().Add(k, v)
+		}
+	}
+	rr.Body.ReadFrom(resp.Body)
+	return rr
+}
+
+// fetchCaptcha gets a fresh captcha and solves it (test helper).
+// Returns the JSON object to merge into the request body.
+func fetchCaptcha(t *testing.T, ts *httptest.Server) map[string]string {
+	t.Helper()
+	rr := doReqRaw(t, ts, http.MethodGet, "/api/v1/auth/captcha", "", "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("captcha status = %d, want 200", rr.Code)
+	}
+	var c struct {
+		CaptchaID string `json:"captcha_id"`
+		Question  string `json:"question"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &c); err != nil {
+		t.Fatalf("parse captcha: %v", err)
+	}
+	// "3 + 7 = ?" -> answer 10。
+	var a, b int
+	if _, err := fmt.Sscanf(c.Question, "%d + %d = ?", &a, &b); err != nil {
+		t.Fatalf("parse question %q: %v", c.Question, err)
+	}
+	return map[string]string{
+		"captcha_id": c.CaptchaID,
+		"captcha":    fmt.Sprintf("%d", a+b),
+	}
+}
+
+// doReqRaw is doReq without captcha injection (used by fetchCaptcha itself
+// to avoid recursion).
+func doReqRaw(t *testing.T, ts *httptest.Server, method, path, body, token string) *httptest.ResponseRecorder {
 	t.Helper()
 	req, err := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
 	if err != nil {

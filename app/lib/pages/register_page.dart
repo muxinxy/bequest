@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
@@ -7,6 +9,7 @@ import '../storage/secure_store.dart';
 import 'home_page.dart';
 
 /// 注册页:收集账号信息与主密码,派生并包装主密钥后提交后端。
+/// 用户名/邮箱边输边实时查重;格式问题立即提示(不等点击注册)。
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
 
@@ -22,23 +25,118 @@ class _RegisterPageState extends State<RegisterPage> {
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _passwordConfirmController = TextEditingController();
   final _masterPasswordController = TextEditingController();
   final _masterPasswordConfirmController = TextEditingController();
+  final _hintController = TextEditingController();
+  final _captchaController = TextEditingController();
 
   bool _submitting = false;
+  String _captchaId = '';
+  String _captchaQuestion = '';
+
+  /// 实时查重结果:null = 未查/检查中;false = 已被占用。
+  bool? _usernameAvailable;
+  bool? _emailAvailable;
+  Timer? _usernameDebounce;
+  Timer? _emailDebounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _usernameController.addListener(_onUsernameChanged);
+    _emailController.addListener(_onEmailChanged);
+    _refreshCaptcha();
+  }
+
+  /// 获取算术验证码。
+  Future<void> _refreshCaptcha() async {
+    try {
+      final c = await (await _api).getCaptcha();
+      if (mounted) {
+        setState(() {
+          _captchaId = c['captcha_id']?.toString() ?? '';
+          _captchaQuestion = c['question']?.toString() ?? '';
+          _captchaController.clear();
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _captchaId = '';
+          _captchaQuestion = '';
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
+    _usernameDebounce?.cancel();
+    _emailDebounce?.cancel();
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _passwordConfirmController.dispose();
     _masterPasswordController.dispose();
     _masterPasswordConfirmController.dispose();
+    _hintController.dispose();
+    _captchaController.dispose();
     super.dispose();
   }
 
+  void _onUsernameChanged() {
+    _usernameDebounce?.cancel();
+    final value = _usernameController.text.trim();
+    // 格式先本地校验;合法才查重(减少请求)。
+    if (!_validUsername(value)) {
+      setState(() => _usernameAvailable = null);
+      return;
+    }
+    _usernameDebounce = Timer(const Duration(milliseconds: 400), () async {
+      try {
+        final res = await (await _api).checkUsername(value);
+        if (mounted) {
+          setState(() => _usernameAvailable = res['available'] == true);
+        }
+      } catch (_) {
+        // 查重失败(网络):不阻塞,提交时由服务端兜底。
+      }
+    });
+  }
+
+  void _onEmailChanged() {
+    _emailDebounce?.cancel();
+    final value = _emailController.text.trim();
+    if (!_validEmail(value)) {
+      setState(() => _emailAvailable = null);
+      return;
+    }
+    _emailDebounce = Timer(const Duration(milliseconds: 400), () async {
+      try {
+        final res = await (await _api).checkEmail(value);
+        if (mounted) {
+          setState(() => _emailAvailable = res['available'] == true);
+        }
+      } catch (_) {
+        // 同上。
+      }
+    });
+  }
+
+  static bool _validUsername(String value) =>
+      value.length >= 3 && value.length <= 20 && RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value);
+
+  static bool _validEmail(String value) =>
+      RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value);
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    // 主密码不能与登录密码相同。
+    if (_masterPasswordController.text == _passwordController.text) {
+      _showError('主密码不能与登录密码相同');
+      return;
+    }
     setState(() => _submitting = true);
     try {
       final salt = generateSalt();
@@ -54,14 +152,16 @@ class _RegisterPageState extends State<RegisterPage> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
         masterKeyWrapped: wrapped,
+        captchaId: _captchaId,
+        captcha: _captchaController.text.trim(),
       );
 
       await _store.saveJwt(_extractJwt(response));
       await _store.saveMasterKey(masterKey);
-      // 盐必须随主密钥一起保存,导出/导入时需用它重新派生并校验主密码。
       await _store.saveMasterSalt(salt);
       await _store.saveWrappingKey(wrappingKey);
-      // 注册即云端模式:避免沿用上次的本地模式设置。
+      final hint = _hintController.text.trim();
+      if (hint.isNotEmpty) await _store.saveMasterHint(hint);
       await _store.saveStorageMode('cloud');
 
       if (!mounted) return;
@@ -69,6 +169,7 @@ class _RegisterPageState extends State<RegisterPage> {
         MaterialPageRoute<void>(builder: (_) => const HomePage()),
       );
     } on ApiException catch (e) {
+      if (e.message.contains('验证码')) await _refreshCaptcha();
       _showError(e.message);
     } catch (_) {
       _showError('注册失败,请检查网络后重试');
@@ -104,25 +205,54 @@ class _RegisterPageState extends State<RegisterPage> {
             children: [
               TextFormField(
                 controller: _usernameController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: '用户名',
-                  border: OutlineInputBorder(),
+                  helperText: '3-20 位,字母/数字/下划线',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: _usernameAvailable == null
+                      ? null
+                      : Icon(
+                          _usernameAvailable == true
+                              ? Icons.check_circle
+                              : Icons.error,
+                          color: _usernameAvailable == true
+                              ? Colors.green
+                              : Colors.red,
+                        ),
                 ),
-                validator: (value) => (value == null || value.trim().isEmpty)
-                    ? '请输入用户名'
-                    : null,
+                validator: (value) {
+                  final v = value?.trim() ?? '';
+                  if (v.isEmpty) return '请输入用户名';
+                  if (!_validUsername(v)) {
+                    return '用户名需 3-20 位字母/数字/下划线';
+                  }
+                  if (_usernameAvailable == false) return '用户名已被占用';
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: '邮箱',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: _emailAvailable == null
+                      ? null
+                      : Icon(
+                          _emailAvailable == true
+                              ? Icons.check_circle
+                              : Icons.error,
+                          color: _emailAvailable == true
+                              ? Colors.green
+                              : Colors.red,
+                        ),
                 ),
                 validator: (value) {
-                  if (value == null || value.trim().isEmpty) return '请输入邮箱';
-                  if (!value.contains('@')) return '邮箱格式不正确';
+                  final v = value?.trim() ?? '';
+                  if (v.isEmpty) return '请输入邮箱';
+                  if (!_validEmail(v)) return '邮箱格式不正确';
+                  if (_emailAvailable == false) return '邮箱已被注册';
                   return null;
                 },
               ),
@@ -132,6 +262,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 obscureText: true,
                 decoration: const InputDecoration(
                   labelText: '登录密码',
+                  helperText: '至少 8 位;用于登录账号',
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) => (value == null || value.length < 8)
@@ -140,16 +271,30 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               const SizedBox(height: 16),
               TextFormField(
+                controller: _passwordConfirmController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: '确认登录密码',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) => value != _passwordController.text
+                    ? '两次输入的密码不一致'
+                    : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
                 controller: _masterPasswordController,
                 obscureText: true,
                 decoration: const InputDecoration(
                   labelText: '主密码',
-                  helperText: '用于加密您的资产数据,请务必牢记',
+                  helperText: '用于加密资产数据,务必牢记;不能与登录密码相同',
                   border: OutlineInputBorder(),
                 ),
-                validator: (value) => (value == null || value.length < 8)
-                    ? '主密码至少 8 位'
-                    : null,
+                validator: (value) {
+                  if (value == null || value.length < 8) return '主密码至少 8 位';
+                  if (value == _passwordController.text) return '主密码不能与登录密码相同';
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -161,6 +306,52 @@ class _RegisterPageState extends State<RegisterPage> {
                 ),
                 validator: (value) =>
                     value != _masterPasswordController.text ? '两次输入的主密码不一致' : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _hintController,
+                decoration: const InputDecoration(
+                  labelText: '主密码提示语(可选)',
+                  helperText: '忘记主密码时帮助回忆,不暴露密码本身',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _captchaController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '验证码',
+                        hintText: '输入算式答案',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) =>
+                          (value == null || value.trim().isEmpty)
+                              ? '请输入验证码'
+                              : null,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  InkWell(
+                    onTap: _refreshCaptcha,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 14),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade400),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _captchaQuestion.isEmpty ? '加载中' : _captchaQuestion,
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 24),
               FilledButton(

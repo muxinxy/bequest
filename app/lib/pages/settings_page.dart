@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import '../api/api_config.dart';
 import '../models/asset.dart';
 import '../repository/asset_repository.dart';
+import '../repository/local_asset_repository.dart';
 import '../storage/secure_store.dart';
 import 'about_page.dart';
+import 'account_settings_page.dart';
 import 'app_lock_setup_page.dart';
 import 'audit_page.dart';
 import 'category_page.dart';
@@ -38,6 +40,9 @@ class _SettingsPageState extends State<SettingsPage> {
   /// 全局继承开关(仅云端模式有意义;本地模式无继承)。
   bool _inheritanceEnabled = true;
   bool _hasJwt = false;
+
+  /// 本地模式:需登录的功能(提醒模板/继承人/继承状态等)置灰。
+  bool get _isLocal => widget.repository is LocalAssetRepository;
 
   @override
   void initState() {
@@ -193,16 +198,19 @@ class _SettingsPageState extends State<SettingsPage> {
             Icons.event_note_outlined,
             '提醒模板',
             () => _push(context, const ReminderTemplatesPage()),
+            enabled: !_isLocal,
           ),
           _entry(
             Icons.people_outline,
             '继承人',
             () => _push(context, const InheritorsPage()),
+            enabled: !_isLocal,
           ),
           _entry(
             Icons.flag_outlined,
             '继承状态',
             () => _push(context, const InheritanceStatusPage()),
+            enabled: !_isLocal,
           ),
           // 全局继承开关:一键开启/关闭继承功能(关闭后不再升级提醒/触发交接)。
           SwitchListTile(
@@ -219,8 +227,15 @@ class _SettingsPageState extends State<SettingsPage> {
             Icons.people_alt_outlined,
             '继承人绑定资产',
             () => _push(context, InheritorAssetsPage(repository: widget.repository)),
+            enabled: !_isLocal,
           ),
           _section(context, '账户与安全'),
+          _entry(
+            Icons.person_outline,
+            '账号信息',
+            () => _push(context, const AccountSettingsPage()),
+            enabled: !_isLocal,
+          ),
           _entry(
             Icons.lock_outline,
             '应用锁',
@@ -235,16 +250,19 @@ class _SettingsPageState extends State<SettingsPage> {
             Icons.restart_alt_outlined,
             '重置主密码(忘记)',
             () => _push(context, const ResetMasterPasswordPage()),
+            enabled: !_isLocal,
           ),
           _entry(
             Icons.mail_outline,
             '邮箱发件设置',
             () => _push(context, const SmtpSettingsPage()),
+            enabled: !_isLocal,
           ),
           _entry(
             Icons.receipt_long_outlined,
             '审计日志',
             () => _push(context, const AuditPage()),
+            enabled: !_isLocal,
           ),
           _section(context, '存储与服务器'),
           _entry(
@@ -286,10 +304,18 @@ class _SettingsPageState extends State<SettingsPage> {
     ),
   );
 
-  Widget _entry(IconData icon, String title, VoidCallback onTap) => ListTile(
-    leading: Icon(icon),
-    title: Text(title),
-    trailing: const Icon(Icons.chevron_right),
-    onTap: onTap,
+  Widget _entry(
+    IconData icon,
+    String title,
+    VoidCallback onTap, {
+    bool enabled = true,
+  }) => ListTile(
+    leading: Icon(icon, color: enabled ? null : Colors.grey),
+    title: Text(
+      title,
+      style: enabled ? null : const TextStyle(color: Colors.grey),
+    ),
+    trailing: Icon(Icons.chevron_right, color: enabled ? null : Colors.grey),
+    onTap: enabled ? onTap : null,
   );
 }

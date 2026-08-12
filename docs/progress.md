@@ -20,6 +20,7 @@
 | 后置 | 多继承人优先级、定时释放、生前共享、数字遗言、Excel 导出、Web/iOS/鸿蒙 | ⏳ |
 | Web 客户端 + 资产级继承 | Web 编译(Android+Web)、服务端同源托管、web 派生 WASM 性能、资产级密钥隔离、手动锁定、加密导出/覆盖导入、客户端时区、模板变量提示 | ✅ 完成 |
 | v0.4.1 | 分组继承 + 重置主密码 | Android 网络权限修复、Web 锁定修复、分组视图与搜索、分组继承人、继承开关、继承人绑定资产多选解绑、账号密码重置主密码 | ✅ 完成 |
+| v0.5.0 | 管理后台 + 验证码 + 限流 + 账号功能 | 管理后台（ADR-16）、账号禁用/角色、算术验证码（ADR-17）、按 IP 限流（ADR-18）、改用户名/邮箱、邮箱登录、忘记密码验证码重置、注册实时查重/双密码/提示语、登录预检、服务器地址记忆、web 注册/本地模式修复 | ✅ 完成 |
 
 ## 当前状态（P1 完成，下一步 P2）
 
@@ -118,6 +119,19 @@
 - 验证：Flutter 119 测试全过、Go 全测试过、`flutter build web` 成功；继承开关 API 端到端 GET/PUT 200；分组继承绑定关系 SQL 验证正确
 - 备注：完整"分组继承触发→claim"端到端当时卡在测试环境（旧进程占 8080 端口，新进程 scheduler 未接管），非代码问题——分组继承 SQL/逻辑已单独验证
 
+## 当前状态（v0.5.0：管理后台 + 验证码 + 限流 + 账号功能完成）
+
+**v0.5.0 已交付**：
+- **管理后台（ADR-16）**：`/admin` 内嵌单页（Go 托管，零新依赖、无构建）；用户/会员/管理员/资产等统计仪表盘；用户搜索/会员开通/管理员任命/禁用/删除（自保护）；系统配置（SMTP 列表 + 免费资产上限，热重载）；全量审计日志；`ADMIN_USERNAME`/`ADMIN_PASSWORD` 引导首个管理员；`users.role`/`users.disabled` + `requireAdmin`（DB 实时校验）；禁用账号拒绝登录与全部 API
+- **算术验证码（ADR-17）**：注册/登录加验证码（`7 + 7 = ?`），服务端生成、答案 sha256 哈希存内存（5 分钟过期、一次性防重放）；前端算式卡片点击刷新、错误自动刷新重试
+- **按 IP 限流（ADR-18）**：内存滑动窗口中间件——登录/注册 5 次/分钟/IP，其他 API 120 次/分钟/IP；429 + 窗口自动恢复；支持 X-Forwarded-For
+- **账号功能**：设置页改用户名/邮箱（PUT /me，409 冲突提示）；登录支持用户名或邮箱；注册页用户名/邮箱实时查重（GET /auth/check、/auth/check-email，防枚举）；忘记密码邮箱验证码重置（6 位、10 分钟、哈希存储；POST /auth/reset-request + /auth/reset）
+- **注册表单增强**：登录密码/主密码均输入两次；主密码提示语；主密码≠登录密码；格式边输边即时校验
+- **登录/注册预检**：点击后先 GET /healthz（2s 超时），服务器不可达立即提示，不再转圈
+- **服务器地址记忆**：最近 5 条 chip 快捷填入/清除；去掉测试连接按钮，进入/保存时自动测，绿/红指示灯
+- **Web 注册/本地模式设置主密码修复**：根因 web argon2 绑定 `js_util.callMethod(argon2id,'call',[options])` → JS `.call()` 把参数当 thisArg 丢参，hash-wasm 收空报 `Invalid options parameter`；改 `callMethod(hashwasm,'argon2id',[options])`，Node 加载编译产物验证锚值一致
+- 验证：Flutter 119 测试全过、Go 全测试过（测试 helper 自动注入验证码）、`flutter build web` 成功；端到端——验证码错 400/对 201、连续登录第 4 次 429、65s 后恢复、改用户名 200、错误重置码 401
+
 ## 如何运行（交接用）
 
 ```powershell
@@ -148,3 +162,6 @@ go run .                    # 浏览器访问 http://localhost:8080
 - 2026-08-09：**云/本地双模存储**——`AssetRepository` 抽象（Cloud/Local 双实现）+ `RepositoryFactory`；不登录可进本地模式（设置主密码 → 本地加密库全量 CRUD）；登录页新增「进入本地模式」；`ApiConfig` 服务器地址可配置（设置页保存 + 测试连接）；`extractBackupJsonAny` 支持「主密码 + 备份内 salt」跨设备恢复；三层权益矩阵（访客 20 条/免费 50 条/会员不限）UI 徽章 + 资产上限拦截；云↔本地切换迁移（拉取/上传 + 进度提示）；Release 新增 android job（Flutter APK 三 ABI → Release 资产）
 - 2026-08-11：**v0.4.0**——Web 客户端（同套代码编译，服务端托管）、资产级密钥隔离（ADR-12，每资产独立密钥+继承人绑定+按资产领取）、web 派生 WASM 性能修复、手动锁定/加密导出/覆盖导入/时区/模板提示
 - 2026-08-11：**v0.4.1**——Android release 网络权限修复（INTERNET+明文 HTTP）、Web 锁定修复、分组视图/搜索、分组继承人（ADR-12 扩展）、继承开关（ADR-14）、重置主密码（ADR-15）、继承人绑定资产
+- 2026-08-12：**管理后台（ADR-16）**——`/admin` 内嵌单页（Go 托管，零新依赖）；`users.role`/`users.disabled`（迁移 009）；`requireAdmin` 中间件（DB 实时角色校验，无 JWT claim 过期问题）；`ADMIN_USERNAME`/`ADMIN_PASSWORD` 启动引导首个管理员（已存在则提升）；管理 API：仪表盘统计、用户列表/详情/改（tier/role/disabled）/删（自保护：不能降级/禁用/删除自己）、全量审计日志、系统配置读写（SMTP 服务器 + 免费资产上限，密码不回显、留空保留）；登录/me 返回 role、禁用账号拒绝登录与全部 API（ADR-16）
+- 2026-08-12：**验证码（ADR-17）+ 限流（ADR-18）+ 账号功能**——注册/登录加算术验证码（答案哈希存内存、一次性防重放）；按 IP 滑动窗口限流（登录/注册 5 次/分，其他 120 次/分，429 自动恢复）；设置页改用户名/邮箱（PUT /me）、登录支持用户名或邮箱、注册实时查重（GET /auth/check）、忘记密码邮箱验证码重置（哈希存储防泄露）；登录/注册点击前先 /healthz 预检（2s 超时）不再转圈；服务器地址记忆（最多 5 条 chip）+ 去测试连接按钮改自动测 + 指示灯
+- 2026-08-12：**Web 注册/本地模式设置主密码失败修复**——根因 web argon2 绑定 `js_util.callMethod(argon2id,'call',[options])` 编译为 `argon2id.call(options)`，JS `.call()` 把参数当 thisArg 导致 hash-wasm 收空报 `Invalid options parameter`；改 `callMethod(hashwasm,'argon2id',[options])`，Node 加载编译产物验证锚值一致（ADR-13 补充；教训：web 绑定需真实执行验证，仅编译通过不够）

@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>托孤 · 管理后台</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: #f4f5f7; color: #1f2328; }
+  header { background: #24292f; color: #fff; padding: 0 24px; height: 52px; display: flex; align-items: center; gap: 24px; }
+  header h1 { font-size: 16px; font-weight: 600; }
+  header nav { display: flex; gap: 4px; }
+  header nav button { background: none; border: none; color: #c9d1d9; padding: 8px 14px; font-size: 14px; cursor: pointer; border-radius: 6px; }
+  header nav button.active, header nav button:hover { background: #32383f; color: #fff; }
+  header .spacer { flex: 1; }
+  header .who { color: #c9d1d9; font-size: 13px; }
+  header .logout { background: none; border: 1px solid #565e66; color: #c9d1d9; border-radius: 6px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
+  main { max-width: 1100px; margin: 24px auto; padding: 0 24px; }
+  .card { background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
+  .stat { background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 16px; }
+  .stat .n { font-size: 26px; font-weight: 700; color: #0969da; }
+  .stat .l { font-size: 13px; color: #57606a; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eaecef; }
+  th { color: #57606a; font-weight: 600; background: #f6f8fa; }
+  tr:hover td { background: #f6f8fa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .badge.member { background: #ddf4ff; color: #0550ae; }
+  .badge.free { background: #f6f8fa; color: #57606a; }
+  .badge.admin { background: #ffd7d5; color: #a40e26; }
+  .badge.user { background: #f6f8fa; color: #57606a; }
+  .badge.on { background: #dafbe1; color: #1a7f37; }
+  .badge.off { background: #ffebe9; color: #a40e26; }
+  button { font-size: 13px; padding: 4px 10px; border-radius: 6px; border: 1px solid #d0d7de; background: #f6f8fa; cursor: pointer; }
+  button:hover { background: #eaeef2; }
+  button.primary { background: #0969da; border-color: #0969da; color: #fff; }
+  button.primary:hover { background: #075fc4; }
+  button.danger { color: #a40e26; border-color: #ffb3ad; }
+  button.danger:hover { background: #ffebe9; }
+  button:disabled { opacity: .5; cursor: default; }
+  input, select { font-size: 13px; padding: 5px 8px; border: 1px solid #d0d7de; border-radius: 6px; }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+  .toolbar input[type=text] { width: 240px; }
+  .pager { display: flex; gap: 10px; align-items: center; margin-top: 14px; font-size: 13px; color: #57606a; }
+  .msg { position: fixed; top: 60px; right: 20px; padding: 10px 16px; border-radius: 6px; color: #fff; font-size: 13px; z-index: 10; opacity: 0; transition: opacity .2s; }
+  .msg.show { opacity: 1; }
+  .msg.ok { background: #1a7f37; }
+  .msg.err { background: #cf222e; }
+  .form-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
+  .form-row label { font-size: 13px; color: #57606a; width: 90px; }
+  .sm { width: 60px; } .md { width: 120px; }
+  .login-wrap { max-width: 360px; margin: 120px auto; background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 28px; }
+  .login-wrap h2 { font-size: 17px; margin-bottom: 18px; }
+  .login-wrap .form-row label { width: 64px; }
+  .login-wrap input { width: 100%; }
+  .login-wrap button { width: 100%; margin-top: 12px; padding: 8px; }
+  .hidden { display: none; }
+  .muted { color: #57606a; font-size: 12px; }
+</style>
+</head>
+<body>
+<header id="appbar" class="hidden">
+  <h1>托孤 · 管理后台</h1>
+  <nav id="tabs">
+    <button data-tab="dash" class="active">仪表盘</button>
+    <button data-tab="users">用户</button>
+    <button data-tab="config">系统配置</button>
+    <button data-tab="audit">审计日志</button>
+  </nav>
+  <div class="spacer"></div>
+  <span class="who" id="who"></span>
+  <button class="logout" id="logout">退出登录</button>
+</header>
+<div id="msg" class="msg"></div>
+
+<main id="login-view" class="login-wrap">
+  <h2>管理后台登录</h2>
+  <div class="form-row"><label>账号</label><input id="lg-user" autocomplete="username"></div>
+  <div class="form-row"><label>密码</label><input id="lg-pass" type="password" autocomplete="current-password"></div>
+  <div class="form-row"><label>验证码</label><span id="lg-question" class="muted"></span></div>
+  <div class="form-row"><label></label><input id="lg-captcha" placeholder="输入算式结果" style="width:140px"></div>
+  <button class="primary" id="lg-btn">登 录</button>
+</main>
+
+<main id="app" class="hidden">
+  <section id="tab-dash" class="card">
+    <div class="cards" id="stats"></div>
+  </section>
+
+  <section id="tab-users" class="card hidden">
+    <div class="toolbar">
+      <input id="u-q" type="text" placeholder="搜索用户名 / 邮箱">
+      <select id="u-role">
+        <option value="">全部角色</option><option value="admin">管理员</option><option value="user">普通用户</option>
+      </select>
+      <select id="u-tier">
+        <option value="">全部等级</option><option value="member">会员</option><option value="free">免费</option>
+      </select>
+      <button class="primary" id="u-search">搜索</button>
+    </div>
+    <table>
+      <thead><tr><th>ID</th><th>用户名</th><th>邮箱</th><th>等级</th><th>角色</th><th>状态</th><th>资产</th><th>继承人</th><th>最后登录</th><th>注册时间</th><th>操作</th></tr></thead>
+      <tbody id="u-body"></tbody>
+    </table>
+    <div class="pager">
+      <button id="u-prev">上一页</button><span id="u-info"></span><button id="u-next">下一页</button>
+    </div>
+  </section>
+
+  <section id="tab-config" class="card hidden">
+    <h3 style="margin-bottom:12px">SMTP 服务器（系统发件，轮询负载均衡）</h3>
+    <div id="smtp-rows"></div>
+    <button id="smtp-add">+ 添加服务器</button>
+    <h3 style="margin:18px 0 12px">免费用户权益</h3>
+    <div class="form-row">
+      <label>资产上限</label>
+      <input id="cfg-quota" class="md" type="number" min="1">
+      <span class="muted">免费档最多可创建的资产数；会员不限</span>
+    </div>
+    <div class="form-row" style="margin-top:16px">
+      <button class="primary" id="cfg-save">保存配置</button>
+    </div>
+    <p class="muted" id="cfg-providers"></p>
+  </section>
+
+  <section id="tab-audit" class="card hidden">
+    <div class="toolbar">
+      <input id="a-uid" type="text" placeholder="按 user_id 筛选">
+      <button class="primary" id="a-search">查询</button>
+    </div>
+    <table>
+      <thead><tr><th>ID</th><th>user_id</th><th>actor</th><th>action</th><th>detail</th><th>时间</th></tr></thead>
+      <tbody id="a-body"></tbody>
+    </table>
+    <div class="pager">
+      <button id="a-prev">上一页</button><span id="a-info"></span><button id="a-next">下一页</button>
+    </div>
+  </section>
+</main>
+
+<script>
+'use strict';
+var TOKEN_KEY = 'bequest_admin_token';
+var state = { users: { page: 1, q: '', role: '', tier: '' }, audit: { page: 1, uid: '' } };
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function toast(msg, ok) {
+  var el = document.getElementById('msg');
+  el.textContent = msg;
+  el.className = 'msg show ' + (ok ? 'ok' : 'err');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function () { el.className = 'msg'; }, 2600);
+}
+function api(path, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({}, opts.headers || {});
+  var token = localStorage.getItem(TOKEN_KEY);
+  if (token) opts.headers.Authorization = 'Bearer ' + token;
+  if (opts.body) opts.headers['Content-Type'] = 'application/json';
+  return fetch('/api/v1' + path, opts).then(function (resp) {
+    return resp.json().catch(function () { return {}; }).then(function (data) {
+      if (resp.status === 401) { logout(); throw new Error('登录已过期'); }
+      if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+      return data;
+    });
+  });
+}
+function logout() {
+  localStorage.removeItem(TOKEN_KEY);
+  document.getElementById('appbar').classList.add('hidden');
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('login-view').classList.remove('hidden');
+}
+
+/* ---------- login ---------- */
+var captcha = { captcha_id: '', question: '' };
+function loadCaptcha() {
+  return fetch('/api/v1/auth/captcha').then(function (r) { return r.json(); }).then(function (d) {
+    captcha = d;
+    document.getElementById('lg-question').textContent = d.question;
+    document.getElementById('lg-captcha').value = '';
+  }).catch(function () {
+    document.getElementById('lg-question').textContent = '验证码加载失败,请刷新页面';
+  });
+}
+function doLogin() {
+  var u = document.getElementById('lg-user').value.trim();
+  var p = document.getElementById('lg-pass').value;
+  if (!u || !p) return toast('请输入账号和密码', false);
+  api('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({
+      username: u, password: p,
+      captcha_id: captcha.captcha_id, captcha: document.getElementById('lg-captcha').value.trim()
+    })
+  })
+    .then(function (d) {
+      if (d.user && d.user.role !== 'admin') throw new Error('该账号不是管理员');
+      localStorage.setItem(TOKEN_KEY, d.token);
+      document.getElementById('who').textContent = d.user.username;
+      document.getElementById('login-view').classList.add('hidden');
+      document.getElementById('appbar').classList.remove('hidden');
+      document.getElementById('app').classList.remove('hidden');
+      switchTab('dash');
+      loadStats();
+    })
+    .catch(function (e) { toast(e.message, false); loadCaptcha(); }); // 验证码一次性,失败即换
+}
+loadCaptcha();
+document.getElementById('lg-btn').addEventListener('click', doLogin);
+document.getElementById('lg-pass').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+document.getElementById('lg-captcha').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+document.getElementById('logout').addEventListener('click', logout);
+
+/* ---------- tabs ---------- */
+function switchTab(name) {
+  document.querySelectorAll('#tabs button').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.tab === name);
+  });
+  ['dash', 'users', 'config', 'audit'].forEach(function (t) {
+    document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
+  });
+  if (name === 'dash') loadStats();
+  if (name === 'users') loadUsers();
+  if (name === 'config') loadConfig();
+  if (name === 'audit') loadAudit();
+}
+document.querySelectorAll('#tabs button').forEach(function (b) {
+  b.addEventListener('click', function () { switchTab(b.dataset.tab); });
+});
+
+/* ---------- dashboard ---------- */
+var STAT_LABELS = {
+  users: '用户总数', members: '会员', admins: '管理员', disabled_users: '已禁用',
+  assets: '资产总数', categories: '分类', inheritors: '继承人', pending_inheritance_events: '待领取继承事件', unread_reminders: '未读提醒'
+};
+function loadStats() {
+  api('/admin/stats').then(function (s) {
+    var html = Object.keys(STAT_LABELS).map(function (k) {
+      return '<div class="stat"><div class="n">' + esc(s[k] || 0) + '</div><div class="l">' + STAT_LABELS[k] + '</div></div>';
+    }).join('');
+    document.getElementById('stats').innerHTML = html;
+  }).catch(function (e) { toast(e.message, false); });
+}
+
+/* ---------- users ---------- */
+function loadUsers(page) {
+  if (page) state.users.page = page;
+  var p = state.users.page;
+  var q = encodeURIComponent(state.users.q);
+  var role = encodeURIComponent(state.users.role);
+  var tier = encodeURIComponent(state.users.tier);
+  api('/admin/users?q=' + q + '&role=' + role + '&tier=' + tier + '&page=' + p + '&page_size=20')
+    .then(function (d) {
+      var rows = d.users.map(function (u) {
+        var tierB = u.tier === 'member' ? '<span class="badge member">会员</span>' : '<span class="badge free">免费</span>';
+        var roleB = u.role === 'admin' ? '<span class="badge admin">管理员</span>' : '<span class="badge user">用户</span>';
+        var stB = u.disabled ? '<span class="badge off">禁用</span>' : '<span class="badge on">正常</span>';
+        return '<tr><td>' + u.id + '</td><td>' + esc(u.username) + '</td><td>' + esc(u.email) + '</td>' +
+          '<td>' + tierB + '</td><td>' + roleB + '</td><td>' + stB + '</td>' +
+          '<td>' + u.asset_count + '</td><td>' + u.inheritor_count + '</td>' +
+          '<td>' + esc(u.last_login_at || '') + '</td><td>' + esc(u.created_at || '') + '</td>' +
+          '<td>' + userActions(u) + '</td></tr>';
+      }).join('');
+      document.getElementById('u-body').innerHTML = rows || '<tr><td colspan="11" class="muted">无匹配用户</td></tr>';
+      document.getElementById('u-info').textContent = '共 ' + d.total + ' 条 · 第 ' + d.page + ' 页';
+      document.getElementById('u-prev').disabled = d.page <= 1;
+      document.getElementById('u-next').disabled = d.page * d.page_size >= d.total;
+    })
+    .catch(function (e) { toast(e.message, false); });
+}
+function userActions(u) {
+  var a = [];
+  if (u.tier !== 'member') a.push('<button data-act="member" data-id="' + u.id + '">设会员</button>');
+  else a.push('<button data-act="unmember" data-id="' + u.id + '">取消会员</button>');
+  if (u.role !== 'admin') a.push('<button data-act="admin" data-id="' + u.id + '">设管理员</button>');
+  else a.push('<button data-act="unadmin" data-id="' + u.id + '">取消管理员</button>');
+  if (!u.disabled) a.push('<button data-act="disable" data-id="' + u.id + '">禁用</button>');
+  else a.push('<button data-act="enable" data-id="' + u.id + '">启用</button>');
+  a.push('<button class="danger" data-act="del" data-id="' + u.id + '">删除</button>');
+  return a.join(' ');
+}
+document.getElementById('u-body').addEventListener('click', function (e) {
+  var btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  var id = btn.dataset.id, act = btn.dataset.act;
+  var body = null;
+  if (act === 'member') body = { tier: 'member' };
+  if (act === 'unmember') body = { tier: 'free' };
+  if (act === 'admin') body = { role: 'admin' };
+  if (act === 'unadmin') body = { role: 'user' };
+  if (act === 'disable') body = { disabled: true };
+  if (act === 'enable') body = { disabled: false };
+  if (act === 'del' && !confirm('确定删除用户 #' + id + '？其资产、分类、继承人将一并删除！')) return;
+  var req = body ? { method: 'PUT', body: JSON.stringify(body) } : { method: 'DELETE' };
+  api('/admin/users/' + id, req).then(function () {
+    toast(act === 'del' ? '已删除' : '已更新', true);
+    loadUsers();
+  }).catch(function (er) { toast(er.message, false); });
+});
+function setUserFilter() {
+  state.users.q = document.getElementById('u-q').value.trim();
+  state.users.role = document.getElementById('u-role').value;
+  state.users.tier = document.getElementById('u-tier').value;
+  state.users.page = 1;
+  loadUsers();
+}
+document.getElementById('u-search').addEventListener('click', setUserFilter);
+['u-q', 'u-role', 'u-tier'].forEach(function (id) {
+  document.getElementById(id).addEventListener('change', setUserFilter);
+});
+document.getElementById('u-prev').addEventListener('click', function () { loadUsers(state.users.page - 1); });
+document.getElementById('u-next').addEventListener('click', function () { loadUsers(state.users.page + 1); });
+
+/* ---------- config ---------- */
+function smtpRow(s, hasPass) {
+  s = s || {};
+  var passNote = hasPass ? '<span class="muted">已设置（留空保持不变）</span>' : '';
+  var row = document.createElement('div');
+  row.className = 'form-row';
+  row.innerHTML =
+    '<input class="md" placeholder="host" value="' + esc(s.host || '') + '">' +
+    '<input class="sm" type="number" placeholder="port" value="' + esc(s.port || '') + '">' +
+    '<input class="md" placeholder="user" value="' + esc(s.user || '') + '">' +
+    '<input class="md" type="password" placeholder="password" value="">' + passNote +
+    '<input class="md" placeholder="from_addr" value="' + esc(s.from_addr || '') + '">' +
+    '<button type="button">移除</button>';
+  return row;
+}
+function loadConfig() {
+  api('/admin/config').then(function (c) {
+    var wrap = document.getElementById('smtp-rows');
+    wrap.innerHTML = '';
+    (c.smtp_servers || []).forEach(function (s) { wrap.appendChild(smtpRow(s, s.password_set)); });
+    if (!c.smtp_servers.length) wrap.appendChild(smtpRow());
+    document.getElementById('cfg-quota').value = c.free_asset_quota;
+    document.getElementById('cfg-providers').textContent =
+      'SMS 服务商 ' + c.sms_provider_count + ' 个 · 电话服务商 ' + c.phone_provider_count + ' 个（预留，暂未实现发送）';
+  }).catch(function (e) { toast(e.message, false); });
+}
+document.getElementById('smtp-add').addEventListener('click', function () {
+  document.getElementById('smtp-rows').appendChild(smtpRow());
+});
+document.getElementById('smtp-rows').addEventListener('click', function (e) {
+  if (e.target.textContent === '移除') e.target.closest('.form-row').remove();
+});
+document.getElementById('cfg-save').addEventListener('click', function () {
+  var servers = Array.prototype.map.call(document.querySelectorAll('#smtp-rows .form-row'), function (row) {
+    var inp = row.querySelectorAll('input');
+    return {
+      host: inp[0].value.trim(), port: parseInt(inp[1].value, 10) || 0,
+      user: inp[2].value.trim(), password: inp[3].value, from_addr: inp[4].value.trim()
+    };
+  });
+  var quota = parseInt(document.getElementById('cfg-quota').value, 10) || 0;
+  api('/admin/config', { method: 'PUT', body: JSON.stringify({ smtp_servers: servers, free_asset_quota: quota }) })
+    .then(function () { toast('配置已保存', true); loadConfig(); })
+    .catch(function (e) { toast(e.message, false); });
+});
+
+/* ---------- audit ---------- */
+function loadAudit(page) {
+  if (page) state.audit.page = page;
+  var p = state.audit.page;
+  var uid = encodeURIComponent(state.audit.uid);
+  api('/admin/audit-log?user_id=' + uid + '&page=' + p + '&page_size=50')
+    .then(function (d) {
+      var rows = d.entries.map(function (e) {
+        return '<tr><td>' + e.id + '</td><td>' + e.user_id + '</td><td>' + esc(e.actor) + '</td>' +
+          '<td>' + esc(e.action) + '</td><td>' + esc(e.detail) + '</td><td>' + esc(e.created_at) + '</td></tr>';
+      }).join('');
+      document.getElementById('a-body').innerHTML = rows || '<tr><td colspan="6" class="muted">无记录</td></tr>';
+      document.getElementById('a-info').textContent = '共 ' + d.total + ' 条 · 第 ' + d.page + ' 页';
+      document.getElementById('a-prev').disabled = d.page <= 1;
+      document.getElementById('a-next').disabled = d.page * d.page_size >= d.total;
+    })
+    .catch(function (e) { toast(e.message, false); });
+}
+document.getElementById('a-search').addEventListener('click', function () {
+  state.audit.uid = document.getElementById('a-uid').value.trim();
+  state.audit.page = 1;
+  loadAudit();
+});
+document.getElementById('a-prev').addEventListener('click', function () { loadAudit(state.audit.page - 1); });
+document.getElementById('a-next').addEventListener('click', function () { loadAudit(state.audit.page + 1); });
+</script>
+</body>
+</html>

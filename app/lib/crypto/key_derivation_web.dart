@@ -12,22 +12,24 @@ Future<String> platformDeriveMasterKey(
   String saltB64,
 ) async {
   final hashwasm = js_util.getProperty(js_util.globalThis, 'hashwasm');
-  final argon2id = js_util.getProperty(hashwasm, 'argon2id');
+  // hashwasm.argon2id(options):callMethod(obj, 'method', args) 生成 obj.method(args)。
+  final options = js_util.jsify({
+    'password': utf8.encode(masterPassword),
+    'salt': base64.decode(saltB64),
+    'iterations': 3,
+    'memorySize': 65536,
+    'parallelism': 4,
+    'hashLength': 32,
+    'outputType': 'binary',
+  });
   final result = await js_util.promiseToFuture(
-    js_util.callMethod(argon2id, 'call', [
-      js_util.jsify({
-        'password': utf8.encode(masterPassword),
-        'salt': base64.decode(saltB64),
-        'iterations': 3,
-        'memorySize': 65536,
-        'parallelism': 4,
-        'hashLength': 32,
-        'outputType': 'binary',
-      }),
-    ]),
+    js_util.callMethod(hashwasm, 'argon2id', [options]),
   );
-  // hashBinary 为 JS Uint8Array → dartify 为 List<int>。
-  final bytes = js_util.dartify(js_util.getProperty(result, 'hashBinary'))
-      as List<dynamic>;
+  // UMD 版 hash-wasm 返回裸 Uint8Array;文档形态为 {hashBinary}。
+  // 取不到 hashBinary 时把 result 本身当字节数组。
+  final hashAny = js_util.hasProperty(result, 'hashBinary')
+      ? js_util.getProperty(result, 'hashBinary')
+      : result;
+  final bytes = js_util.dartify(hashAny) as List<dynamic>;
   return base64.encode(bytes.cast<int>());
 }

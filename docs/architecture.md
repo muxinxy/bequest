@@ -66,7 +66,7 @@ bequest/
 - 提醒渠道：免费 = 站内信 + 邮件（SMTP 配置后）；会员 = 站内信 + 邮件 + 短信/电话（`notifyUser` 分发，短信/电话为预留空实现，用户表暂无手机字段）
 - 继承升级间隔：免费 30/60/90/120 天，会员 7/14/30/60 天
 - 权益门槛：导出格式（免费 JSON，Excel 会员后置）、自定义模板（当前免费开放，后续可收紧）
-- 会员开通方式：当前无管理后台，`UPDATE users SET tier='member'` 手动开通（文档记录）
+- 会员开通方式：管理后台（ADR-16）用户管理页直接改 tier；或 `UPDATE users SET tier='member'`
 
 ### ADR-8 自托管同步（隐私第一，客户端直连）
 
@@ -128,6 +128,38 @@ bequest/
 - 客户端 `reset_master_password.dart`：派生新 MK/新 WK/新 salt → 更新云端 `master_key_wrapped` → 云端资产逐条保留元数据（name/分类/到期）、凭据清空、换新 AK 重加密 → 本地 vault 重建空库 → 更新本机密钥
 - 端到端加密固有代价：旧凭据不可恢复（页面明示用户）
 
+### ADR-16 管理后台
+
+- 迁移 009：`users.role`（'user'/'admin'，默认 user）+ `users.disabled`（禁用标记）
+- **管理员引导**：`ADMIN_USERNAME`/`ADMIN_PASSWORD` env，启动 `ensureAdmin`——用户名不存在则建号（邮箱 `user@admin.local`），存在则仅提升 role；不触碰已存在用户的密码
+- **鉴权**：`requireAdmin`（= requireAuth + DB 实时查 role/disabled，无 JWT claim 过期问题）；普通 `requireAuth` 同步拒绝 disabled 账号（登录接口 403、存量 token 403）
+- **管理 API**（前缀 `/api/v1/admin`，全部 requireAdmin）：`stats`（用户/会员/资产/继承人/待领取事件等计数）、`users` 列表（q/role/tier 筛选 + 分页 + 资产/继承人计数）、`users/{id}` 详情、`PUT users/{id}`（role/tier/disabled 单项更新）、`DELETE users/{id}`（级联删资产等；**自保护**：不能降级/禁用/删除自己）、`audit-log`（全量 + user_id 筛选）、`config` GET/PUT（系统 SMTP 服务器 + `free_asset_quota`；密码不回显、PUT 留空=保留原值，写入 `config.json` 后 `loadConfig()` 热重载）
+- **前端**：`server/admin.html` 内嵌单页（`//go:embed`，零新依赖、无构建），`GET /admin` 同源托管；登录复用 `POST /auth/login` + `/me` 的 role 校验；仪表盘/用户/配置/审计四个标签页，vanilla JS + fetch
+- 管理员操作写审计日志（actor='admin'）；config.json 的 `from_addr` 依赖 smtpServer json tag 修复（Go 大小写折叠匹配跨不过下划线）
+- 说明：管理员也是普通用户（占配额、可登录 App）；删除用户遗留 reminders/inheritance_events 孤儿行的场景暂不处理（按 user_id 过滤，无实际影响）
+
+### ADR-17 算术验证码（注册/登录）
+
+- **选型**：算术验证码（`3 + 7 = ?`）——最简单又有效：零外部依赖、无图像库/验证码服务、防机器人/防爆破足够（暴力尝试由 ADR-18 限流兜底）
+- `GET /api/v1/auth/captcha` 生成随机 0-9 加法算式，**答案 sha256 哈希**存内存缓存（5 分钟过期）
+- 登录/注册请求体携带 `captcha_id + captcha`，`verifyCaptcha` 校验并**一次性消费**（删除条目，防重放）
+- 单机内存缓存（`captcha.go` map + mutex）；多实例部署需换共享存储（本项目单二进制）
+- 前端：登录/注册页算式卡片（点击刷新），验证码错误自动刷新重试
+
+### ADR-18 按 IP 频率限制
+
+- 内存滑动窗口中间件（`rate_limit.go`）：**登录/注册 5 次/分钟/IP**，其他 API 120 次/分钟/IP
+- 超限返回 429「请求过于频繁」；窗口过期自动恢复（`reset` 清理陈旧条目防内存增长）
+- 取 IP：优先 `X-Forwarded-For`（反代场景），否则 `RemoteAddr`
+- 包裹顺序：`cors(rateLimit(newMux(db)))`——限流在路由之前，未鉴权请求也受限（防未认证刷接口）
+- 单机内存实现；多实例需共享存储（同 ADR-17）
+
+### ADR-13 补充 Web 端派生修复
+
+- **根因**：web argon2 绑定 `js_util.callMethod(argon2id, 'call', [options])` 编译为 `argon2id.call(options)`，JS `.call()` 把 options 当 **thisArg** 而非参数，hash-wasm 收到空参数抛 `Invalid options parameter`——注册与本地模式设置主密码（都调 `deriveMasterKey`）因此失败
+- **修复**：`callMethod(hashwasm, 'argon2id', [options])`（= `hashwasm.argon2id(options)`）；用 Node 加载 Dart 编译产物验证派生结果与锚值逐字节一致
+- 教训：web 专属绑定逻辑需真实执行验证（`dart compile js` + Node 跑），仅 `flutter build web` 编译通过不够（dart2js 不校验运行时参数语义）
+
 ### ADR-7 导入导出（纯客户端 E2E）
 
 - 导出/导入完全在客户端完成：拉取密文 → 主密码验证（派生比对本地 MK，salt 于注册时保存 `bequest_master_salt`）→ 解密/加密 → JSON v1 文件
@@ -159,7 +191,10 @@ bequest/
 - 用户隔离：所有查询按 JWT 中 user_id 过滤，越权一律 404/401
 - 端点：
   - `GET /healthz`
-  - `POST /api/v1/auth/register`、`POST /api/v1/auth/login`、`GET /api/v1/me`
+  - `GET /api/v1/auth/captcha`（算术验证码：`{"captcha_id","question"}`）
+  - `POST /api/v1/auth/register`、`POST /api/v1/auth/login`（带 captcha_id/captcha）、`GET /api/v1/me`、`PUT /api/v1/me`（改用户名/邮箱）
+  - `GET /api/v1/auth/check?username=`、`GET /api/v1/auth/check-email?email=`（注册实时查重）
+  - `POST /api/v1/auth/reset-request`（邮箱验证码）、`POST /api/v1/auth/reset`（验证码重置密码）
   - `GET|POST /api/v1/categories`、`DELETE /api/v1/categories/{id}`（删除后资产 category_id 自动置空）
   - `GET|POST /api/v1/assets`、`GET|PUT|DELETE /api/v1/assets/{id}`、`GET|POST /api/v1/assets/{id}/inheritors`、`DELETE /api/v1/assets/{id}/inheritors/{iid}`
   - `GET|POST|PUT|DELETE /api/v1/inheritors`（访问码仅存 sha256，返回不含）
@@ -170,14 +205,16 @@ bequest/
   - `GET /api/v1/reminders`、`POST /api/v1/reminders/{id}/read`
   - `POST /api/v1/inheritance/claim`（无 JWT，event_key+access_code）→ 资产级事件返回 `{"asset_key_wrapped_wk","asset_id","status"}`，全量事件返回 `{"master_key_wrapped","status"}`
   - `GET /api/v1/inheritance/status`、`GET /api/v1/audit-log`
+  - `GET /api/v1/admin/stats`、`GET /api/v1/admin/users`、`GET|PUT|DELETE /api/v1/admin/users/{id}`、`GET /api/v1/admin/audit-log`、`GET|PUT /api/v1/admin/config`（requireAdmin）
+  - `GET /admin`（内嵌管理后台单页，无鉴权——页面本身只是静态壳，数据全靠 API 鉴权）
 - 资产列表不含 `encrypted_data`（元数据），单条含密文 base64；`encrypted_data` 为客户端 AES-256-GCM 加密后的 `base64(nonce‖ciphertext‖tag)`
 - 资产请求/响应含可选字段 `asset_key_wrapped_mk` / `asset_key_wrapped_wk`（空串经 nullable() 转 NULL）
 - 预设分类为客户端常量（不落库），自定义分类走 API；预设选中即 `category_id=null`（升级路径：服务端种子分类）
 
 ## 关键数据流
 
-**注册**：客户端派生 MK → 生成 WK → 包装 MK → 上传 `{username, email, password, master_key_wrapped}` → 服务端存 argon2id 密码哈希 + 包装密钥
+**注册**：客户端派生 MK → 生成 WK → 包装 MK → 取验证码 → 上传 `{username, email, password, master_key_wrapped, captcha_id, captcha}` → 服务端校验验证码 + 存 argon2id 密码哈希 + 包装密钥
 
-**登录**：`{username, password}` → JWT → 客户端用主密码解出 MK 解锁本地库
+**登录**：取验证码 → `{username|email, password, captcha_id, captcha}` → JWT → 客户端用主密码解出 MK 解锁本地库
 
 **继承触发**（P2）：服务端调度器检测超时 → 升级提醒 → 触发后邮件继承人（含访问码）→ 凭码领取 `master_key_wrapped`

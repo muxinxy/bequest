@@ -7,8 +7,14 @@ import 'pages/app_lock_screen.dart';
 import 'pages/login_page.dart';
 import 'storage/secure_store.dart';
 import 'app_lock_policy.dart';
+import 'storage/secure_storage_io.dart'
+    if (dart.library.js_interop) 'storage/secure_storage_web.dart'
+    as secure_storage;
 
 void main() {
+  // Web 下 secure storage 降级 localStorage(官方 WebCrypto 在 HTTP 局域网
+  // 不可用,会导致注册/登录写存储抛异常),必须在首次读写前替换。
+  secure_storage.initPlatformSecureStorage();
   Logger.instance.d('app start');
   runApp(const BequestApp());
 }

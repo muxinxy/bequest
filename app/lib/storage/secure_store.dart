@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// flutter_secure_storage 的薄封装,统一管理本机安全存储的键名。
+/// Web 下由 ensureWebSecureStoragePlatform() 在启动时替换为 localStorage 实现。
 class SecureStore {
   SecureStore({FlutterSecureStorage? storage})
     : _storage = storage ?? const FlutterSecureStorage();
@@ -20,6 +23,7 @@ class SecureStore {
   static const _patternSaltKey = 'bequest_pattern_salt';
   static const _syncConfigKey = 'bequest_sync_config';
   static const _serverUrlKey = 'bequest_server_url';
+  static const _recentUrlsKey = 'bequest_recent_urls';
   static const _storageModeKey = 'bequest_storage_mode';
   static const _masterHintKey = 'bequest_master_hint';
 
@@ -152,6 +156,24 @@ class SecureStore {
 
   Future<void> saveServerUrl(String url) =>
       _storage.write(key: _serverUrlKey, value: url);
+
+  /// 最近使用的服务器地址列表(JSON 数组,新→旧)。快速填入 + 可清除。
+  Future<List<String>> readRecentUrls() async {
+    final raw = await _storage.read(key: _recentUrlsKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded.whereType<String>().toList(growable: false);
+      }
+    } catch (_) {
+      // 数据损坏:忽略。
+    }
+    return const [];
+  }
+
+  Future<void> saveRecentUrls(List<String> urls) =>
+      _storage.write(key: _recentUrlsKey, value: jsonEncode(urls));
 
   /// 存储模式:'cloud' | 'local' | null(默认 cloud)。
   Future<String?> readStorageMode() => _storage.read(key: _storageModeKey);

@@ -33,6 +33,12 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
   StorageMode _mode = StorageMode.cloud;
   bool _busy = false;
 
+  /// 最近使用过的服务器地址(新→旧,最多 5 条)。
+  List<String> _recentUrls = const [];
+
+  /// 连接状态:null = 未测试;true = 成功;false = 失败。
+  bool? _connectionOk;
+
   @override
   void initState() {
     super.initState();
@@ -48,11 +54,15 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
   Future<void> _init() async {
     final url = await ApiConfig.baseUrl();
     final mode = await _store.readStorageMode();
+    final recentRaw = await _store.readRecentUrls();
     if (!mounted) return;
     setState(() {
       _urlController.text = url;
       _mode = mode == 'local' ? StorageMode.local : StorageMode.cloud;
+      _recentUrls = recentRaw;
     });
+    // 进入页面即测试连接,指示灯显示上次结果。
+    await _testConnection(quiet: true);
   }
 
   Future<void> _saveUrl() async {
@@ -61,30 +71,34 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
       _snack('请输入服务器地址');
       return;
     }
+    // 记入最近地址(去重置顶,最多 5 条)。
+    final recent = [url, ..._recentUrls.where((u) => u != url)];
+    await _store.saveRecentUrls(recent.take(5).toList());
     await ApiConfig.setBaseUrl(url);
-    _snack('已保存');
+    if (!mounted) return;
+    setState(() => _recentUrls = recent.take(5).toList());
+    // 保存时自动测试连接。
+    await _testConnection(quiet: false);
   }
 
-  Future<void> _testConnection() async {
+  Future<void> _testConnection({bool quiet = false}) async {
     final url = _urlController.text.trim();
     if (url.isEmpty) {
-      _snack('请输入服务器地址');
+      if (!quiet) _snack('请输入服务器地址');
       return;
     }
-    setState(() => _busy = true);
+    if (!quiet) setState(() => _busy = true);
     try {
       final res = await http
           .get(Uri.parse('$url/api/v1/version'))
-          .timeout(const Duration(seconds: 5));
-      _snack(
-        res.statusCode >= 200 && res.statusCode < 300
-            ? '连接成功'
-            : '连接失败(${res.statusCode})',
-      );
+          .timeout(const Duration(seconds: 3));
+      if (!mounted) return;
+      setState(() => _connectionOk =
+          res.statusCode >= 200 && res.statusCode < 300);
     } catch (_) {
-      _snack('连接失败');
+      if (mounted) setState(() => _connectionOk = false);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && !quiet) setState(() => _busy = false);
     }
   }
 
@@ -222,28 +236,57 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
             TextFormField(
               controller: _urlController,
               keyboardType: TextInputType.url,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'http://10.0.2.2:8080',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
+                // 连接指示灯:绿=可用,红=不可用,灰=未测试。
+                suffixIcon: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: _connectionOk == null
+                      ? null
+                      : Icon(
+                          _connectionOk == true
+                              ? Icons.circle
+                              : Icons.circle,
+                          size: 14,
+                          color: _connectionOk == true
+                              ? Colors.green
+                              : Colors.red,
+                        ),
+                ),
               ),
             ),
+            if (_recentUrls.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final url in _recentUrls)
+                    InputChip(
+                      label: Text(url, style: const TextStyle(fontSize: 12)),
+                      deleteIcon: const Icon(Icons.close, size: 16),
+                      onPressed: () {
+                        _urlController.text = url;
+                        setState(() => _connectionOk = null);
+                        _testConnection(quiet: true);
+                      },
+                      onDeleted: () async {
+                        final recent =
+                            _recentUrls.where((u) => u != url).toList();
+                        await _store.saveRecentUrls(recent);
+                        if (mounted) {
+                          setState(() => _recentUrls = recent);
+                        }
+                      },
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton(
-                    onPressed: _busy ? null : _saveUrl,
-                    child: const Text('保存'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _busy ? null : _testConnection,
-                    child: const Text('测试连接'),
-                  ),
-                ),
-              ],
+            FilledButton(
+              onPressed: _busy ? null : _saveUrl,
+              child: const Text('保存'),
             ),
             const SizedBox(height: 24),
             const Divider(),
