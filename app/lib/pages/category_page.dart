@@ -197,10 +197,9 @@ class _CategoryPageState extends State<CategoryPage> {
     );
     if (confirmed != true) return;
     try {
-      await widget.repository.deleteCategory(
-        category.id,
-        moveTo: moveToId == null ? null : int.tryParse(moveToId!),
-      );
+      // moveTo 传分组 id 字符串:云端实现内部转 int64,
+      // 本地模式直接用字符串 id(本地 id 为 'L<时间戳><序号>',int 转换会失效)。
+      await widget.repository.deleteCategory(category.id, moveTo: moveToId);
       await _load();
     } catch (_) {
       _showError('删除失败,请检查网络后重试');

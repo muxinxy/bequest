@@ -70,7 +70,18 @@ Future<bool> guardedVerifyMasterPassword(
 Future<String?> showMasterPasswordDialog(BuildContext context) async {
   String? hint;
   try {
-    hint = await SecureStore().readMasterHint();
+    final store = SecureStore();
+    hint = await store.readMasterHint();
+    // 标准槽为空但处于本地模式:回退读当前激活账户的提示语。
+    // (旧版本创建的本地账户 hint 只存账户槽,锁屏不会触发 activateLocalProfile
+    // 同步标准槽,直接读会漏。)
+    if (hint == null || hint.isEmpty) {
+      final activeId = await store.readActiveLocalProfileId();
+      if (activeId != null && activeId.isNotEmpty) {
+        final profile = await store.readLocalProfile(activeId);
+        hint = profile.hint;
+      }
+    }
   } catch (_) {
     // 插件缺失(测试环境)时忽略提示语。
   }

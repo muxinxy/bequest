@@ -45,6 +45,52 @@ void main() {
     expect((await r.getAsset('${asset['id']}'))['category_id'], isNull);
   });
 
+  test('分类删除:moveTo 指定时资产移入目标分组(字符串 id),而非置空', () async {
+    final r = repo();
+    final cat = await r.createCategory('待删分组');
+    final keep = await r.createCategory('保留分组');
+    final keepId = '${keep['id']}';
+    final asset = await r.createAsset({
+      'name': '资产',
+      'asset_type': 'physical',
+      'category_id': cat['id'],
+      'encrypted_data': 'blob',
+    });
+
+    // moveTo 用字符串分组 id(本地 id 为 'L<时间戳><序号>',int 转换会失效)。
+    await r.deleteCategory('${cat['id']}', moveTo: keepId);
+    expect(await r.listCategories(), hasLength(1));
+    expect((await r.getAsset('${asset['id']}'))['category_id'], keepId);
+  });
+
+  test('moveAssets:字符串分组 id 移动到目标分组,而非误置未分类', () async {
+    final r = repo();
+    final cat = await r.createCategory('目标分组');
+    final targetId = '${cat['id']}';
+    // 本地分组 id 是 'L<时间戳><序号>' 字符串,int.tryParse 会失败——
+    // 回归防护:接口按字符串传 id,本地实现直接匹配,不转 int。
+    expect(targetId.startsWith('L'), isTrue);
+
+    final a1 = await r.createAsset({
+      'name': '未分类资产1',
+      'asset_type': 'physical',
+      'category_id': null,
+      'encrypted_data': 'blob',
+    });
+    final a2 = await r.createAsset({
+      'name': '已分类资产',
+      'asset_type': 'physical',
+      'category_id': targetId,
+      'encrypted_data': 'blob',
+    });
+
+    final result = await r.moveAssets(['${a1['id']}'], targetId);
+    expect(result['moved'], 1);
+    expect((await r.getAsset('${a1['id']}'))['category_id'], targetId);
+    // 未在列表中的资产不受影响。
+    expect((await r.getAsset('${a2['id']}'))['category_id'], targetId);
+  });
+
   test('分类:更新改名与改类型,id/created_at 保留', () async {
     final r = repo();
     final cat = await r.createCategory('房产');

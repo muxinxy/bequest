@@ -93,14 +93,15 @@ class LocalAssetRepository implements AssetRepository {
   }
 
   @override
-  Future<void> deleteCategory(String id, {int? moveTo}) async {
+  Future<void> deleteCategory(String id, {String? moveTo}) async {
     final data = await _load();
     (data['categories'] as List)
         .removeWhere((c) => '${(c as Map)['id']}' == id);
     // 镜像服务器语义:moveTo 指定则移入目标分组,否则解关联(未分类)。
+    // moveTo 为本地分组字符串 id('L<时间戳><序号>'),不做 int 转换。
     for (final asset in _asMaps(data['assets'])) {
       if ('${asset['category_id']}' == id) {
-        asset['category_id'] = moveTo?.toString();
+        asset['category_id'] = moveTo;
       }
     }
     await _save(data);
@@ -230,10 +231,10 @@ class LocalAssetRepository implements AssetRepository {
   }
 
   @override
-  Future<Map<String, dynamic>> moveAssets(List<String> ids, int? categoryId) async {
+  Future<Map<String, dynamic>> moveAssets(List<String> ids, String? categoryId) async {
     final data = await _load();
     final cats = _asMaps(data['categories']);
-    final target = categoryId?.toString();
+    final target = categoryId; // 本地分类 id 为 'L<时间戳><序号>' 字符串。
     // 目标分类必须存在(与云端一致);未分类(categoryId null)允许。
     if (target != null && !cats.any((c) => '${c['id']}' == target)) {
       throw StateError('目标分类不存在');

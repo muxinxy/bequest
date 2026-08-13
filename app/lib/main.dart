@@ -19,12 +19,17 @@ void main() {
   runApp(const BequestApp());
 }
 
+/// 全局导航 key:供 LockGate 等 MaterialApp.builder 之上的组件操作主 Navigator
+/// (锁屏在独立 Navigator 覆盖层,无法用自身 context 导航主栈)。
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
 class BequestApp extends StatelessWidget {
   const BequestApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
       title: '托孤',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
@@ -50,6 +55,12 @@ class LockGate extends StatefulWidget {
   /// WebCrypto(仅 HTTPS/localhost 可用),局域网 HTTP 下读取会抛异常,
   /// 因此不能以"读到凭据"作为锁定前提。
   static void lockNow() => _LockGateState._instance?.lockNow();
+
+  /// 锁屏「跳过」:退出当前模式回登录页(清理逻辑在 AppLockScreen 完成,
+  /// 这里负责解除锁定遮罩并清空主 Navigator 栈回登录页)。
+  /// 锁屏位于独立 Navigator 覆盖层,无法直接操作主 Navigator,
+  /// 必须由 LockGate(主 Navigator 祖先)执行导航。
+  static void exitToLogin() => _LockGateState._instance?.exitToLogin();
 
   @override
   State<LockGate> createState() => _LockGateState();
@@ -171,6 +182,16 @@ class _LockGateState extends State<LockGate> {
   Future<void> lockNow() async {
     if (_locked) return;
     if (mounted) setState(() => _locked = true);
+  }
+
+  /// 锁屏「跳过」:解除锁定遮罩,清空主 Navigator 栈回登录页。
+  void exitToLogin() {
+    if (!mounted) return;
+    setState(() => _locked = false);
+    appNavigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => const LoginPage()),
+      (route) => false,
+    );
   }
 
   @override

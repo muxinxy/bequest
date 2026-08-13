@@ -128,4 +128,49 @@ void main() {
     // 服务器地址仍是设备级配置,保留。
     expect(await store.readServerUrl(), 'http://10.0.2.2:8080');
   });
+
+  test('本地账户:提示语随激活同步标准槽,退出恢复云端提示语', () async {
+    // 模拟云端已有提示语。
+    await store.saveMasterHint('云端提示');
+    // 创建本地账户:标准槽提示语应为账户提示语。
+    await store.createLocalProfile(
+      id: 'h1',
+      name: '带提示',
+      masterKey: 'mk-1',
+      salt: 'salt-1',
+      wrappingKey: 'wk-1',
+      hint: '本地提示语',
+    );
+    expect(await store.readMasterHint(), '本地提示语');
+    // 无提示语的账户:切换后标准槽提示语清空。
+    await store.createLocalProfile(
+      id: 'h2',
+      name: '无提示',
+      masterKey: 'mk-2',
+      salt: 'salt-2',
+      wrappingKey: 'wk-2',
+    );
+    expect(await store.readMasterHint(), isNull);
+    // 切回有提示的账户:标准槽恢复其提示语。
+    await store.activateLocalProfile('h1');
+    expect(await store.readMasterHint(), '本地提示语');
+    // 退出本地模式:恢复云端提示语。
+    await store.deactivateLocalProfile();
+    expect(await store.readMasterHint(), '云端提示');
+  });
+
+  test('clearAppLock:清除应用锁凭据与开关,不动加密凭据', () async {
+    await store.savePinHash('pin');
+    await store.savePinSalt('salt');
+    await store.setLockEnabled(true);
+    await store.saveMasterKey('mk');
+    await store.saveMasterSalt('salt');
+
+    await store.clearAppLock();
+
+    expect(await store.readPinHash(), isNull);
+    expect(await store.readLockEnabled(), isFalse);
+    // 加密凭据不受影响。
+    expect(await store.readMasterKey(), 'mk');
+  });
 }

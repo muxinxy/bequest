@@ -76,4 +76,76 @@ void main() {
     expect(find.text('应用已锁定'), findsOneWidget);
     expect(find.text('主密码错误,请重试'), findsOneWidget);
   });
+
+  testWidgets('用主密码解锁:对话框显示主密码提示语', (tester) async {
+    await seedLockedApp();
+    // 设置提示语后,锁屏主界面与弹窗都应展示(帮助回忆,不暴露密码)。
+    await SecureStore().saveMasterHint('我家的保险箱号码');
+
+    await tester.pumpWidget(const BequestApp());
+    await tester.pumpAndSettle();
+    expect(find.text('应用已锁定'), findsOneWidget);
+    expect(find.text('主密码提示: 我家的保险箱号码'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('用主密码解锁'));
+    await tester.tap(find.text('用主密码解锁'));
+    await tester.pumpAndSettle();
+    expect(find.text('请输入主密码'), findsOneWidget);
+    expect(find.text('主密码提示: 我家的保险箱号码'), findsNWidgets(2));
+  });
+
+  testWidgets('用主密码解锁:本地账户提示语兜底(标准槽为空)', (tester) async {
+    await seedLockedApp();
+    final store = SecureStore();
+    // 模拟旧版本地账户:提示语只在账户槽,标准槽为空。
+    // 标准槽已被 seedLockedApp 写入 MK/salt,再登记本地账户并激活。
+    await store.createLocalProfile(
+      id: 'legacy-local',
+      name: '本地账户',
+      masterKey: await store.readMasterKey() ?? '',
+      salt: await store.readMasterSalt() ?? salt,
+      wrappingKey: await store.readWrappingKey() ?? '',
+      hint: '本地保险箱提示',
+    );
+    // 清空标准槽 hint,模拟旧版未同步状态。
+    await store.saveMasterHint('');
+
+    await openMasterDialog(tester);
+    expect(find.text('请输入主密码'), findsOneWidget);
+    // 主界面与对话框各显示一条。
+    expect(find.text('主密码提示: 本地保险箱提示'), findsNWidgets(2));
+  });
+
+  testWidgets('跳过按钮:本地模式点击后回登录页并清应用锁', (tester) async {
+    await seedLockedApp();
+    final store = SecureStore();
+    // 模拟本地模式:无 JWT、有本地账户(标准槽 = 本地账户密钥)。
+    await store.createLocalProfile(
+      id: 'skip-local',
+      name: '本地账户',
+      masterKey: await store.readMasterKey() ?? '',
+      salt: await store.readMasterSalt() ?? salt,
+      wrappingKey: await store.readWrappingKey() ?? '',
+      hint: '',
+    );
+    await store.saveStorageMode('local');
+    // 清 JWT 模拟未登录(seedLockedApp 未存 JWT,天然无)。
+
+    await tester.pumpWidget(const BequestApp());
+    await tester.pumpAndSettle();
+    expect(find.text('应用已锁定'), findsOneWidget);
+    expect(find.text('跳过(退出本地模式)'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('跳过(退出本地模式)'));
+    await tester.tap(find.text('跳过(退出本地模式)'));
+    await tester.pumpAndSettle();
+
+    // 回到登录页,锁屏消失,应用锁被清除。
+    expect(find.text('应用已锁定'), findsNothing);
+    expect(find.text('登录'), findsOneWidget);
+    expect(await store.readLockEnabled(), isFalse);
+    expect(await store.readPinHash(), isNull);
+    // 本地账户数据保留。
+    expect((await store.readLocalProfiles()).length, 1);
+  });
 }

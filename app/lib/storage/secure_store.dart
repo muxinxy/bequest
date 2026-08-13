@@ -34,6 +34,7 @@ class SecureStore {
   static const _preLocalMkKey = 'bequest_pre_local_mk';
   static const _preLocalSaltKey = 'bequest_pre_local_salt';
   static const _preLocalWkKey = 'bequest_pre_local_wk';
+  static const _preLocalHintKey = 'bequest_pre_local_hint';
 
   static String _profileKey(String kind, String id) => 'bequest_local_${kind}_$id';
 
@@ -153,6 +154,18 @@ class SecureStore {
     await _storage.delete(key: _patternSaltKey);
   }
 
+  /// 清除应用锁全部凭据与开关(退出登录/退出本地模式时调用,
+  /// 回到登录页不再被锁屏拦截;与 clearAll 行为一致)。
+  Future<void> clearAppLock() async {
+    await _storage.delete(key: _pinHashKey);
+    await _storage.delete(key: _pinSaltKey);
+    await _storage.delete(key: _patternHashKey);
+    await _storage.delete(key: _patternSaltKey);
+    await _storage.delete(key: _lockEnabledKey);
+    await _storage.delete(key: _lockBiometricKey);
+    await _storage.delete(key: _lockBiometricTypeKey);
+  }
+
   /// 清除会话数据(退出登录/换号)。以下为设备级配置与加密状态,默认保留:
   /// - 服务器地址/最近地址:每次登录都要重填太烦;
   /// - 主密钥/盐/包装密钥/提示语:退出登录不该当作"换新设备",
@@ -249,14 +262,20 @@ class SecureStore {
       _storage.read(key: _activeProfileKey);
 
   /// 进入本地账户前暂存当前标准槽(只存一次,嵌套进入不覆盖)。
+  /// 含主密码提示语:账户 hint 切换时标准槽要跟着走,退出需恢复。
   Future<void> _stashStandardSlots() async {
-    if (await _storage.read(key: _preLocalMkKey) != null) return;
+    // 任一 pre 键已存 = 已进入本地模式,不再覆盖暂存值。
+    final alreadyStashed = (await _storage.read(key: _preLocalMkKey)) != null ||
+        (await _storage.read(key: _preLocalHintKey)) != null;
+    if (alreadyStashed) return;
     final mk = await _storage.read(key: _masterKeyKey);
     final salt = await _storage.read(key: _masterSaltKey);
     final wk = await _storage.read(key: _wrappingKeyKey);
+    final hint = await _storage.read(key: _masterHintKey);
     if (mk != null) await _storage.write(key: _preLocalMkKey, value: mk);
     if (salt != null) await _storage.write(key: _preLocalSaltKey, value: salt);
     if (wk != null) await _storage.write(key: _preLocalWkKey, value: wk);
+    if (hint != null) await _storage.write(key: _preLocalHintKey, value: hint);
   }
 
   /// 退出本地模式:恢复暂存的标准槽并清除。
@@ -265,6 +284,7 @@ class SecureStore {
       (_preLocalMkKey, _masterKeyKey),
       (_preLocalSaltKey, _masterSaltKey),
       (_preLocalWkKey, _wrappingKeyKey),
+      (_preLocalHintKey, _masterHintKey),
     ]) {
       final v = await _storage.read(key: key);
       if (v != null) {
@@ -299,6 +319,12 @@ class SecureStore {
       await _storage.write(key: _profileKey('hint', id), value: hint);
     }
     await _writeStandardSlots(masterKey, salt, wrappingKey);
+    // 提示语同步标准槽:锁屏/验证弹窗读标准槽,不写则本地模式不显示提示语。
+    if (hint.isNotEmpty) {
+      await _storage.write(key: _masterHintKey, value: hint);
+    } else {
+      await _storage.delete(key: _masterHintKey);
+    }
     final profiles = [...await readLocalProfiles()];
     profiles.add({'id': id, 'name': name});
     await _storage.write(key: _localProfilesKey, value: jsonEncode(profiles));
@@ -312,6 +338,13 @@ class SecureStore {
     final salt = await _storage.read(key: _profileKey('salt', id));
     final wk = await _storage.read(key: _profileKey('wk', id));
     await _writeStandardSlots(mk ?? '', salt ?? '', wk ?? '');
+    // 账户提示语同步标准槽;账户无提示语则清空(切换后不显示上一个账户的)。
+    final hint = await _storage.read(key: _profileKey('hint', id));
+    if (hint != null && hint.isNotEmpty) {
+      await _storage.write(key: _masterHintKey, value: hint);
+    } else {
+      await _storage.delete(key: _masterHintKey);
+    }
     await _storage.write(key: _activeProfileKey, value: id);
   }
 

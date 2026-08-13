@@ -10,9 +10,9 @@ import '../crypto/master_password.dart';
 import '../crypto/pattern_hash.dart';
 import '../crypto/pin_hash.dart';
 import '../logger.dart';
+import '../main.dart' show LockGate;
 import '../storage/secure_store.dart';
 import '../widgets/pattern_lock.dart';
-import 'login_page.dart';
 
 /// 锁屏:按已配置的解锁方式展示——图案、PIN、生物识别(可同时存在)。
 /// 解锁成功后回调 [onUnlocked]。
@@ -54,6 +54,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
   bool _hasJwt = false;
   String _patternSalt = '';
   String _patternHash = '';
+  String _masterHint = '';
   bool _verifying = false;
   String? _error;
 
@@ -81,6 +82,15 @@ class _AppLockScreenState extends State<AppLockScreen> {
       final jwt = await _store.readJwt();
       final patternHash = await _store.readPatternHash();
       final patternSalt = await _store.readPatternSalt();
+      // 主密码提示语:标准槽优先,空则回退当前激活本地账户(旧版账户 hint 只在账户槽)。
+      var masterHint = await _store.readMasterHint() ?? '';
+      if (masterHint.isEmpty) {
+        final activeId = await _store.readActiveLocalProfileId();
+        if (activeId != null && activeId.isNotEmpty) {
+          final profile = await _store.readLocalProfile(activeId);
+          masterHint = profile.hint ?? '';
+        }
+      }
       if (mounted) {
         setState(() {
           _hasPin = hasPin;
@@ -90,6 +100,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
           _patternHash = patternHash ?? '';
           _patternSalt = patternSalt ?? '';
           _biometricEnabled = biometricEnabled;
+          _masterHint = masterHint;
         });
       }
       if (_biometricEnabled) {
@@ -355,6 +366,14 @@ class _AppLockScreenState extends State<AppLockScreen> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.grey),
                 ),
+                if (_masterHint.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '主密码提示: $_masterHint',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
                 if (_lockSeconds > 0) ...[
                   const SizedBox(height: 8),
                   Text(
@@ -447,32 +466,32 @@ class _AppLockScreenState extends State<AppLockScreen> {
                     ),
                   ],
                 ],
-                // 已登录但本机无主密钥(跨设备登录,主密钥仅注册时写入):
-                // 主密码解锁无法校验,提供退出登录出口避免锁死。
-                if (_hasJwt && !_hasMasterKey && !_hasPin && !_hasPattern) ...[
-                  const SizedBox(height: 4),
-                  TextButton(
-                    onPressed: _verifying
-                        ? null
-                        : () async {
-                            final navigator = Navigator.of(
-                              context,
-                              rootNavigator: true,
-                            );
+                // 跳过解锁:退出当前模式回登录页,避免忘记解锁方式被锁死。
+                // 云端 → 退出登录(保留本机密钥);本地 → 退出本地模式(保留本地账户)。
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: _verifying
+                      ? null
+                      : () async {
+                          if (!_hasJwt) {
+                            // 本地模式:恢复云端槽,保留本地账户数据;清应用锁,
+                            // 否则跳过退出后回到登录页仍会被锁屏拦截。
+                            await _store.deactivateLocalProfile();
+                            await _store.saveStorageMode('cloud');
+                            await _store.clearAppLock();
+                          } else {
                             await _store.clearAll();
-                            if (!mounted) return;
-                            widget.onUnlocked(); // 解除锁定遮罩
-                            // 清栈回登录页(锁屏在独立 Navigator 内,须用根导航器)。
-                            navigator.pushAndRemoveUntil(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const LoginPage(),
-                              ),
-                              (route) => false,
-                            );
-                          },
-                    child: const Text('退出登录', style: TextStyle(color: Colors.grey)),
+                          }
+                          if (!mounted) return;
+                          // 锁屏在独立 Navigator 覆盖层,导航须经 LockGate
+                          // (主 Navigator 祖先)完成。
+                          LockGate.exitToLogin();
+                        },
+                  child: Text(
+                    _hasJwt ? '跳过(退出登录)' : '跳过(退出本地模式)',
+                    style: const TextStyle(color: Colors.grey),
                   ),
-                ],
+                ),
               ],
             ),
           ),

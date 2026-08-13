@@ -190,9 +190,11 @@ class _HomePageState extends State<HomePage> {
   /// 本地模式退出:不清空本机数据,仅返回登录页。
   /// 恢复进入前暂存的标准槽(云端密钥),并清空当前本地账户标记——
   /// 否则登录页的会话恢复会因 mode=='local' + 有主密钥而弹回本地主页。
+  /// 同时清除应用锁:本地模式退出 = 回到未登录状态,不应再被锁屏拦截。
   Future<void> _exitLocal() async {
     await _store.deactivateLocalProfile();
     await _store.saveStorageMode('cloud');
+    await _store.clearAppLock();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(builder: (_) => const LoginPage()),
@@ -428,7 +430,9 @@ class _HomePageState extends State<HomePage> {
     final repo = _repo;
     if (repo == null) return;
     try {
-      await repo.moveAssets(ids, int.tryParse(target));
+      // categoryId 传字符串分组 id:云端实现内部转 int64,
+      // 本地模式直接用字符串 id(避免 int.tryParse 把本地 id 变 null → 误移未分类)。
+      await repo.moveAssets(ids, target);
       await _load();
     } catch (_) {
       if (!mounted) return;

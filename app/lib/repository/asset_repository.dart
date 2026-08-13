@@ -4,9 +4,10 @@ abstract class AssetRepository {
   Future<List<Map<String, dynamic>>> listCategories();
   Future<Map<String, dynamic>> createCategory(String name, {String assetType = 'physical'});
   Future<Map<String, dynamic>> updateCategory(String id, Map<String, dynamic> body);
-  Future<void> deleteCategory(String id, {int? moveTo});
+  Future<void> deleteCategory(String id, {String? moveTo});
   Future<void> reorderCategories(List<String> ids);
-  Future<Map<String, dynamic>> moveAssets(List<String> ids, int? categoryId);
+  // categoryId 为分组 id(字符串,null = 未分类);云端实现在内部转 int64。
+  Future<Map<String, dynamic>> moveAssets(List<String> ids, String? categoryId);
   Future<List<Map<String, dynamic>>> listAssets(); // metadata only
   Future<Map<String, dynamic>> getAsset(String id); // incl encrypted_data
   Future<Map<String, dynamic>> createAsset(Map<String, dynamic> body);

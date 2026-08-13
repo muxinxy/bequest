@@ -25,6 +25,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
   final _timeoutController = TextEditingController();
 
   String _timing = 'exit';
+  bool _lockEnabled = false;
   bool _biometricEnabled = false;
   List<BiometricType> _availableBiometrics = [];
   bool _hasPin = false;
@@ -49,6 +50,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
 
   Future<void> _load() async {
     try {
+      final lockEnabled = await _store.readLockEnabled();
       final biometricEnabled = await _store.readLockBiometric();
       final timing = await _store.readLockTiming();
       final timeout = await _store.readLockTimeoutMinutes();
@@ -69,6 +71,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
       }
       if (mounted) {
         setState(() {
+          _lockEnabled = lockEnabled;
           _biometricEnabled = biometricEnabled;
           _availableBiometrics = available;
           _timing = timing;
@@ -124,6 +127,23 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    // 开关关闭:清除全部解锁凭据并禁用应用锁(等同"关闭应用锁")。
+    if (!_lockEnabled) {
+      setState(() => _saving = true);
+      try {
+        await _store.clearAppLock();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('应用锁已关闭')));
+        Navigator.of(context).pop();
+      } catch (_) {
+        if (!mounted) return;
+        _snack('保存失败,请重试');
+      } finally {
+        if (mounted) setState(() => _saving = false);
+      }
+      return;
+    }
     int? timeout;
     if (_timing == 'timeout') {
       timeout = int.tryParse(_timeoutController.text);
@@ -191,6 +211,26 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('启用应用锁'),
+                subtitle: Text(
+                  _lockEnabled ? '锁定后需解锁方式验证' : '关闭后进入应用不锁定',
+                ),
+                value: _lockEnabled,
+                onChanged: (value) =>
+                    setState(() => _lockEnabled = value),
+              ),
+              const Divider(),
+              if (!_lockEnabled)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    '开启后需设置至少一种解锁方式(PIN 或图案)。',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ),
+              if (_lockEnabled) ...[
               _sectionTitle('锁定时机'),
               RadioGroup<String>(
                 groupValue: _timing,
@@ -327,6 +367,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
                 ),
               ],
               const SizedBox(height: 24),
+              ],
               FilledButton(
                 onPressed: _saving ? null : _save,
                 child: _saving

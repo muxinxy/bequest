@@ -41,16 +41,16 @@ class CloudAssetRepository implements AssetRepository {
       _api.updateCategory(jwt, id, body);
 
   @override
-  Future<void> deleteCategory(String id, {int? moveTo}) =>
-      _api.deleteCategory(jwt, id, moveTo: moveTo);
+  Future<void> deleteCategory(String id, {String? moveTo}) =>
+      _api.deleteCategory(jwt, id, moveTo: moveTo == null ? null : int.tryParse(moveTo));
 
   @override
   Future<void> reorderCategories(List<String> ids) =>
       _api.reorderCategories(jwt, ids.map(int.parse).toList());
 
   @override
-  Future<Map<String, dynamic>> moveAssets(List<String> ids, int? categoryId) =>
-      _api.moveAssets(jwt, ids.map(int.parse).toList(), categoryId);
+  Future<Map<String, dynamic>> moveAssets(List<String> ids, String? categoryId) =>
+      _api.moveAssets(jwt, ids.map(int.parse).toList(), categoryId == null ? null : int.tryParse(categoryId));
 
   @override
   Future<List<Map<String, dynamic>>> listAssets() => _api.listAssets(jwt);

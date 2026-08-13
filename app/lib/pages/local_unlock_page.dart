@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../crypto/key_derivation.dart';
 import '../storage/secure_store.dart';
@@ -36,6 +35,7 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
   LocalUnlockStep _step = LocalUnlockStep.setup;
   List<Map<String, String>> _profiles = const [];
   Map<String, String> _verifyProfile = const {};
+  String _verifyHint = '';
   bool _submitting = false;
   String? _verifyError;
 
@@ -103,10 +103,13 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
     }
   }
 
-  /// 选择账户 → 进入验证步骤(主密码)。
+  /// 选择账户 → 进入验证步骤(主密码)。读取该账户提示语用于展示。
   Future<void> _pickAccount(Map<String, String> profile) async {
+    final p = await _store.readLocalProfile(profile['id'] ?? '');
+    if (!mounted) return;
     setState(() {
       _verifyProfile = profile;
+      _verifyHint = p.hint ?? '';
       _verifyController.clear();
       _verifyError = null;
       _step = LocalUnlockStep.verify;
@@ -197,23 +200,18 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 本地模式无返回出口:左上角去掉返回箭头,系统返回视为退出 APP。
-    return PopScope<void>(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) SystemNavigator.pop();
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('进入本地模式'),
-          automaticallyImplyLeading: false,
-        ),
-        body: switch (_step) {
-          LocalUnlockStep.pick => _buildPicker(),
-          LocalUnlockStep.verify => _buildVerify(),
-          LocalUnlockStep.setup => _buildSetup(),
-        },
+    // 本地模式入口(账户列表/新建/验证):允许返回登录页——
+    // 用户可能只是进来看看,不该被困在列表页。
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('进入本地模式'),
+        automaticallyImplyLeading: true,
       ),
+      body: switch (_step) {
+        LocalUnlockStep.pick => _buildPicker(),
+        LocalUnlockStep.verify => _buildVerify(),
+        LocalUnlockStep.setup => _buildSetup(),
+      },
     );
   }
 
@@ -281,6 +279,14 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey),
           ),
+          if (_verifyHint.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              '主密码提示: $_verifyHint',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
           const SizedBox(height: 24),
           TextField(
             controller: _verifyController,
