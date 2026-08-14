@@ -203,10 +203,21 @@ class SecureStore {
   }
 
   // 同步配置仅保存在本机(隐私优先),绝不发送给托孤服务端。
-  Future<void> saveSyncConfig(String json) =>
-      _storage.write(key: _syncConfigKey, value: json);
+  /// 同步配置:云端模式用全局键;本地模式下按账户隔离
+  /// (各本地账户独立 WebDAV/S3 目标,互不覆盖)。
+  Future<String> _syncConfigKeyFor() async {
+    final active = await readActiveLocalProfileId();
+    if (active != null && active.isNotEmpty) {
+      return '${_syncConfigKey}_$active';
+    }
+    return _syncConfigKey;
+  }
 
-  Future<String?> readSyncConfig() => _storage.read(key: _syncConfigKey);
+  Future<void> saveSyncConfig(String json) async =>
+      _storage.write(key: await _syncConfigKeyFor(), value: json);
+
+  Future<String?> readSyncConfig() async =>
+      _storage.read(key: await _syncConfigKeyFor());
 
   /// 服务器地址覆盖(设置页写入;为空则用 ApiConfig.defaultBaseUrl)。
   Future<String?> readServerUrl() => _storage.read(key: _serverUrlKey);

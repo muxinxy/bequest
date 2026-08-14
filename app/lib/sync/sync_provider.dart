@@ -3,6 +3,56 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
+import '../platform/no_referrer_fetch_io.dart'
+    if (dart.library.js_interop) '../platform/no_referrer_fetch_web.dart';
+
+/// 解析 HTTP 日期:优先 RFC 1123(Wed, 12 Aug 2026 10:00:00 GMT),
+/// 也兼容 ISO 8601 与 RFC 850;解析失败返回 null。
+DateTime? parseHttpDate(String raw) {
+  final s = raw.trim();
+  // ISO 8601(带毫秒或 Z 结尾)。
+  final iso = DateTime.tryParse(s);
+  if (iso != null) return iso;
+  // RFC 1123 / RFC 850:如 "Wed, 12 Aug 2026 10:00:00 GMT"。
+  final m = RegExp(
+    r'^\w+,?\s+(\d{1,2})\s+(\w{3})\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})',
+  ).firstMatch(s);
+  if (m == null) return null;
+  const months = {
+    'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+    'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12,
+  };
+  final month = months[m.group(2)];
+  if (month == null) return null;
+  return DateTime.utc(
+    int.parse(m.group(3)!),
+    month,
+    int.parse(m.group(1)!),
+    int.parse(m.group(4)!),
+    int.parse(m.group(5)!),
+    int.parse(m.group(6)!),
+  );
+}
+
+/// 备份文件信息(恢复列表用)。
+class BackupFileInfo {
+  const BackupFileInfo({
+    required this.name,
+    required this.size,
+    required this.modified,
+  });
+
+  final String name;
+  final int size;
+  final DateTime? modified;
+
+  String get sizeText {
+    if (size < 1024) return '$size B';
+    if (size < 1024 * 1024) return '${(size / 1024).toStringAsFixed(1)} KB';
+    return '${(size / 1024 / 1024).toStringAsFixed(1)} MB';
+  }
+}
+
 /// 备份同步目标抽象。实现类保持纯可测:构造时注入 http.Client,
 /// 测试可用 package:http/testing.dart 的 MockClient 替换。
 abstract class SyncProvider {
@@ -16,6 +66,12 @@ abstract class SyncProvider {
 
   /// 探测连通性;连通(含 401/403 等"可达但无权限")返回 true。
   Future<bool> testConnection();
+
+  /// 列出基础路径下的备份文件(名/大小/修改时间),按修改时间新→旧排序。
+  Future<List<BackupFileInfo>> listFiles();
+
+  /// 删除远程 [remotePath]。
+  Future<void> delete(String remotePath);
 }
 
 /// 根据本地配置构建同步提供方;未知类型或缺字段返回 null。
@@ -81,40 +137,185 @@ class WebDavSyncProvider implements SyncProvider {
 
   @override
   Future<void> upload(String remotePath, String data) async {
-    final response = await _client.put(
-      _uriFor(remotePath),
-      headers: _headers(contentType: 'application/json'),
-      body: data,
-    );
+    await _ensureBasePath(); // 目录不存在则先创建,避免 PUT 409/404。
+    final response = await _client
+        .put(
+          _uriFor(remotePath),
+          headers: _headers(contentType: 'application/json'),
+          body: data,
+        )
+        .timeout(const Duration(seconds: 120));
     _ensureSuccess(response);
   }
 
   @override
   Future<String> download(String remotePath) async {
-    final response = await _client.get(_uriFor(remotePath), headers: _headers());
-    _ensureSuccess(response);
-    return response.body;
+    final uri = _uriFor(remotePath);
+    // 整个下载(含 302 跟随)交给平台实现:
+    // - Web:原生 fetch + referrerPolicy 'no-referrer' + redirect follow →
+    //   跟随到 OSS 签名地址时无 Referer(防盗链 403 的根因),跨域自动剥离
+    //   Authorization → OSS 200;
+    // - 桌面:http 自动跟随(无防盗链问题)。
+    try {
+      return await fetchBodyNoReferer(uri, headers: _headers(), client: _client);
+    } catch (e) {
+      throw SyncException('下载 $remotePath 失败: $e');
+    }
+  }
+
+  @override
+  Future<List<BackupFileInfo>> listFiles() async {
+    final base = url.endsWith('/') ? url : '$url/';
+    final path = basePath.replaceAll(RegExp(r'^/+|/+$'), '');
+    final dir = Uri.parse('$base${path.isEmpty ? '' : '$path/'}');
+    // PROPFIND Depth:1 列目录内容;请求 getcontentlength/getlastmodified。
+    // 必须带 Content-Type: application/xml——多数服务器(Nextcloud 等)
+    // 缺此头会返回 207 但无响应体,导致列表恒为空。
+    final request = http.Request('PROPFIND', dir);
+    request.headers.addAll({
+      ..._headers(contentType: 'application/xml'),
+      'Depth': '1',
+    });
+    request.body = '''
+<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:">
+  <d:prop>
+    <d:getcontentlength/>
+    <d:getlastmodified/>
+    <d:displayname/>
+  </d:prop>
+</d:propfind>''';
+    final response = await _client.send(request).timeout(const Duration(seconds: 15));
+    if (response.statusCode != 207) {
+      // 部分服务器(如某些 NAS)不支持 PROPFIND:回退为空列表,
+      // 恢复页提示"无法列出"而非崩溃。
+      if (response.statusCode == 405 || response.statusCode == 501) {
+        throw SyncException('服务器不支持文件列表(PROPFIND),请直接填写文件名恢复');
+      }
+      throw SyncException('列出备份失败: HTTP ${response.statusCode}');
+    }
+    final body = await response.stream.bytesToString();
+    if (body.trim().isEmpty) {
+      throw SyncException('服务器返回空列表(PROPFIND 未启用),请直接填写文件名恢复');
+    }
+    final files = _parseMultistatus(body, dir.path);
+    if (files.isEmpty && body.contains('multistatus') && !body.contains('href')) {
+      // 207 且 multistatus 但无 href:服务器未按请求返回属性,解析必然为空。
+      throw SyncException('服务器未返回文件属性(PROPFIND 异常),请直接填写文件名恢复');
+    }
+    return files;
+  }
+
+  /// 解析 WebDAV multistatus XML,提取文件(排除目录本身)的名称/大小/修改时间。
+  static List<BackupFileInfo> _parseMultistatus(String xml, String basePath) {
+    final files = <BackupFileInfo>[];
+    // 极简 XML 解析:按 <response> 块切分。命名空间前缀大小写不敏感
+    // (OpenList/Nextcloud 返回 <D:response>,多数实现用 <d:response>)。
+    final blockRegex = RegExp(
+      r'<[a-zA-Z]*:?response>([\s\S]*?)</[a-zA-Z]*:?response>',
+    );
+    for (final m in blockRegex.allMatches(xml)) {
+      final block = m.group(1);
+      if (block == null) continue;
+      // href 取文件名(最后一个 / 之后);跳过目录本身(以 / 结尾)。
+      final hrefM = RegExp(r'<[a-zA-Z]*:?href>([^<]+)</[a-zA-Z]*:?href>')
+          .firstMatch(block);
+      if (hrefM == null) continue;
+      final href = (hrefM.group(1) ?? '').trim();
+      if (href.endsWith('/')) continue; // 目录
+      // href 可能含 URL 编码(如中文文件名 %E5%9B%BE),解码后再取文件名。
+      final decoded = Uri.decodeComponent(href);
+      final name = decoded.split('/').last;
+      if (name.isEmpty) continue;
+      // 大小。
+      final sizeM = RegExp(
+              r'<[a-zA-Z]*:?getcontentlength>(\d+)</[a-zA-Z]*:?getcontentlength>')
+          .firstMatch(block);
+      final size = int.tryParse(sizeM?.group(1) ?? '') ?? 0;
+      // 修改时间(RFC 1123,如 Wed, 12 Aug 2026 10:00:00 GMT;
+      // 也兼容 ISO 8601——不同服务器格式不一)。
+      final timeM = RegExp(
+              r'<[a-zA-Z]*:?getlastmodified>([^<]+)</[a-zA-Z]*:?getlastmodified>')
+          .firstMatch(block);
+      final raw = timeM?.group(1);
+      files.add(BackupFileInfo(
+        name: name,
+        size: size,
+        modified: raw == null ? null : parseHttpDate(raw),
+      ));
+    }
+    files.sort((a, b) {
+      final am = a.modified ?? DateTime(1970);
+      final bm = b.modified ?? DateTime(1970);
+      return bm.compareTo(am); // 新→旧
+    });
+    return files;
+  }
+
+  @override
+  Future<void> delete(String remotePath) async {
+    final request = http.Request('DELETE', _uriFor(remotePath));
+    request.headers.addAll(_headers());
+    final response = await _client.send(request).timeout(const Duration(seconds: 15));
+    // 404 = 文件本就不存在,视为成功。
+    if (response.statusCode >= 200 && response.statusCode < 300) return;
+    if (response.statusCode == 404) return;
+    throw SyncException('删除备份失败: HTTP ${response.statusCode}');
   }
 
   @override
   Future<bool> testConnection() async {
+    // 失败抛出带原因的异常(页面显示具体状态码),不再静默返回 false。
+    // 只发一个 PUT probe:建目录(MKCOL)是 upload 的事,测试连接不必做,
+    // 避免串行 3 请求(MKCOL+PUT+DELETE)拖慢导致超时。
     try {
       final probe = _uriFor('.probe');
-      final response = await _client.put(
-        probe,
-        headers: _headers(contentType: 'text/plain'),
-        body: 'probe',
-      );
-      // 连通即算可达;清理探测文件失败不影响结论。
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        try {
-          await _client.delete(probe, headers: _headers());
-        } catch (_) {}
+      final response = await _client
+          .put(
+            probe,
+            headers: _headers(contentType: 'text/plain'),
+            body: 'probe',
+          )
+          .timeout(const Duration(seconds: 5));
+      // 401/403 = 认证失败,明确报错(用户配置了凭据却被拒);
+      // 2xx/3xx/409 表示可达(409=目录不存在但服务在线,上传时自动建目录)。
+      // 不清理 .probe:残留文件无害,下次覆盖;避免串行 DELETE 拖慢响应。
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        throw SyncException('认证失败: HTTP ${response.statusCode},请检查用户名/密码');
       }
       return response.statusCode < 500;
-    } catch (_) {
-      return false;
+    } on SyncException {
+      rethrow;
+    } catch (e) {
+      throw SyncException('连接失败: $e');
     }
+  }
+
+  /// 确保 basePath 目录存在:很多 WebDAV 服务器(Nextcloud 等)不会自动创建
+  /// 目录,PUT 到不存在的路径返回 409/404。MKCOL 已存在返回 405/301 视为成功。
+  Future<void> _ensureBasePath() async {
+    final path = basePath.replaceAll(RegExp(r'^/+|/+$'), '');
+    if (path.isEmpty) return;
+    final base = url.endsWith('/') ? url : '$url/';
+    final dir = Uri.parse('$base$path/');
+    // 必须带认证头,否则受保护目录返回 401。
+    final request = http.Request('MKCOL', dir);
+    request.headers.addAll(_headers());
+    final response = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 10));
+    // 201 创建成功;405/301/403/409 等表示已存在或不可创建——目录已存在时
+    // 直接放行,后续 PUT 失败会再报具体错误。
+    if (response.statusCode >= 200 && response.statusCode < 300) return;
+    if (response.statusCode == 405 ||
+        response.statusCode == 301 ||
+        response.statusCode == 302 ||
+        response.statusCode == 409) {
+      return;
+    }
+    throw SyncException(
+      '创建备份目录失败: HTTP ${response.statusCode} $path',
+    );
   }
 
   Uri _uriFor(String remotePath) {
@@ -170,11 +371,13 @@ class S3SyncProvider implements SyncProvider {
       uri: uri,
       payloadHash: payloadHash,
     );
-    final response = await _client.put(
-      uri,
-      headers: headers,
-      body: data,
-    );
+    final response = await _client
+        .put(
+          uri,
+          headers: headers,
+          body: data,
+        )
+        .timeout(const Duration(seconds: 120));
     _ensureSuccess(response);
   }
 
@@ -186,9 +389,90 @@ class S3SyncProvider implements SyncProvider {
       uri: uri,
       payloadHash: sha256.convert(const []).toString(),
     );
-    final response = await _client.get(uri, headers: headers);
+    final response = await _client
+        .get(uri, headers: headers)
+        .timeout(const Duration(seconds: 60));
     _ensureSuccess(response);
     return response.body;
+  }
+
+  @override
+  Future<List<BackupFileInfo>> listFiles() async {
+    try {
+      // GET /bucket?list-type=2&prefix=<prefix> → XML Contents(Key/Size/LastModified)。
+      final base = Uri.parse(endpoint);
+      final bucketPath = base.path.isEmpty ? '/$bucket' : '${base.path}/$bucket';
+      final uri = base.replace(
+        path: bucketPath,
+        query: 'list-type=2&prefix=${Uri.encodeQueryComponent(prefix)}',
+      );
+      final headers = _signedHeaders(
+        method: 'GET',
+        uri: uri,
+        payloadHash: sha256.convert(const []).toString(),
+      );
+      final response = await _client
+          .get(uri, headers: headers)
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) {
+        throw SyncException('列出备份失败: HTTP ${response.statusCode}');
+      }
+      return _parseListXml(response.body, prefix: prefix);
+    } on SyncException {
+      rethrow;
+    } catch (e) {
+      throw SyncException('列出备份失败: $e');
+    }
+  }
+
+  /// 解析 ListObjectsV2 XML,提取对象名(去掉 prefix)/大小/修改时间,新→旧排序。
+  static List<BackupFileInfo> _parseListXml(String xml, {String prefix = ''}) {
+    final files = <BackupFileInfo>[];
+    final contentsRegex = RegExp(
+      r'<Contents>([\s\S]*?)</Contents>',
+    );
+    for (final m in contentsRegex.allMatches(xml)) {
+      final block = m.group(1) ?? '';
+      final keyM = RegExp(r'<Key>([^<]+)</Key>').firstMatch(block);
+      if (keyM == null) continue;
+      var key = keyM.group(1) ?? '';
+      if (key.endsWith('/')) continue; // 目录占位
+      if (prefix.isNotEmpty && key.startsWith(prefix)) {
+        key = key.substring(prefix.length);
+      }
+      if (key.isEmpty) continue;
+      final sizeM = RegExp(r'<Size>(\d+)</Size>').firstMatch(block);
+      final timeM = RegExp(r'<LastModified>([^<]+)</LastModified>')
+          .firstMatch(block);
+      final raw = timeM?.group(1);
+      files.add(BackupFileInfo(
+        name: key,
+        size: int.tryParse(sizeM?.group(1) ?? '') ?? 0,
+        modified: raw == null ? null : DateTime.tryParse(raw),
+      ));
+    }
+    files.sort((a, b) {
+      final am = a.modified ?? DateTime(1970);
+      final bm = b.modified ?? DateTime(1970);
+      return bm.compareTo(am);
+    });
+    return files;
+  }
+
+  @override
+  Future<void> delete(String remotePath) async {
+    final uri = _objectUri(remotePath);
+    final headers = _signedHeaders(
+      method: 'DELETE',
+      uri: uri,
+      payloadHash: sha256.convert(const []).toString(),
+    );
+    final request = http.Request('DELETE', uri);
+    request.headers.addAll(headers);
+    final response = await _client.send(request).timeout(const Duration(seconds: 15));
+    if (response.statusCode >= 200 && response.statusCode < 300) return;
+    if (response.statusCode == 404) return;
+    throw SyncException('删除备份失败: HTTP ${response.statusCode}');
   }
 
   @override
@@ -201,10 +485,18 @@ class S3SyncProvider implements SyncProvider {
         uri: uri,
         payloadHash: sha256.convert(const []).toString(),
       );
-      final response = await _client.get(uri, headers: headers);
-      return response.statusCode == 200 || response.statusCode == 403;
-    } catch (_) {
-      return false;
+      // 超时兜底:目标不可达时立即失败,避免页面一直转圈。
+      final response = await _client
+          .get(uri, headers: headers)
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200 || response.statusCode == 403) {
+        return true;
+      }
+      throw SyncException('S3 连接失败: HTTP ${response.statusCode}');
+    } on SyncException {
+      rethrow;
+    } catch (e) {
+      throw SyncException('S3 连接失败: $e');
     }
   }
 

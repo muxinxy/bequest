@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../api/api_config.dart';
 import '../storage/secure_store.dart';
 
 /// 邮箱发件设置页:调用后端 /api/v1/settings/smtp 保存自定义 SMTP 凭据。
@@ -14,7 +15,9 @@ class SmtpSettingsPage extends StatefulWidget {
 
 class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
   final _store = SecureStore();
-  final _api = ApiClient();
+
+  /// 按当前配置构造客户端(走用户配置的服务器地址,而非默认地址)。
+  late final Future<ApiClient> _api = ApiConfig.client();
 
   final _host = TextEditingController();
   final _port = TextEditingController(text: '587');
@@ -47,7 +50,10 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
       return;
     }
     try {
-      final cfg = await _api.getSmtpSettings(jwt);
+      // 超时兜底:服务器不可达时结束加载,避免页面一直转圈。
+      final cfg = await (await _api)
+          .getSmtpSettings(jwt)
+          .timeout(const Duration(seconds: 5));
       if (!mounted) return;
       setState(() {
         _host.text = cfg['host']?.toString() ?? '';
@@ -59,7 +65,7 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
         _loading = false;
       });
     } catch (_) {
-      // 后端未就绪或未配置:保留默认值,页面仍可编辑。
+      // 后端未就绪/超时:保留默认值,页面仍可编辑。
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -82,7 +88,9 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
     };
     setState(() => _saving = true);
     try {
-      await _api.updateSmtpSettings(jwt, body);
+      await (await _api)
+          .updateSmtpSettings(jwt, body)
+          .timeout(const Duration(seconds: 5));
       _snack('已保存');
     } catch (_) {
       _snack('保存失败,请检查网络后重试');
@@ -116,7 +124,9 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
       return;
     }
     try {
-      await _api.deleteSmtpSettings(jwt);
+      await (await _api)
+          .deleteSmtpSettings(jwt)
+          .timeout(const Duration(seconds: 5));
       if (!mounted) return;
       setState(() {
         _host.clear();

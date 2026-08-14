@@ -48,16 +48,17 @@ Future<String> _fetchAll(String jwt, ApiClient api) async {
 /// 构建备份 JSON:优先读取本地加密快照(无需登录);
 /// 无快照且已登录则从服务器拉取并写入本地快照后返回;
 /// 两者皆无则抛 StateError。
+/// [api] 可为 null:仅在"无本地快照且已登录"时需要(自动备份通常有快照)。
 Future<String> buildBackupJson(
   String? jwt,
-  ApiClient api,
+  ApiClient? api,
   String masterKeyB64, {
   LocalVault? vault,
 }) async {
   final local = vault ?? LocalVault();
   final cached = await local.loadVault(masterKeyB64);
   if (cached != null) return cached;
-  if (jwt == null) throw StateError('无本地数据且未登录');
+  if (jwt == null || api == null) throw StateError('无本地数据且未登录');
   final backup = await _fetchAll(jwt, api);
   try {
     await local.saveVault(backup, masterKeyB64);

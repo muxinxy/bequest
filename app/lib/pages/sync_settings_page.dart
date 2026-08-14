@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -9,11 +10,13 @@ import '../crypto/key_derivation.dart';
 import '../crypto/master_password.dart';
 import '../logger.dart';
 import '../storage/secure_store.dart';
+import '../sync/auto_backup.dart';
 import '../sync/backup.dart';
+import '../sync/backup_naming.dart';
 import '../sync/local_vault.dart';
 import '../sync/sync_provider.dart';
 
-/// 同步设置页:配置 WebDAV/S3 备份目标并执行同步/恢复。
+/// 同步设置页:配置 WebDAV/S3 备份目标并执行同步/恢复,支持自动备份。
 /// 配置仅保存在本机安全存储,绝不发送到托孤服务端。
 class SyncSettingsPage extends StatefulWidget {
   const SyncSettingsPage({super.key});
@@ -29,6 +32,10 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   String _protocol = 'webdav';
   bool _busy = false;
 
+  /// 自动备份配置。
+  String _autoBackupInterval = 'off';
+  int _autoBackupMax = 3;
+
   final _wdUrl = TextEditingController();
   final _wdUser = TextEditingController();
   final _wdPass = TextEditingController();
@@ -41,7 +48,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   final _s3SecretKey = TextEditingController();
   final _s3Prefix = TextEditingController(text: 'bequest/');
 
-  final _restoreName = TextEditingController();
+  /// 最近一次同步的文件名(展示用,不再手动输入)。
+  String _lastBackupName = '';
 
   @override
   void initState() {
@@ -54,7 +62,6 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     for (final c in [
       _wdUrl, _wdUser, _wdPass, _wdBasePath,
       _s3Endpoint, _s3Bucket, _s3Region, _s3AccessKey, _s3SecretKey, _s3Prefix,
-      _restoreName,
     ]) {
       c.dispose();
     }
@@ -78,7 +85,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       _s3AccessKey.text = cfg['access_key']?.toString() ?? '';
       _s3SecretKey.text = cfg['secret_key']?.toString() ?? '';
       _s3Prefix.text = cfg['prefix']?.toString() ?? 'bequest/';
-      _restoreName.text = cfg['restore_name']?.toString() ?? '';
+      _lastBackupName = cfg['restore_name']?.toString() ?? '';
+      _autoBackupInterval = AutoBackupScheduler.intervalKeyOf(cfg);
+      _autoBackupMax = AutoBackupScheduler.maxCountOf(cfg);
       if (mounted) setState(() {});
     } catch (e) {
       // 配置损坏:忽略,从空白开始。
@@ -87,8 +96,15 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   Map<String, dynamic> _formConfig({String? restoreName}) {
+    final base = <String, dynamic>{
+      'auto_backup_interval': _autoBackupInterval,
+      'auto_backup_max': '$_autoBackupMax',
+      if (restoreName != null && restoreName.isNotEmpty)
+        'restore_name': restoreName,
+    };
     if (_protocol == 's3') {
       return {
+        ...base,
         'type': 's3',
         'endpoint': _s3Endpoint.text.trim(),
         'bucket': _s3Bucket.text.trim(),
@@ -96,23 +112,23 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         'access_key': _s3AccessKey.text.trim(),
         'secret_key': _s3SecretKey.text.trim(),
         'prefix': _s3Prefix.text.trim(),
-        'restore_name': ?restoreName,
       };
     }
     return {
+      ...base,
       'type': 'webdav',
       'url': _wdUrl.text.trim(),
       'user': _wdUser.text.trim(),
       'password': _wdPass.text,
       'base_path': _wdBasePath.text.trim(),
-      'restore_name': ?restoreName,
     };
   }
 
   Future<void> _save() async {
-    await _store.saveSyncConfig(
-      jsonEncode(_formConfig(restoreName: _restoreName.text.trim())),
-    );
+    await _store.saveSyncConfig(jsonEncode(_formConfig()));
+    // 重启自动备份调度(间隔/最大数量变更即时生效)。
+    await AutoBackupScheduler.instance.onConfigChanged();
+    if (!mounted) return;
     _snack('配置已保存');
   }
 
@@ -126,6 +142,10 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     try {
       final ok = await provider.testConnection();
       _snack(ok ? '连接成功' : '连接失败');
+    } on SyncException catch (e) {
+      // 显示具体原因(认证/目录/路径),便于用户定位配置问题。
+      Logger.instance.e('sync testConnection failed: ${e.message}');
+      _snack(e.message);
     } catch (e) {
       Logger.instance.e('sync testConnection failed: $e');
       _snack('连接失败');
@@ -153,12 +173,26 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       final salt =
           await LocalVault().readSalt(masterKey) ?? await _store.readMasterSalt();
       final payload = await buildSyncPayload(backupJson, masterKey, salt: salt);
-      final name = 'bequest_backup_${_timestamp()}.json';
-      await provider.upload(name, jsonEncode(payload));
-      await _store.saveSyncConfig(
-        jsonEncode(_formConfig(restoreName: name)),
+      // 文件名自动生成:bequest_<用户名>_<设备名>_<时间戳>.json(不手动输入)。
+      final username = await _currentUsername(jwt);
+      final name = buildBackupFileName(
+        username: username,
+        deviceName: deviceName(),
+        timestamp: _timestamp(),
       );
-      _restoreName.text = name;
+      await provider.upload(name, jsonEncode(payload));
+      // 保存用户名/设备名到配置,供自动备份生成一致文件名。
+      await _store.saveSyncConfig(
+        jsonEncode({
+          ..._formConfig(restoreName: name),
+          'username': username,
+          'device_name': deviceName(),
+        }),
+      );
+      // 同步完成后轮转(超过最大数量删最旧)。
+      await _rotateBackups(provider);
+      _lastBackupName = name;
+      if (mounted) setState(() {});
       _snack('同步完成');
     } on StateError catch (e) {
       Logger.instance.e('sync failed: ${e.message}');
@@ -171,17 +205,105 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     }
   }
 
+  /// 当前用户名:云端从 /me 获取,本地/未登录回退 'local'。
+  Future<String> _currentUsername(String? jwt) async {
+    if (jwt == null || jwt.isEmpty) return 'local';
+    try {
+      final me = await (await _api).me(jwt);
+      final user = (me['user'] as Map<String, dynamic>?)?['username'];
+      if (user != null && user.toString().isNotEmpty) return user.toString();
+    } catch (_) {
+      // 网络失败回退 local。
+    }
+    return 'local';
+  }
+
+  /// 备份轮转:列出备份,超过配置的最大数量删最旧。
+  Future<void> _rotateBackups(SyncProvider provider) async {
+    final cfg = jsonDecode(await _store.readSyncConfig() ?? '{}');
+    final maxCount = AutoBackupScheduler.maxCountOf(
+      cfg is Map<String, dynamic> ? cfg : {},
+    );
+    if (maxCount <= 0) return;
+    try {
+      final files = await provider.listFiles();
+      if (files.length <= maxCount) return;
+      for (final f in files.skip(maxCount)) {
+        try {
+          await provider.delete(f.name);
+        } catch (_) {
+          // 单条删除失败不阻断。
+        }
+      }
+    } catch (_) {
+      // 列不出列表时跳过轮转(服务器可能不支持 PROPFIND)。
+    }
+  }
+
+  /// 从备份恢复:先弹窗列出远端备份文件,选择后执行恢复。
+  /// 删除文件后重新拉取列表;列表不可用(服务器不支持 PROPFIND/List)
+  /// 或用户选择「手动输入」时,回退手动填写文件名。
   Future<void> _restore() async {
     final provider = syncProviderFromConfig(_formConfig());
     if (provider == null) {
       _snack('请先填写完整的连接信息');
       return;
     }
-    final name = _restoreName.text.trim();
-    if (name.isEmpty) {
-      _snack('请先执行一次同步,或填写备份文件名');
+    while (mounted) {
+      setState(() => _busy = true);
+      List<BackupFileInfo> files;
+      try {
+        files = await provider.listFiles();
+      } catch (e) {
+        // 服务器不支持文件列表:回退手动输入,而非报错退出。
+        if (!mounted) return;
+        setState(() => _busy = false);
+        Logger.instance.e('list backups failed, fallback to manual: $e');
+        final name = await showManualRestoreDialog(context, hint: _lastBackupName);
+        if (name == null || !mounted) return;
+        await _doRestore(provider, name);
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _busy = false);
+      if (files.isEmpty) {
+        _snack('没有找到备份文件');
+        return;
+      }
+      final result = await showBackupListDialog(
+        context,
+        files: files,
+        onDelete: (f) async {
+          try {
+            await provider.delete(f.name);
+            if (!mounted) return true;
+            _snack('已删除 ${f.name}');
+            return true;
+          } catch (_) {
+            if (!mounted) return false;
+            _snack('删除失败');
+            return false;
+          }
+        },
+      );
+      if (result == null || !mounted) return; // 取消
+      if (result == _kDeletedSentinel) continue; // 删除后重开列表
+      if (result == _kManualSentinel) {
+        // 手动输入文件名恢复。
+        final name = await showManualRestoreDialog(
+          context,
+          hint: _lastBackupName,
+        );
+        if (name == null || !mounted) return;
+        await _doRestore(provider, name);
+        return;
+      }
+      await _doRestore(provider, result);
       return;
     }
+  }
+
+  Future<void> _doRestore(SyncProvider provider, String name) async {
     final jwt = await _store.readJwt();
     setState(() => _busy = true);
     try {
@@ -240,7 +362,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       }
     } catch (e) {
       Logger.instance.e('restore failed: $e');
-      _snack('恢复失败,请检查网络与备份文件');
+      // 显示具体错误(如 HTTP 302/网络异常),便于定位。
+      final msg = e is SyncException
+          ? e.message
+          : '恢复失败: $e';
+      _snack(msg);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -305,8 +431,60 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   _field(_s3Prefix, '前缀', hint: 'bequest/'),
                 ],
                 const SizedBox(height: 8),
-                _field(_restoreName, '备份文件名(恢复用)', hint: 'bequest_backup_20260101_120000.json'),
-                const SizedBox(height: 16),
+                if (_lastBackupName.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      '最近备份: $_lastBackupName',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                const Divider(),
+                _sectionTitle('自动备份'),
+                const Text(
+                  '按间隔自动备份到上述存储;备份文件名自动生成(bequest_用户名_设备名_时间戳)。',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: _autoBackupInterval,
+                  decoration: const InputDecoration(
+                    labelText: '备份间隔',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: kAutoBackupIntervals.keys
+                      .map((k) => DropdownMenuItem(
+                            value: k,
+                            child: Text(kAutoBackupIntervalLabels[k] ?? k),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setState(() {
+                    if (v != null) _autoBackupInterval = v;
+                  }),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  initialValue: _autoBackupMax,
+                  decoration: const InputDecoration(
+                    labelText: '最大备份数量',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: kAutoBackupMaxCounts
+                      .map((n) => DropdownMenuItem(
+                            value: n,
+                            child: Text('$n 份(超出自动删除最旧)'),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setState(() {
+                    if (v != null) _autoBackupMax = v;
+                  }),
+                ),
+                const SizedBox(height: 8),
+                const Divider(),
+                const SizedBox(height: 4),
                 Row(
                   children: [
                     Expanded(
@@ -319,7 +497,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                     Expanded(
                       child: FilledButton.tonal(
                         onPressed: _busy ? null : _syncNow,
-                        child: const Text('立即同步'),
+                        child: const Text('立即备份'),
                       ),
                     ),
                   ],
@@ -366,4 +544,139 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       ),
     );
   }
+
+  Widget _sectionTitle(String title) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Text(
+      title,
+      style: TextStyle(
+        fontSize: 13,
+        color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+  );
+}
+
+/// 删除成功标记:弹窗 pop 此值表示"已删除,重新打开列表"。
+const _kDeletedSentinel = '__deleted__';
+
+/// 手动输入标记:弹窗 pop 此值表示"用户选择手动填写文件名"。
+const _kManualSentinel = '__manual__';
+
+/// 手动输入备份文件名对话框:列表不可用或用户选择时使用。
+/// 返回文件名;取消返回 null。
+Future<String?> showManualRestoreDialog(
+  BuildContext context, {
+  String? hint,
+}) {
+  final controller = TextEditingController(text: hint ?? '');
+  return showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('输入备份文件名'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        decoration: const InputDecoration(
+          labelText: '备份文件名',
+          hintText: '如 bequest_alice_device_20260812_100000.json',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final name = controller.text.trim();
+            if (name.isEmpty) return;
+            Navigator.of(context).pop(name);
+          },
+          child: const Text('恢复'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 备份文件列表弹窗:显示文件名/修改时间/大小,支持恢复与删除。
+/// 返回选中的文件名(恢复);删除成功返回 [_kDeletedSentinel];
+/// 选择手动输入返回 [_kManualSentinel];取消返回 null。
+Future<String?> showBackupListDialog(
+  BuildContext context, {
+  required List<BackupFileInfo> files,
+  required Future<bool> Function(BackupFileInfo f) onDelete,
+}) {
+  return showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('备份文件(${files.length})'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: files.length + 1, // 末尾追加"手动输入"入口
+          itemBuilder: (context, index) {
+            if (index == files.length) {
+              return ListTile(
+                dense: true,
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text(
+                  '手动输入文件名',
+                  style: TextStyle(fontSize: 13),
+                ),
+                onTap: () => Navigator.of(context).pop(_kManualSentinel),
+              );
+            }
+            final f = files[index];
+            final modified = f.modified?.toLocal();
+            final timeText = modified == null
+                ? '未知时间'
+                : '${modified.year}-${modified.month.toString().padLeft(2, '0')}-'
+                    '${modified.day.toString().padLeft(2, '0')} '
+                    '${modified.hour.toString().padLeft(2, '0')}:'
+                    '${modified.minute.toString().padLeft(2, '0')}';
+            return ListTile(
+              dense: true,
+              leading: const Icon(Icons.backup_outlined),
+              title: Text(f.name, style: const TextStyle(fontSize: 13)),
+              subtitle: Text(
+                '$timeText · ${f.sizeText}',
+                style: const TextStyle(fontSize: 12),
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: '恢复',
+                    icon: const Icon(Icons.restore, size: 20),
+                    onPressed: () => Navigator.of(context).pop(f.name),
+                  ),
+                  IconButton(
+                    tooltip: '删除',
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    onPressed: () async {
+                      final ok = await onDelete(f);
+                      if (ok && context.mounted) {
+                        Navigator.of(context).pop(_kDeletedSentinel);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+      ],
+    ),
+  );
 }

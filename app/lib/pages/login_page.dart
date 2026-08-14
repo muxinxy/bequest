@@ -225,13 +225,10 @@ class _LoginPageState extends State<LoginPage> {
     if (!mounted) return _RecoveryChoice.cancelled;
     final creds = await showDialog<({String? master, String? account, bool reset})>(
       context: context,
-      // 键盘弹出时整体上移,避免底部按钮遮挡输入框。
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: const _RecoveryDialog(),
-      ),
+      // 键盘弹出时 DialogRoute 内置 viewInsets 处理会自动上移;
+      // 不要再手动加 viewInsets padding,否则键盘高度被双重计算,
+      // 对话框整体被顶出屏幕。
+      builder: (context) => const _RecoveryDialog(),
     );
     if (creds == null || !mounted) return _RecoveryChoice.cancelled;
     if (creds.reset) return _RecoveryChoice.reset;

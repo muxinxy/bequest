@@ -173,4 +173,41 @@ void main() {
     // 加密凭据不受影响。
     expect(await store.readMasterKey(), 'mk');
   });
+
+  test('同步配置:云端与各本地账户相互隔离', () async {
+    // 云端(无激活账户)配置。
+    await store.saveSyncConfig('{"type":"webdav","url":"cloud-url"}');
+    expect(await store.readSyncConfig(), contains('cloud-url'));
+
+    // 本地账户 1:自己的配置。
+    await store.createLocalProfile(
+      id: 'sync-p1',
+      name: '甲',
+      masterKey: 'mk-1',
+      salt: 'salt-1',
+      wrappingKey: 'wk-1',
+    );
+    await store.saveSyncConfig('{"type":"s3","bucket":"bucket-p1"}');
+    expect(await store.readSyncConfig(), contains('bucket-p1'));
+
+    // 本地账户 2:独立配置,不受账户 1 影响。
+    await store.createLocalProfile(
+      id: 'sync-p2',
+      name: '乙',
+      masterKey: 'mk-2',
+      salt: 'salt-2',
+      wrappingKey: 'wk-2',
+    );
+    expect(await store.readSyncConfig(), isNull); // 账户 2 从未保存过配置
+    await store.saveSyncConfig('{"type":"webdav","url":"p2-url"}');
+    expect(await store.readSyncConfig(), contains('p2-url'));
+
+    // 切回账户 1:仍是自己的配置。
+    await store.activateLocalProfile('sync-p1');
+    expect(await store.readSyncConfig(), contains('bucket-p1'));
+
+    // 退出本地模式(云端):恢复云端配置。
+    await store.deactivateLocalProfile();
+    expect(await store.readSyncConfig(), contains('cloud-url'));
+  });
 }

@@ -87,7 +87,7 @@ void main() {
       expect(() => provider.download('f.json'), throwsA(isA<SyncException>()));
     });
 
-    test('testConnection: 200/403 可达,404/异常不可达', () async {
+    test('testConnection: 200/403 可达,404/异常抛 SyncException', () async {
       final reachable = S3SyncProvider(
         endpoint: 'https://s3.amazonaws.com',
         bucket: 'mybucket',
@@ -107,7 +107,7 @@ void main() {
         secretKey: 'sk',
         client: MockClient((request) async => http.Response('', 404)),
       );
-      expect(await noAuth.testConnection(), isFalse);
+      expect(noAuth.testConnection(), throwsA(isA<SyncException>()));
 
       final down = S3SyncProvider(
         endpoint: 'https://s3.amazonaws.com',
@@ -117,7 +117,72 @@ void main() {
         secretKey: 'sk',
         client: MockClient((request) async => throw Exception('network')),
       );
-      expect(await down.testConnection(), isFalse);
+      expect(down.testConnection(), throwsA(isA<SyncException>()));
+    });
+
+    test('listFiles: ListObjectsV2 解析对象名/大小/修改时间,新→旧排序', () async {
+      late http.Request captured;
+      final client = MockClient((request) async {
+        captured = request;
+        const xml = '''<?xml version="1.0"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>mybucket</Name>
+  <Prefix>bequest/</Prefix>
+  <Contents>
+    <Key>bequest/old.json</Key>
+    <Size>2048</Size>
+    <LastModified>2026-08-10T08:00:00.000Z</LastModified>
+  </Contents>
+  <Contents>
+    <Key>bequest/new.json</Key>
+    <Size>1024</Size>
+    <LastModified>2026-08-12T10:00:00.000Z</LastModified>
+  </Contents>
+</ListBucketResult>''';
+        return http.Response(xml, 200);
+      });
+      final provider = S3SyncProvider(
+        endpoint: 'https://s3.amazonaws.com',
+        bucket: 'mybucket',
+        region: 'us-east-1',
+        accessKey: 'ak',
+        secretKey: 'sk',
+        client: client,
+      );
+
+      final files = await provider.listFiles();
+
+      expect(captured.url.path, '/mybucket');
+      expect(captured.url.query, contains('list-type=2'));
+      expect(captured.url.query, contains('prefix=bequest%2F'));
+      expect(captured.headers['Authorization'], contains('AWS4-HMAC-SHA256'));
+      expect(files, hasLength(2));
+      expect(files.first.name, 'new.json'); // prefix 已剥离
+      expect(files.first.size, 1024);
+      expect(files.first.modified, isNotNull);
+      expect(files.last.name, 'old.json');
+      expect(files.last.size, 2048);
+    });
+
+    test('delete: DELETE 请求携带 SigV4 认证头', () async {
+      late http.Request captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return http.Response('', 204);
+      });
+      final provider = S3SyncProvider(
+        endpoint: 'https://s3.amazonaws.com',
+        bucket: 'mybucket',
+        region: 'us-east-1',
+        accessKey: 'ak',
+        secretKey: 'sk',
+        client: client,
+      );
+
+      await provider.delete('old.json');
+      expect(captured.method, 'DELETE');
+      expect(captured.url.path, '/mybucket/bequest/old.json');
+      expect(captured.headers['Authorization'], contains('AWS4-HMAC-SHA256'));
     });
   });
 }

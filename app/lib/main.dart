@@ -10,12 +10,18 @@ import 'app_lock_policy.dart';
 import 'storage/secure_storage_io.dart'
     if (dart.library.js_interop) 'storage/secure_storage_web.dart'
     as secure_storage;
+import 'sync/auto_backup.dart';
 
 void main() {
+  // 必须在访问 WidgetsBinding/runApp 前初始化 binding;
+  // 自动备份调度器要挂生命周期观察者,晚于此处会空指针崩溃(web 白屏)。
+  WidgetsFlutterBinding.ensureInitialized();
   // Web 下 secure storage 降级 localStorage(官方 WebCrypto 在 HTTP 局域网
   // 不可用,会导致注册/登录写存储抛异常),必须在首次读写前替换。
   secure_storage.initPlatformSecureStorage();
   Logger.instance.d('app start');
+  // 自动备份调度:按配置间隔定时 + 开应用/退应用触发。
+  AutoBackupScheduler.instance.start();
   runApp(const BequestApp());
 }
 
