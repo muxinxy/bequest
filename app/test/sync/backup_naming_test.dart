@@ -1,5 +1,8 @@
+import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:bequest/storage/secure_store.dart';
 import 'package:bequest/sync/backup_naming.dart';
 
 void main() {
@@ -33,6 +36,45 @@ void main() {
         ),
         'bequest_20260812_100000.json',
       );
+    });
+  });
+
+  group('currentAccountName', () {
+    late SecureStore store;
+
+    setUp(() {
+      FlutterSecureStoragePlatform.instance =
+          TestFlutterSecureStoragePlatform({});
+      store = SecureStore();
+    });
+
+    test('本地模式:当前激活账户的名称', () async {
+      await store.createLocalProfile(
+        id: 'p1',
+        name: '张三',
+        masterKey: 'mk-1',
+        salt: 'salt-1',
+        wrappingKey: 'wk-1',
+      );
+      expect(await currentAccountName(store: store), '张三');
+    });
+
+    test('云端用户名优先于本地账户名', () async {
+      await store.createLocalProfile(
+        id: 'p1',
+        name: '张三',
+        masterKey: 'mk-1',
+        salt: 'salt-1',
+        wrappingKey: 'wk-1',
+      );
+      expect(
+        await currentAccountName(cloudUsername: 'alice', store: store),
+        'alice',
+      );
+    });
+
+    test('无账户回退 local', () async {
+      expect(await currentAccountName(store: store), 'local');
     });
   });
 }

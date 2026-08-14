@@ -36,6 +36,29 @@ void main() {
       expect(s3UriEncode('中文'), '%E4%B8%AD%E6%96%87');
       expect(s3UriEncode('a b/c'), 'a%20b%2Fc');
     });
+
+    test('带 query 的签名:canonical query 独立一行,按键排序', () {
+      const payloadHash =
+          'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+      // ListObjectsV2 风格:list-type=2&prefix=bequest/
+      final auth = s3AuthorizationHeader(
+        method: 'GET',
+        canonicalUri: '/mybucket',
+        canonicalQuery: 'list-type%3D2&prefix%3Dbequest%2F',
+        canonicalHeaders: {
+          'host': 's3.muxinxy.com',
+          'x-amz-content-sha256': payloadHash,
+          'x-amz-date': '20260814T000000Z',
+        },
+        accessKey: 'AKIAIOSFODNN7EXAMPLE',
+        secretKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+        region: 'cn-beijing',
+      );
+      // 签名变化(与无 query 不同)即证明 query 参与签名。
+      expect(auth, startsWith('AWS4-HMAC-SHA256 '));
+      expect(auth, isNot(contains('list-type'))); // query 不进 Authorization 头
+      expect(auth, contains('Signature='));
+    });
   });
 
   group('S3SyncProvider', () {
@@ -68,10 +91,14 @@ void main() {
     });
 
     test('download 成功返回内容;非 2xx 抛 SyncException', () async {
+      late http.Request captured;
       var call = 0;
       final client = MockClient((request) async {
         call++;
-        if (call == 1) return http.Response('{"blob":"enc"}', 200);
+        if (call == 1) {
+          captured = request;
+          return http.Response('{"blob":"enc"}', 200);
+        }
         return http.Response('denied', 403);
       });
       final provider = S3SyncProvider(
@@ -84,7 +111,39 @@ void main() {
       );
 
       expect(await provider.download('f.json'), '{"blob":"enc"}');
+      // GET 下载不带 Content-Type:否则 web 端触发 CORS preflight,
+      // 跨域签名地址(OSS)preflight 失败 → 403。
+      expect(captured.headers.containsKey('Content-Type'), isFalse);
       expect(() => provider.download('f.json'), throwsA(isA<SyncException>()));
+    });
+
+    test('download: 302 重定向后获取内容(兼容网关)', () async {
+      final requests = <http.Request>[];
+      final client = MockClient((request) async {
+        requests.add(request);
+        if (request.url.host.contains('s3.amazonaws.com')) {
+          return http.Response(
+            '',
+            302,
+            headers: {'location': 'https://cdn.example.com/signed.json'},
+          );
+        }
+        return http.Response('{"blob":"from-cdn"}', 200);
+      });
+      final provider = S3SyncProvider(
+        endpoint: 'https://s3.amazonaws.com',
+        bucket: 'mybucket',
+        region: 'us-east-1',
+        accessKey: 'ak',
+        secretKey: 'sk',
+        client: client,
+      );
+
+      final body = await provider.download('f.json');
+
+      expect(body, '{"blob":"from-cdn"}');
+      expect(requests, hasLength(2));
+      expect(requests.last.url.toString(), 'https://cdn.example.com/signed.json');
     });
 
     test('testConnection: 200/403 可达,404/异常抛 SyncException', () async {

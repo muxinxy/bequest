@@ -125,7 +125,20 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   Future<void> _save() async {
-    await _store.saveSyncConfig(jsonEncode(_formConfig()));
+    // 合并已存配置中另一协议的字段(如保存 S3 时保留 WebDAV 配置),
+    // 否则切换协议后另一份配置丢失。
+    final raw = await _store.readSyncConfig();
+    Map<String, dynamic> existing = {};
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) existing = decoded;
+      } catch (_) {}
+    }
+    final form = _formConfig();
+    // 当前协议字段以表单为准;另一协议字段沿用已存值。
+    final saved = <String, dynamic>{...existing, ...form};
+    await _store.saveSyncConfig(jsonEncode(saved));
     // 重启自动备份调度(间隔/最大数量变更即时生效)。
     await AutoBackupScheduler.instance.onConfigChanged();
     if (!mounted) return;
@@ -205,17 +218,22 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     }
   }
 
-  /// 当前用户名:云端从 /me 获取,本地/未登录回退 'local'。
+  /// 当前用户名:云端从 /me 获取;本地模式用当前激活账户的名称
+  /// (如"张三");都取不到回退 'local'。
   Future<String> _currentUsername(String? jwt) async {
-    if (jwt == null || jwt.isEmpty) return 'local';
-    try {
-      final me = await (await _api).me(jwt);
-      final user = (me['user'] as Map<String, dynamic>?)?['username'];
-      if (user != null && user.toString().isNotEmpty) return user.toString();
-    } catch (_) {
-      // 网络失败回退 local。
+    String? cloudUsername;
+    if (jwt != null && jwt.isNotEmpty) {
+      try {
+        final me = await (await _api).me(jwt);
+        final user = (me['user'] as Map<String, dynamic>?)?['username'];
+        if (user != null && user.toString().isNotEmpty) {
+          cloudUsername = user.toString();
+        }
+      } catch (_) {
+        // 网络失败继续回退。
+      }
     }
-    return 'local';
+    return currentAccountName(cloudUsername: cloudUsername, store: _store);
   }
 
   /// 备份轮转:列出备份,超过配置的最大数量删最旧。

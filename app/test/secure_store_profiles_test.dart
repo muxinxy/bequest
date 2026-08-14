@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -209,5 +211,36 @@ void main() {
     // 退出本地模式(云端):恢复云端配置。
     await store.deactivateLocalProfile();
     expect(await store.readSyncConfig(), contains('cloud-url'));
+  });
+
+  test('保存配置合并:表单与已存配置字段取并集(WebDAV↔S3 互不覆盖)', () async {
+    // 模拟已存 WebDAV 配置。
+    await store.saveSyncConfig(jsonEncode({
+      'type': 'webdav',
+      'url': 'https://dav.example.com/',
+      'user': 'u',
+      'password': 'p',
+      'base_path': '/bequest',
+    }));
+    // 保存 S3:仅替换 type 与 s3 字段,webdav 字段保留。
+    final saved = jsonDecode(await store.readSyncConfig() ?? '{}')
+        as Map<String, dynamic>;
+    final merged = {
+      ...saved,
+      'type': 's3',
+      'endpoint': 'https://s3.amazonaws.com',
+      'bucket': 'b',
+      'region': 'us-east-1',
+      'access_key': 'ak',
+      'secret_key': 'sk',
+      'prefix': 'bequest/',
+    };
+    await store.saveSyncConfig(jsonEncode(merged));
+
+    final finalCfg =
+        jsonDecode(await store.readSyncConfig() ?? '{}') as Map<String, dynamic>;
+    expect(finalCfg['type'], 's3');
+    expect(finalCfg['url'], 'https://dav.example.com/'); // webdav 字段保留
+    expect(finalCfg['bucket'], 'b');
   });
 }

@@ -1,5 +1,17 @@
 # 更新日志
 
+## v0.6.4 (2026-08-14)
+
+### 同步与备份
+- **S3 对齐 WebDAV**：S3 `download` 改走平台下载(302 跟随 + web 端 no-referrer),兼容 S3 兼容网关(CDN 重定向/防盗链)
+- **修复:S3 下载 403(CORS preflight)**：`_signedHeaders` 原固定带 `Content-Type: application/json`——GET 下载无 body 却带此头,web 端 fetch 视为非简单请求 → 强制 CORS preflight → 跨域签名地址(OSS)preflight 失败 403。改为 upload 才带 Content-Type,GET/DELETE 不带(简单请求无需 preflight)
+- **修复:S3 列表 403(SigV4 签名 bug)**：`listFiles` 带 query string(`?list-type=2&prefix=`),签名代码原把 query 拼进 canonical URI——SigV4 规范中 query 是独立一行,服务端验签不匹配 → 403。`s3AuthorizationHeader` 新增 `canonicalQuery` 参数,query 按键排序 + 键值各自编码
+- **备份文件名用本地账户名称**：本地模式备份文件名取当前激活账户的名称(如 `bequest_张三_<设备名>_<时间戳>.json`),不再一律回退 'local';云端仍用用户名。auto_backup 同步复用
+- **修复:保存 S3 后 WebDAV 配置丢失**：`_formConfig` 只返回当前协议字段,保存时另一协议配置被覆盖。`_save` 改为与已存配置合并(当前协议以表单为准,另一协议沿用已存值)
+
+### 验证
+- Flutter 152 测试全过(新增:S3 302 下载、带 query 签名、download 无 Content-Type、currentAccountName 本地账户名、配置合并、签名向量不回归)
+
 ## v0.6.3 (2026-08-14)
 
 ### 同步与备份

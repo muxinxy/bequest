@@ -370,6 +370,7 @@ class S3SyncProvider implements SyncProvider {
       method: 'PUT',
       uri: uri,
       payloadHash: payloadHash,
+      contentType: 'application/json',
     );
     final response = await _client
         .put(
@@ -389,11 +390,13 @@ class S3SyncProvider implements SyncProvider {
       uri: uri,
       payloadHash: sha256.convert(const []).toString(),
     );
-    final response = await _client
-        .get(uri, headers: headers)
-        .timeout(const Duration(seconds: 60));
-    _ensureSuccess(response);
-    return response.body;
+    // 与 WebDAV 一致:走平台下载(302 跟随 + web 端 no-referrer),
+    // 兼容 S3 兼容网关(如 MinIO 经 CDN 返回重定向 + 防盗链)。
+    try {
+      return await fetchBodyNoReferer(uri, headers: headers, client: _client);
+    } catch (e) {
+      throw SyncException('下载 $remotePath 失败: $e');
+    }
   }
 
   @override
@@ -411,13 +414,10 @@ class S3SyncProvider implements SyncProvider {
         uri: uri,
         payloadHash: sha256.convert(const []).toString(),
       );
-      final response = await _client
-          .get(uri, headers: headers)
-          .timeout(const Duration(seconds: 15));
-      if (response.statusCode != 200) {
-        throw SyncException('列出备份失败: HTTP ${response.statusCode}');
-      }
-      return _parseListXml(response.body, prefix: prefix);
+      // 与 download 一致:走平台请求(302 跟随 + web 端 no-referrer),
+      // 兼容 S3 兼容网关(CDN 重定向/防盗链)。
+      final body = await fetchBodyNoReferer(uri, headers: headers, client: _client);
+      return _parseListXml(body, prefix: prefix);
     } on SyncException {
       rethrow;
     } catch (e) {
@@ -518,12 +518,14 @@ class S3SyncProvider implements SyncProvider {
     required String method,
     required Uri uri,
     required String payloadHash,
+    String? contentType,
   }) {
     final now = DateTime.now().toUtc();
     final amzDate = _amzTimestamp(now);
     final auth = s3AuthorizationHeader(
       method: method,
       canonicalUri: _canonicalUri(uri),
+      canonicalQuery: _canonicalQuery(uri),
       canonicalHeaders: {
         'host': uri.host,
         'x-amz-content-sha256': payloadHash,
@@ -538,18 +540,30 @@ class S3SyncProvider implements SyncProvider {
       'x-amz-date': amzDate,
       'x-amz-content-sha256': payloadHash,
       'Authorization': auth,
-      'Content-Type': 'application/json',
+      // GET 下载/列表/删除无 body:不带 Content-Type,
+      // 否则 web 端 fetch 视为非简单请求 → CORS preflight →
+      // OSS 等跨域签名地址 preflight 失败 403。
+      'Content-Type': ?contentType,
     };
   }
 
-  /// 请求路径(含查询串),按 S3 规则逐段编码。
+  /// 请求路径(不含查询串,SigV4 规范 canonical URI 就是 path)。
   String _canonicalUri(Uri uri) {
     final path = uri.path.isEmpty ? '/' : uri.path;
-    final encoded = path
+    return path
         .split('/')
         .map((segment) => s3UriEncode(segment))
         .join('/');
-    return uri.hasQuery ? '$encoded?${uri.query}' : encoded;
+  }
+
+  /// 规范化查询串:SigV4 要求按键排序 + 键值各自 URL 编码。
+  static String _canonicalQuery(Uri uri) {
+    if (!uri.hasQuery) return '';
+    final pairs = uri.queryParameters.entries
+        .map((e) => '${s3UriEncode(e.key)}=${s3UriEncode(e.value)}')
+        .toList()
+      ..sort();
+    return pairs.join('&');
   }
 
   void _ensureSuccess(http.Response response) {
@@ -574,9 +588,11 @@ String s3UriEncode(String input) {
 
 /// 构造 SigV4 Authorization 头。纯函数,便于用 AWS 官方测试向量验证。
 /// [canonicalHeaders] 的键必须已是小写(如 host/x-amz-*),内部排序后签名。
+/// [canonicalQuery] 为规范化查询串(已排序+编码),无查询时传空串。
 String s3AuthorizationHeader({
   required String method,
   required String canonicalUri,
+  String canonicalQuery = '',
   required Map<String, String> canonicalHeaders,
   required String accessKey,
   required String secretKey,
@@ -589,7 +605,7 @@ String s3AuthorizationHeader({
   final signedHeaders = sorted.map((e) => e.key).join(';');
   final canonicalRequest = '$method\n'
       '$canonicalUri\n'
-      '\n' // 查询串(本客户端不携带)
+      '$canonicalQuery\n'
       '$headersBlock\n'
       '$signedHeaders\n'
       '${canonicalHeaders['x-amz-content-sha256']}';

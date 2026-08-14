@@ -134,7 +134,11 @@ class AutoBackupScheduler {
       String pad(int n) => n.toString().padLeft(2, '0');
       final timestamp = '${now.year}${pad(now.month)}${pad(now.day)}'
           '_${pad(now.hour)}${pad(now.minute)}${pad(now.second)}';
-      final username = cfg['username']?.toString() ?? 'local';
+      // 账户名:优先配置里存的(手动同步时写入),否则实时取
+      // (本地模式 = 当前激活账户名)。
+      final username = cfg['username']?.toString().isNotEmpty == true
+          ? cfg['username'].toString()
+          : await currentAccountName(store: _store);
       final device = cfg['device_name']?.toString() ?? deviceName();
       final name = buildBackupFileName(
         username: username,
