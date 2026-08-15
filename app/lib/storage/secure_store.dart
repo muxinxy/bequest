@@ -414,4 +414,20 @@ class SecureStore {
     await _storage.write(key: _activeProfileKey, value: 'legacy');
     return true;
   }
+
+  /// 重命名本地账户;重名返回 false(名称不能相同)。
+  Future<bool> renameLocalProfile(String id, String newName) async {
+    final name = newName.trim();
+    if (name.isEmpty) return false;
+    final profiles = await readLocalProfiles();
+    // 其他账户不能占用该名称。
+    if (profiles.any((p) => p['id'] != id && p['name'] == name)) {
+      return false;
+    }
+    final updated = profiles
+        .map((p) => p['id'] == id ? {'id': id, 'name': name} : p)
+        .toList();
+    await _storage.write(key: _localProfilesKey, value: jsonEncode(updated));
+    return true;
+  }
 }

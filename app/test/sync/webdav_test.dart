@@ -333,11 +333,11 @@ void main() {
       expect(syncProviderFromConfig({'type': 'webdav'}), isNull);
       expect(syncProviderFromConfig({'type': 's3', 'bucket': 'b'}), isNull);
       expect(syncProviderFromConfig({'type': 'ftp'}), isNull);
-      // FTP/SFTP(io 平台)。
+      // FTP/SFTP(io 平台,键带协议前缀)。
       expect(
         syncProviderFromConfig({
           'type': 'ftp',
-          'host': 'ftp.example.com',
+          'ftp_host': 'ftp.example.com',
           'ftp_user': 'u',
           'ftp_password': 'p',
           'ftp_base_path': '/bequest',
@@ -347,8 +347,8 @@ void main() {
       expect(
         syncProviderFromConfig({
           'type': 'sftp',
-          'host': 'sftp.example.com',
-          'port': '22',
+          'sftp_host': 'sftp.example.com',
+          'sftp_port': '22',
         }),
         isA<SftpSyncProvider>(),
       );

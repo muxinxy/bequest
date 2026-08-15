@@ -83,13 +83,19 @@ class _AppLockScreenState extends State<AppLockScreen> {
       final patternHash = await _store.readPatternHash();
       final patternSalt = await _store.readPatternSalt();
       // 主密码提示语:标准槽优先,空则回退当前激活本地账户(旧版账户 hint 只在账户槽)。
-      var masterHint = await _store.readMasterHint() ?? '';
-      if (masterHint.isEmpty) {
-        final activeId = await _store.readActiveLocalProfileId();
-        if (activeId != null && activeId.isNotEmpty) {
-          final profile = await _store.readLocalProfile(activeId);
-          masterHint = profile.hint ?? '';
+      // 单独 try:读取失败不影响锁屏主流程(否则整块 setState 被跳过,锁屏形同虚设)。
+      var masterHint = '';
+      try {
+        masterHint = await _store.readMasterHint() ?? '';
+        if (masterHint.isEmpty) {
+          final activeId = await _store.readActiveLocalProfileId();
+          if (activeId != null && activeId.isNotEmpty) {
+            final profile = await _store.readLocalProfile(activeId);
+            masterHint = profile.hint ?? '';
+          }
         }
+      } catch (_) {
+        masterHint = '';
       }
       if (mounted) {
         setState(() {

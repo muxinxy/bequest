@@ -167,5 +167,27 @@ void main() {
       expect(result.ok, isFalse);
       expect(result.error, '未找到当前主密钥,无法修改');
     });
+
+    test('新密码留空:仅更新提示语,密钥/盐/本地库不变', () async {
+      await seedOld();
+      final oldMk = await store.readMasterKey();
+      final oldSalt = await store.readMasterSalt();
+      final result = await changeMasterPasswordLocal(
+        store: store,
+        vault: vault,
+        verifyOld: (pw) async => true,
+        oldPassword: oldPassword,
+        newPassword: '   ', // 空白 → 不修改
+        newHint: '只改提示',
+      );
+      expect(result.ok, isTrue);
+      // 密钥/盐不变,newMk 等于旧密钥。
+      expect(result.newMk, oldMk);
+      expect(await store.readMasterKey(), oldMk);
+      expect(await store.readMasterSalt(), oldSalt);
+      // 提示语已更新;本地库仍可用旧密钥读。
+      expect(await store.readMasterHint(), '只改提示');
+      expect(await vault.loadLocalData(oldMk!), isNotNull);
+    });
   });
 }

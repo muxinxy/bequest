@@ -3,8 +3,7 @@ import 'sftp_sync.dart';
 import 'sync_provider.dart';
 
 /// 桌面/移动端:WebDAV/S3/FTP/SFTP 全部支持。
-SyncProvider? platformSyncProviderFromConfig(Map<String, dynamic> cfg) {
-  final type = cfg['type']?.toString();
+SyncProvider? platformSyncProviderFromConfig(Map<String, dynamic> cfg) {  final type = cfg['type']?.toString();
   if (type == 'webdav') {
     final url = cfg['url']?.toString();
     if (url == null || url.isEmpty) return null;
@@ -40,25 +39,31 @@ SyncProvider? platformSyncProviderFromConfig(Map<String, dynamic> cfg) {
     );
   }
   if (type == 'ftp') {
-    final host = cfg['host']?.toString();
+    final host = cfg['ftp_host']?.toString();
     if (host == null || host.isEmpty) return null;
+    final securityName = cfg['ftp_security']?.toString();
     return FtpSyncProvider(
       host: host,
-      port: int.tryParse(cfg['port']?.toString() ?? '') ?? 21,
+      port: int.tryParse(cfg['ftp_port']?.toString() ?? ''),
       user: cfg['ftp_user']?.toString() ?? '',
       password: cfg['ftp_password']?.toString() ?? '',
       basePath: cfg['ftp_base_path']?.toString() ?? '/bequest',
+      security: securityName == 'explicitTls'
+          ? FtpSecurity.explicitTls
+          : securityName == 'implicitTls'
+              ? FtpSecurity.implicitTls
+              : FtpSecurity.plain,
     );
   }
   if (type == 'sftp') {
-    final host = cfg['host']?.toString();
+    final host = cfg['sftp_host']?.toString();
     if (host == null || host.isEmpty) return null;
     return SftpSyncProvider(
       host: host,
-      port: int.tryParse(cfg['port']?.toString() ?? '') ?? 22,
-      user: cfg['ftp_user']?.toString() ?? '',
-      password: cfg['ftp_password']?.toString() ?? '',
-      basePath: cfg['ftp_base_path']?.toString() ?? '/bequest',
+      port: int.tryParse(cfg['sftp_port']?.toString() ?? '') ?? 22,
+      user: cfg['sftp_user']?.toString() ?? '',
+      password: cfg['sftp_password']?.toString() ?? '',
+      basePath: cfg['sftp_base_path']?.toString() ?? '/bequest',
     );
   }
   return null;

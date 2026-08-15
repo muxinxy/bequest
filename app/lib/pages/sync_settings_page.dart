@@ -14,6 +14,7 @@ import '../storage/secure_store.dart';
 import '../sync/auto_backup.dart';
 import '../sync/backup.dart';
 import '../sync/backup_naming.dart';
+import '../sync/ftp_sync.dart';
 import '../sync/local_vault.dart';
 import '../sync/sync_provider.dart';
 
@@ -49,12 +50,13 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   final _s3SecretKey = TextEditingController();
   final _s3Prefix = TextEditingController(text: 'bequest/');
 
-  // FTP/SFTP 共用 host/port/user/pass/base_path。
+  // FTP/SFTP 共用 host/port/user/pass/base_path 输入,保存时按协议前缀区分。
   final _ftpHost = TextEditingController();
   final _ftpPort = TextEditingController();
   final _ftpUser = TextEditingController();
   final _ftpPass = TextEditingController();
   final _ftpBasePath = TextEditingController(text: '/bequest');
+  FtpSecurity _ftpSecurity = FtpSecurity.plain;
 
   /// 最近一次同步的文件名(展示用,不再手动输入)。
   String _lastBackupName = '';
@@ -96,11 +98,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       _s3AccessKey.text = cfg['access_key']?.toString() ?? '';
       _s3SecretKey.text = cfg['secret_key']?.toString() ?? '';
       _s3Prefix.text = cfg['prefix']?.toString() ?? 'bequest/';
-      _ftpHost.text = cfg['host']?.toString() ?? '';
-      _ftpPort.text = cfg['port']?.toString() ?? (_protocol == 'sftp' ? '22' : '21');
-      _ftpUser.text = cfg['ftp_user']?.toString() ?? '';
-      _ftpPass.text = cfg['ftp_password']?.toString() ?? '';
-      _ftpBasePath.text = cfg['ftp_base_path']?.toString() ?? '/bequest';
+      _loadFtpFields(cfg, 'ftp');
+      _loadFtpFields(cfg, 'sftp');
       _lastBackupName = cfg['restore_name']?.toString() ?? '';
       _autoBackupInterval = AutoBackupScheduler.intervalKeyOf(cfg);
       _autoBackupMax = AutoBackupScheduler.maxCountOf(cfg);
@@ -131,14 +130,17 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       };
     }
     if (_protocol == 'ftp' || _protocol == 'sftp') {
+      // 键按协议前缀区分(ftp_*/sftp_*),各自单独保存互不覆盖。
+      final p = _protocol;
       return {
         ...base,
-        'type': _protocol,
-        'host': _ftpHost.text.trim(),
-        'port': _ftpPort.text.trim(),
-        'ftp_user': _ftpUser.text.trim(),
-        'ftp_password': _ftpPass.text,
-        'ftp_base_path': _ftpBasePath.text.trim(),
+        'type': p,
+        '${p}_host': _ftpHost.text.trim(),
+        '${p}_port': _ftpPort.text.trim(),
+        '${p}_user': _ftpUser.text.trim(),
+        '${p}_password': _ftpPass.text,
+        '${p}_base_path': _ftpBasePath.text.trim(),
+        if (p == 'ftp') 'ftp_security': _ftpSecurity.name,
       };
     }
     return {
@@ -149,6 +151,39 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       'password': _wdPass.text,
       'base_path': _wdBasePath.text.trim(),
     };
+  }
+
+  /// 从配置加载指定协议(ftp/sftp)的字段到输入框。
+  void _loadFtpFields(Map<String, dynamic> cfg, String p) {
+    if (_protocol == p) {
+      _ftpHost.text = cfg['${p}_host']?.toString() ?? '';
+      _ftpPort.text =
+          cfg['${p}_port']?.toString() ?? (p == 'sftp' ? '22' : '21');
+      _ftpUser.text = cfg['${p}_user']?.toString() ?? '';
+      _ftpPass.text = cfg['${p}_password']?.toString() ?? '';
+      _ftpBasePath.text = cfg['${p}_base_path']?.toString() ?? '/bequest';
+      if (p == 'ftp') {
+        _ftpSecurity = FtpSecurity.values.asNameMap()[cfg['ftp_security']] ??
+            FtpSecurity.plain;
+      }
+    }
+  }
+
+  /// 切换协议:保存当前表单到已存配置(供切换回来恢复),再加载目标协议配置。
+  Future<void> _switchProtocol(String next) async {
+    if (next == _protocol) return;
+    // 当前表单写入配置,再加载目标协议字段。
+    final raw = await _store.readSyncConfig();
+    Map<String, dynamic> existing = {};
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) existing = decoded;
+      } catch (_) {}
+    }
+    await _store.saveSyncConfig(jsonEncode({...existing, ..._formConfig()}));
+    setState(() => _protocol = next);
+    await _loadConfig();
   }
 
   Future<void> _save() async {
@@ -215,9 +250,10 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       final payload = await buildSyncPayload(backupJson, masterKey, salt: salt);
       // 文件名自动生成:bequest_<用户名>_<设备名>_<时间戳>.json(不手动输入)。
       final username = await _currentUsername(jwt);
+      final device = await deviceName();
       final name = buildBackupFileName(
         username: username,
-        deviceName: deviceName(),
+        deviceName: device,
         timestamp: _timestamp(),
       );
       await provider.upload(name, jsonEncode(payload));
@@ -226,14 +262,14 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         jsonEncode({
           ..._formConfig(restoreName: name),
           'username': username,
-          'device_name': deviceName(),
+          'device_name': device,
         }),
       );
       // 同步完成后轮转(超过最大数量删最旧)。
       await _rotateBackups(provider);
       _lastBackupName = name;
       if (mounted) setState(() {});
-      _snack('同步完成');
+      _snack('备份完成: $name');
     } on StateError catch (e) {
       Logger.instance.e('sync failed: ${e.message}');
       _snack(e.message);
@@ -264,6 +300,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   /// 备份轮转:列出备份,超过配置的最大数量删最旧。
+  /// 只统计/删除当前账户的备份(bequest_<账户名>_ 前缀)。
   Future<void> _rotateBackups(SyncProvider provider) async {
     final cfg = jsonDecode(await _store.readSyncConfig() ?? '{}');
     final maxCount = AutoBackupScheduler.maxCountOf(
@@ -271,7 +308,10 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     );
     if (maxCount <= 0) return;
     try {
-      final files = await provider.listFiles();
+      final account = await _currentUsername(await _store.readJwt());
+      final files = (await provider.listFiles())
+          .where((f) => isBackupForAccount(f.name, account))
+          .toList();
       if (files.length <= maxCount) return;
       for (final f in files.skip(maxCount)) {
         try {
@@ -298,7 +338,10 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       setState(() => _busy = true);
       List<BackupFileInfo> files;
       try {
-        files = await provider.listFiles();
+        final account = await _currentUsername(await _store.readJwt());
+        files = (await provider.listFiles())
+            .where((f) => isBackupForAccount(f.name, account))
+            .toList();
       } catch (e) {
         // 服务器不支持文件列表:回退手动输入,而非报错退出。
         if (!mounted) return;
@@ -450,23 +493,23 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                     ChoiceChip(
                       label: const Text('WebDAV'),
                       selected: _protocol == 'webdav',
-                      onSelected: (_) => setState(() => _protocol = 'webdav'),
+                      onSelected: (_) => _switchProtocol('webdav'),
                     ),
                     ChoiceChip(
                       label: const Text('S3'),
                       selected: _protocol == 's3',
-                      onSelected: (_) => setState(() => _protocol = 's3'),
+                      onSelected: (_) => _switchProtocol('s3'),
                     ),
                     if (!kIsWeb) ...[
                       ChoiceChip(
                         label: const Text('FTP'),
                         selected: _protocol == 'ftp',
-                        onSelected: (_) => setState(() => _protocol = 'ftp'),
+                        onSelected: (_) => _switchProtocol('ftp'),
                       ),
                       ChoiceChip(
                         label: const Text('SFTP'),
                         selected: _protocol == 'sftp',
-                        onSelected: (_) => setState(() => _protocol = 'sftp'),
+                        onSelected: (_) => _switchProtocol('sftp'),
                       ),
                     ],
                   ],
@@ -497,6 +540,33 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   _field(_ftpUser, '用户名'),
                   _field(_ftpPass, '密码', obscure: true),
                   _field(_ftpBasePath, '基础路径', hint: '/bequest'),
+                  if (_protocol == 'ftp') ...[
+                    DropdownButtonFormField<FtpSecurity>(
+                      initialValue: _ftpSecurity,
+                      decoration: const InputDecoration(
+                        labelText: '加密',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: FtpSecurity.plain,
+                          child: Text('禁用(明文)'),
+                        ),
+                        DropdownMenuItem(
+                          value: FtpSecurity.explicitTls,
+                          child: Text('显式 SSL/TLS(FTPES)'),
+                        ),
+                        DropdownMenuItem(
+                          value: FtpSecurity.implicitTls,
+                          child: Text('隐式 SSL/TLS(FTPS)'),
+                        ),
+                      ],
+                      onChanged: (v) => setState(() {
+                        if (v != null) _ftpSecurity = v;
+                      }),
+                    ),
+                  ],
                 ],
                 const SizedBox(height: 8),
                 if (_lastBackupName.isNotEmpty)

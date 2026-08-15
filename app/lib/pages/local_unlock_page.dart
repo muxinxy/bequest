@@ -171,6 +171,44 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
     await _init();
   }
 
+  /// 重命名本地账户:名称不能与其他账户相同。
+  Future<void> _renameAccount(Map<String, String> profile) async {
+    final controller = TextEditingController(text: profile['name'] ?? '');
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('重命名账户'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 20,
+          decoration: const InputDecoration(
+            labelText: '账户名称',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (newName == null || newName.isEmpty || !mounted) return;
+    final ok = await _store.renameLocalProfile(profile['id'] ?? '', newName);
+    if (!mounted) return;
+    if (!ok) {
+      _showError('名称已被其他账户使用');
+      return;
+    }
+    await _init();
+  }
+
   Future<void> _enterLocalHome() async {
     if (!mounted) return;
     await _store.saveStorageMode('local');
@@ -232,10 +270,20 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
               leading: const Icon(Icons.person_outline),
               title: Text(p['name'] ?? ''),
               subtitle: Text(p['id'] ?? ''),
-              trailing: IconButton(
-                tooltip: '删除账户',
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () => _deleteAccount(p),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: '重命名',
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () => _renameAccount(p),
+                  ),
+                  IconButton(
+                    tooltip: '删除账户',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => _deleteAccount(p),
+                  ),
+                ],
               ),
               onTap: () => _pickAccount(p),
             ),

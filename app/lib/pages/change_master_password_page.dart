@@ -91,6 +91,12 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
         return;
       }
       if (!mounted) return;
+      // 新密码留空(仅改提示语):newMk == oldMk,无需云端重包,只提示。
+      if (_newController.text.trim().isEmpty) {
+        _showMessage('主密码提示语已更新');
+        _clearSensitiveFields();
+        return;
+      }
       await _syncToCloud(result.newMk!, oldMk ?? '');
       _clearSensitiveFields();
     } finally {
@@ -207,13 +213,17 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
                 controller: _newController,
                 obscureText: true,
                 decoration: const InputDecoration(
-                  labelText: '新主密码',
-                  helperText: '至少 8 位,用于加密本地数据',
+                  labelText: '新主密码(留空则不修改)',
+                  helperText: '留空仅更新提示语;填写则至少 8 位',
                   border: OutlineInputBorder(),
                 ),
-                validator: (value) => (value == null || value.length < 8)
-                    ? '新主密码至少 8 位'
-                    : null,
+                validator: (value) {
+                  final v = value ?? '';
+                  if (v.isEmpty) return null; // 留空 = 只改提示语
+                  if (v.length < 8) return '新主密码至少 8 位';
+                  if (v == _oldController.text) return '新主密码不能与当前相同';
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -223,8 +233,10 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
                   labelText: '确认新主密码',
                   border: OutlineInputBorder(),
                 ),
-                validator: (value) =>
-                    value != _newController.text ? '两次输入的新主密码不一致' : null,
+                validator: (value) {
+                  if (_newController.text.isEmpty) return null; // 未改密码
+                  return value != _newController.text ? '两次输入的新主密码不一致' : null;
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(

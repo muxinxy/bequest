@@ -139,7 +139,7 @@ class AutoBackupScheduler {
       final username = cfg['username']?.toString().isNotEmpty == true
           ? cfg['username'].toString()
           : await currentAccountName(store: _store);
-      final device = cfg['device_name']?.toString() ?? deviceName();
+      final device = cfg['device_name']?.toString() ?? await deviceName();
       final name = buildBackupFileName(
         username: username,
         deviceName: device,

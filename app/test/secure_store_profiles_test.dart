@@ -243,4 +243,29 @@ void main() {
     expect(finalCfg['url'], 'https://dav.example.com/'); // webdav 字段保留
     expect(finalCfg['bucket'], 'b');
   });
+
+  test('本地账户重命名:改名成功;与其他账户重名被拒', () async {
+    await store.createLocalProfile(
+      id: 'p1',
+      name: '张三',
+      masterKey: 'mk-1',
+      salt: 'salt-1',
+      wrappingKey: 'wk-1',
+    );
+    await store.createLocalProfile(
+      id: 'p2',
+      name: '李四',
+      masterKey: 'mk-2',
+      salt: 'salt-2',
+      wrappingKey: 'wk-2',
+    );
+    // 改为唯一名:成功。
+    expect(await store.renameLocalProfile('p1', '王五'), isTrue);
+    var profiles = await store.readLocalProfiles();
+    expect(profiles.firstWhere((p) => p['id'] == 'p1')['name'], '王五');
+    // 改与他人重名:拒绝。
+    expect(await store.renameLocalProfile('p1', '李四'), isFalse);
+    // 空名拒绝。
+    expect(await store.renameLocalProfile('p1', '  '), isFalse);
+  });
 }

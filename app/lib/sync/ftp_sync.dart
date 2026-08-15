@@ -5,6 +5,18 @@ import 'package:ftpconnect/ftpconnect.dart';
 
 import 'sync_provider.dart';
 
+/// FTP 加密方式。
+enum FtpSecurity {
+  /// 禁用加密(明文,默认 21 端口)。
+  plain,
+
+  /// 显式 SSL/TLS(FTPES,21 端口 STARTTLS 升级)。
+  explicitTls,
+
+  /// 隐式 SSL/TLS(FTPS,990 端口直接 TLS)。
+  implicitTls,
+}
+
 /// FTP 同步提供方。基于 ftpconnect(socket 协议,仅桌面/移动端,web 不支持)。
 /// ftpconnect 的 upload/download 基于本地 File,备份数据是内存字符串,
 /// 用临时文件中转。
@@ -13,16 +25,18 @@ class FtpSyncProvider implements SyncProvider {
     required this.host,
     required this.user,
     required this.password,
-    this.port = 21,
+    this.port,
     this.basePath = '/bequest',
+    this.security = FtpSecurity.plain,
     this.timeoutSeconds = 15,
   });
 
   final String host;
-  final int port;
+  final int? port;
   final String user;
   final String password;
   final String basePath;
+  final FtpSecurity security;
   final int timeoutSeconds;
 
   @override
@@ -36,6 +50,11 @@ class FtpSyncProvider implements SyncProvider {
       user: user,
       pass: password,
       timeout: timeoutSeconds,
+      securityType: switch (security) {
+        FtpSecurity.plain => SecurityType.ftp,
+        FtpSecurity.explicitTls => SecurityType.ftpes,
+        FtpSecurity.implicitTls => SecurityType.ftps,
+      },
     );
     final ok = await ftp.connect();
     if (!ok) throw SyncException('FTP 连接失败($host:$port)');

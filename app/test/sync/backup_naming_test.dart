@@ -18,15 +18,15 @@ void main() {
       );
     });
 
-    test('特殊字符清洗为下划线,空用户名/设备名跳过对应段', () {
-      // 中文/空格/!均不在 [A-Za-z0-9_-] 内 → 各替换为一个下划线。
+    test('特殊字符清洗:中文保留,空白/符号替换,空段跳过', () {
+      // 中文不再被清洗(保留 Unicode),空白与符号替换为下划线。
       expect(
         buildBackupFileName(
-          username: '张 三!',
+          username: '张三 三!',
           deviceName: '',
           timestamp: '20260812_100000',
         ),
-        'bequest___20260812_100000.json',
+        'bequest_张三_三_20260812_100000.json',
       );
       expect(
         buildBackupFileName(
@@ -36,6 +36,13 @@ void main() {
         ),
         'bequest_20260812_100000.json',
       );
+    });
+
+    test('isBackupForAccount: 匹配当前账户前缀,忽略他人备份', () {
+      expect(isBackupForAccount('bequest_alice_dev_20260812.json', 'alice'), isTrue);
+      expect(isBackupForAccount('bequest_bob_dev_20260812.json', 'alice'), isFalse);
+      expect(isBackupForAccount('bequest_张三_web_20260812.json', '张三'), isTrue);
+      expect(isBackupForAccount('other_file.json', 'alice'), isFalse);
     });
   });
 
