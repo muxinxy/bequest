@@ -24,7 +24,7 @@
 | v0.6.1 | 跨设备/邮件修复批次 | 同设备重复登录不再弹恢复密钥（退出登录可选清除密钥）、SMTP 465 隐式 TLS + 信封裸邮箱 + From/To RFC5322（修 QQ 550）、用户自配 SMTP 失败回退系统、重置验证码优先用户 SMTP、发送验证码 60s 冷却 + 防重复点击、多端密钥不一致解密失败提示重登 | ✅ 完成 |
 | v0.6.2 | 本地模式/应用锁/提示语修复批次 | 本地模式列表可返回登录页、未分类批量移动修复（字符串分组 id）、退出本地模式清应用锁、锁屏跳过按钮（独立 Navigator 导航架构修复）、主密码提示语（标准槽同步 + 锁屏主界面显示 + 本地账户兜底）、应用锁设置页开关 | ✅ 完成 |
 | v0.6.3 | 同步/备份增强批次 | 备份文件名自动生成、恢复弹窗文件列表（PROPFIND/List + 删除）、自动备份调度（间隔/开退应用触发）、备份轮转、同步配置按账户隔离、WebDAV/S3 列文件与删除、测试连接单请求提速、阿里云盘网关兼容（大写 D: 前缀、302 重定向 no-referrer 绕过防盗链）、web 启动白屏修复 | ✅ 完成 |
-| v0.6.4 | S3 修复批次 | S3 对齐 WebDAV（下载/列表走平台请求）、S3 下载 403（CORS preflight,GET 去 Content-Type）、S3 列表 403（SigV4 query 签名修复）、备份文件名用本地账户名称、保存配置合并（WebDAV↔S3 互不覆盖） | ✅ 完成 |
+| v0.6.4 | S3 修复 + FTP/SFTP | FTP/SFTP 同步（桌面/移动端,Web 隐藏）、S3 对齐 WebDAV（下载/列表走平台请求）、S3 下载 403（CORS preflight,GET 去 Content-Type）、S3 列表 403（SigV4 query 签名修复）、备份文件名用本地账户名称、保存配置合并（WebDAV↔S3 互不覆盖） | ✅ 完成 |
 
 ## 当前状态（v0.6.4：S3 修复批次完成）
 
@@ -216,3 +216,4 @@ go run .                    # 浏览器访问 http://localhost:8080
 - 2026-08-13：**v0.6.2**——本地模式入口可返回登录页、未分类批量移动/删除分组 moveTo 改字符串 id（修本地模式误置未分类）、退出本地模式清应用锁、锁屏跳过按钮（全局 appNavigatorKey + LockGate.exitToLogin 修独立 Navigator 导航）、主密码提示语（标准槽同步 + 锁屏主界面显示 + 本地账户兜底）、应用锁设置页开关
 - 2026-08-14：**v0.6.3**——备份文件名自动生成（bequest_用户名_设备名_时间戳）、恢复弹窗文件列表（WebDAV PROPFIND / S3 ListObjectsV2 + 删除）、自动备份调度（12 档间隔 + 开退应用触发 + 最大数量轮转）、同步配置按本地账户隔离、测试连接单请求提速、阿里云盘网关兼容（大写 D: 前缀解析、302 重定向 no-referrer 绕过 OSS 防盗链）、web 启动白屏修复（WidgetsFlutterBinding.ensureInitialized）
 - 2026-08-14：**v0.6.4**——S3 对齐 WebDAV（下载/列表走平台请求,302 跟随 + no-referrer）、S3 下载 403（GET 去 Content-Type 避免 CORS preflight）、S3 列表 403（SigV4 canonical query 独立一行修复）、备份文件名用本地账户名称（currentAccountName）、保存配置合并（WebDAV/S3 字段互不覆盖）
+- 2026-08-15：**v0.6.4**——FTP/SFTP 同步（桌面/移动端,Web 条件导入排除）、S3 修复（CORS preflight 去 Content-Type、SigV4 query 签名）、备份文件名用本地账户名、保存配置合并

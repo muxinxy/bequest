@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:bequest/sync/ftp_sync.dart';
+import 'package:bequest/sync/sftp_sync.dart';
 import 'package:bequest/sync/sync_provider.dart';
 
 void main() {
@@ -331,6 +333,27 @@ void main() {
       expect(syncProviderFromConfig({'type': 'webdav'}), isNull);
       expect(syncProviderFromConfig({'type': 's3', 'bucket': 'b'}), isNull);
       expect(syncProviderFromConfig({'type': 'ftp'}), isNull);
+      // FTP/SFTP(io 平台)。
+      expect(
+        syncProviderFromConfig({
+          'type': 'ftp',
+          'host': 'ftp.example.com',
+          'ftp_user': 'u',
+          'ftp_password': 'p',
+          'ftp_base_path': '/bequest',
+        }),
+        isA<FtpSyncProvider>(),
+      );
+      expect(
+        syncProviderFromConfig({
+          'type': 'sftp',
+          'host': 'sftp.example.com',
+          'port': '22',
+        }),
+        isA<SftpSyncProvider>(),
+      );
+      // FTP/SFTP 缺 host → null。
+      expect(syncProviderFromConfig({'type': 'sftp'}), isNull);
     });
   });
 }

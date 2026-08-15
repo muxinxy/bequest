@@ -9,6 +9,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.7.0"
+  asn1lib:
+    dependency: transitive
+    description:
+      name: asn1lib
+      sha256: "9a8f69025044eb466b9b60ef3bc3ac99b4dc6c158ae9c56d25eeccf5bc56d024"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "1.6.5"
   async:
     dependency: transitive
     description:
@@ -145,6 +153,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "1.1.1"
+  dartssh2:
+    dependency: "direct main"
+    description:
+      name: dartssh2
+      sha256: eba2540c6fb0c8a4553ab13cf23662402337a08bcfeb61d644eea8efdf389162
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "2.14.0"
   fake_async:
     dependency: transitive
     description:
@@ -320,6 +336,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  ftpconnect:
+    dependency: "direct main"
+    description:
+      name: ftpconnect
+      sha256: a9ebac24a50b17dc9a1101fff85c3729fd8c16ec41346b0fa6e549616e23b2f6
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "2.0.10"
   hooks:
     dependency: transitive
     description:
@@ -584,6 +608,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.3.0"
+  pinenacl:
+    dependency: transitive
+    description:
+      name: pinenacl
+      sha256: "57e907beaacbc3c024a098910b6240758e899674de07d6949a67b52fd984cbdf"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "0.6.0"
   platform:
     dependency: transitive
     description:

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
@@ -48,6 +49,13 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   final _s3SecretKey = TextEditingController();
   final _s3Prefix = TextEditingController(text: 'bequest/');
 
+  // FTP/SFTP 共用 host/port/user/pass/base_path。
+  final _ftpHost = TextEditingController();
+  final _ftpPort = TextEditingController();
+  final _ftpUser = TextEditingController();
+  final _ftpPass = TextEditingController();
+  final _ftpBasePath = TextEditingController(text: '/bequest');
+
   /// 最近一次同步的文件名(展示用,不再手动输入)。
   String _lastBackupName = '';
 
@@ -62,6 +70,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     for (final c in [
       _wdUrl, _wdUser, _wdPass, _wdBasePath,
       _s3Endpoint, _s3Bucket, _s3Region, _s3AccessKey, _s3SecretKey, _s3Prefix,
+      _ftpHost, _ftpPort, _ftpUser, _ftpPass, _ftpBasePath,
     ]) {
       c.dispose();
     }
@@ -74,7 +83,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     try {
       final cfg = jsonDecode(raw);
       if (cfg is! Map<String, dynamic>) return;
-      _protocol = cfg['type']?.toString() == 's3' ? 's3' : 'webdav';
+      _protocol = ['webdav', 's3', 'ftp', 'sftp'].contains(cfg['type'])
+          ? cfg['type'].toString()
+          : 'webdav';
       _wdUrl.text = cfg['url']?.toString() ?? '';
       _wdUser.text = cfg['user']?.toString() ?? '';
       _wdPass.text = cfg['password']?.toString() ?? '';
@@ -85,6 +96,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       _s3AccessKey.text = cfg['access_key']?.toString() ?? '';
       _s3SecretKey.text = cfg['secret_key']?.toString() ?? '';
       _s3Prefix.text = cfg['prefix']?.toString() ?? 'bequest/';
+      _ftpHost.text = cfg['host']?.toString() ?? '';
+      _ftpPort.text = cfg['port']?.toString() ?? (_protocol == 'sftp' ? '22' : '21');
+      _ftpUser.text = cfg['ftp_user']?.toString() ?? '';
+      _ftpPass.text = cfg['ftp_password']?.toString() ?? '';
+      _ftpBasePath.text = cfg['ftp_base_path']?.toString() ?? '/bequest';
       _lastBackupName = cfg['restore_name']?.toString() ?? '';
       _autoBackupInterval = AutoBackupScheduler.intervalKeyOf(cfg);
       _autoBackupMax = AutoBackupScheduler.maxCountOf(cfg);
@@ -112,6 +128,17 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         'access_key': _s3AccessKey.text.trim(),
         'secret_key': _s3SecretKey.text.trim(),
         'prefix': _s3Prefix.text.trim(),
+      };
+    }
+    if (_protocol == 'ftp' || _protocol == 'sftp') {
+      return {
+        ...base,
+        'type': _protocol,
+        'host': _ftpHost.text.trim(),
+        'port': _ftpPort.text.trim(),
+        'ftp_user': _ftpUser.text.trim(),
+        'ftp_password': _ftpPass.text,
+        'ftp_base_path': _ftpBasePath.text.trim(),
       };
     }
     return {
@@ -430,23 +457,46 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                       selected: _protocol == 's3',
                       onSelected: (_) => setState(() => _protocol = 's3'),
                     ),
-                    const ChoiceChip(label: Text('FTP(即将支持)'), selected: false, onSelected: null),
-                    const ChoiceChip(label: Text('SFTP(即将支持)'), selected: false, onSelected: null),
+                    if (!kIsWeb) ...[
+                      ChoiceChip(
+                        label: const Text('FTP'),
+                        selected: _protocol == 'ftp',
+                        onSelected: (_) => setState(() => _protocol = 'ftp'),
+                      ),
+                      ChoiceChip(
+                        label: const Text('SFTP'),
+                        selected: _protocol == 'sftp',
+                        onSelected: (_) => setState(() => _protocol = 'sftp'),
+                      ),
+                    ],
                   ],
                 ),
+                if (kIsWeb) ...[
+                  const SizedBox(height: 4),
+                  const Text(
+                    'FTP/SFTP 为 socket 协议,仅桌面/移动端支持;Web 端仅可用 WebDAV/S3。',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 if (_protocol == 'webdav') ...[
                   _field(_wdUrl, '服务器地址', hint: 'https://dav.example.com/'),
                   _field(_wdUser, '用户名'),
                   _field(_wdPass, '密码', obscure: true),
                   _field(_wdBasePath, '基础路径', hint: '/bequest'),
-                ] else ...[
+                ] else if (_protocol == 's3') ...[
                   _field(_s3Endpoint, '端点', hint: 'https://s3.amazonaws.com'),
                   _field(_s3Bucket, 'Bucket'),
                   _field(_s3Region, 'Region'),
                   _field(_s3AccessKey, 'Access Key'),
                   _field(_s3SecretKey, 'Secret Key', obscure: true),
                   _field(_s3Prefix, '前缀', hint: 'bequest/'),
+                ] else ...[
+                  _field(_ftpHost, '服务器地址', hint: 'ftp.example.com'),
+                  _field(_ftpPort, '端口', hint: _protocol == 'sftp' ? '22' : '21'),
+                  _field(_ftpUser, '用户名'),
+                  _field(_ftpPass, '密码', obscure: true),
+                  _field(_ftpBasePath, '基础路径', hint: '/bequest'),
                 ],
                 const SizedBox(height: 8),
                 if (_lastBackupName.isNotEmpty)

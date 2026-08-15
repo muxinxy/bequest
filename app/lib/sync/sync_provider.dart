@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 
 import '../platform/no_referrer_fetch_io.dart'
     if (dart.library.js_interop) '../platform/no_referrer_fetch_web.dart';
+import 'sync_provider_platform_io.dart'
+    if (dart.library.js_interop) 'sync_provider_platform_web.dart';
 
 /// 解析 HTTP 日期:优先 RFC 1123(Wed, 12 Aug 2026 10:00:00 GMT),
 /// 也兼容 ISO 8601 与 RFC 850;解析失败返回 null。
@@ -75,44 +77,10 @@ abstract class SyncProvider {
 }
 
 /// 根据本地配置构建同步提供方;未知类型或缺字段返回 null。
-SyncProvider? syncProviderFromConfig(Map<String, dynamic> cfg) {
-  final type = cfg['type']?.toString();
-  if (type == 'webdav') {
-    final url = cfg['url']?.toString();
-    if (url == null || url.isEmpty) return null;
-    return WebDavSyncProvider(
-      url: url,
-      user: cfg['user']?.toString() ?? '',
-      password: cfg['password']?.toString() ?? '',
-      basePath: cfg['base_path']?.toString() ?? '/bequest',
-    );
-  }
-  if (type == 's3') {
-    final endpoint = cfg['endpoint']?.toString();
-    final bucket = cfg['bucket']?.toString();
-    final accessKey = cfg['access_key']?.toString();
-    final secretKey = cfg['secret_key']?.toString();
-    if (endpoint == null ||
-        endpoint.isEmpty ||
-        bucket == null ||
-        bucket.isEmpty ||
-        accessKey == null ||
-        accessKey.isEmpty ||
-        secretKey == null ||
-        secretKey.isEmpty) {
-      return null;
-    }
-    return S3SyncProvider(
-      endpoint: endpoint,
-      bucket: bucket,
-      region: cfg['region']?.toString() ?? 'us-east-1',
-      accessKey: accessKey,
-      secretKey: secretKey,
-      prefix: cfg['prefix']?.toString() ?? 'bequest/',
-    );
-  }
-  return null;
-}
+/// FTP/SFTP 为 socket 协议,仅桌面/移动端支持——由平台分支处理
+/// (web 端返回 null,UI 提示不可用)。
+SyncProvider? syncProviderFromConfig(Map<String, dynamic> cfg) =>
+    platformSyncProviderFromConfig(cfg);
 
 /// WebDAV 提供方。用基础 HTTP 动词实现:PUT 上传、GET 下载,
 /// Basic 认证;PROPFIND/目录创建非必需(单文件写入已配置的基础路径)。

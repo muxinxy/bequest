@@ -46,6 +46,8 @@ dependencies:
   url_launcher: ^6.3.2
   dargon2_flutter: ^3.3.0
   web: ^1.1.1
+  dartssh2: ^2.14.0
+  ftpconnect: ^2.0.10
 
 dev_dependencies:
   flutter_test:
