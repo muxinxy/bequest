@@ -16,7 +16,7 @@ class AboutPage extends StatefulWidget {
 }
 
 class _AboutPageState extends State<AboutPage> {
-  static const String _productVersion = 'v0.6.4';
+  static const String _productVersion = 'v0.6.6';
   // ponytail: package_info_plus 读不到时回退到 pubspec 的 version 字段(模板默认值)。
   static const String _fallbackBuildVersion = '1.0.0+1';
   static const String _packageName = 'com.bequest.bequest';

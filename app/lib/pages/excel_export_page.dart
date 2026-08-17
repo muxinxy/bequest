@@ -11,29 +11,21 @@ import '../models/export_format.dart';
 import '../platform/file_share.dart';
 import '../repository/asset_repository.dart';
 import '../storage/secure_store.dart';
+import 'excel_export.dart';
 
-/// 导出页:验证主密码后经仓储拉取资产详情、解密并构建 JSON,分享/下载。
-/// 全程客户端解密,云端只见密文;本地模式同样适用(读本地加密库)。
-/// [encrypt] 为 true 时导出文件用主密码 AES 加密(.beq),导入时需主密码解密。
-class ExportPage extends StatefulWidget {
-  const ExportPage({
-    super.key,
-    required this.assets,
-    required this.repository,
-    this.encrypt = false,
-  });
+/// Excel 导出页(会员权益):验证主密码后解密资产,生成 .xlsx 分享。
+class ExcelExportPage extends StatefulWidget {
+  const ExcelExportPage({super.key, required this.assets, required this.repository});
 
   final List<Asset> assets;
   final AssetRepository repository;
-  final bool encrypt;
 
   @override
-  State<ExportPage> createState() => _ExportPageState();
+  State<ExcelExportPage> createState() => _ExcelExportPageState();
 }
 
-class _ExportPageState extends State<ExportPage> {
+class _ExcelExportPageState extends State<ExcelExportPage> {
   final _store = SecureStore();
-
   String _status = '准备导出...';
 
   @override
@@ -48,7 +40,6 @@ class _ExportPageState extends State<ExportPage> {
       _finish();
       return;
     }
-    // 失败限流:连续 5 次错误 → 锁定 60 秒,防暴力尝试。
     if (!mounted) return;
     final guard = AttemptGuard(store: _store, prefix: 'master');
     if (!await guardedVerifyMasterPassword(context, guard, password)) {
@@ -62,24 +53,25 @@ class _ExportPageState extends State<ExportPage> {
         _finish();
         return;
       }
-      setState(() => _status = '正在导出资产...');
+      setState(() => _status = '正在生成 Excel...');
       final items = await _collectItems(masterKey);
-      final exportJson = buildExportJson(items, DateTime.now());
+      final bytes = buildExcelBytes(items);
       final now = DateTime.now();
-      final stamp = '${now.year}${_pad(now.month)}${_pad(now.day)}'
-          '_${_pad(now.hour)}${_pad(now.minute)}${_pad(now.second)}';
-      // 加密导出:用主密码 AES-256-GCM 加密整个 JSON,导入时需主密码解密。
-      final content = widget.encrypt
-          ? encryptSensitiveData(jsonEncode(exportJson), masterKey)
-          : jsonEncode(exportJson);
-      final fileName = 'bequest_export_$stamp${widget.encrypt ? '.beq' : '.json'}';
-      final ok = await shareTextFile(fileName, content, '托孤资产导出');
+      String pad(int n) => n.toString().padLeft(2, '0');
+      final stamp = '${now.year}${pad(now.month)}${pad(now.day)}'
+          '_${pad(now.hour)}${pad(now.minute)}${pad(now.second)}';
+      final ok = await shareBytesFile(
+        'bequest_export_$stamp.xlsx',
+        bytes,
+        '托孤资产导出(Excel)',
+      );
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(ok ? '导出成功' : '导出失败,请检查网络后重试')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? '导出成功' : '导出失败,请检查网络后重试')),
+      );
       _finish();
     } catch (e) {
-      Logger.instance.e('export failed: $e');
+      Logger.instance.e('excel export failed: $e');
       _showError('导出失败,请检查网络后重试');
       _finish();
     }
@@ -97,13 +89,23 @@ class _ExportPageState extends State<ExportPage> {
       String credentials = '';
       String notes = '';
       int? advanceDays;
+      // 继承人名称列表(云端;本地模式无继承返回空)。
+      var inheritors = <String>[];
+      try {
+        final binds = await widget.repository.listAssetInheritors(asset.id);
+        inheritors = [
+          for (final b in binds)
+            if (b['inheritor_name'] != null) b['inheritor_name'].toString(),
+        ];
+      } catch (_) {
+        inheritors = [];
+      }
       final encrypted = full['encrypted_data']?.toString() ?? '';
       if (encrypted.isNotEmpty) {
         try {
           final payload = jsonDecode(decryptAssetData(encrypted, masterKey,
               assetKeyWrappedMk: full['asset_key_wrapped_mk']?.toString()));
           if (payload is Map<String, dynamic>) {
-            // 凭据:键值对数组 → "键: 值" 多行文本;旧版纯字符串原样。
             final raw = payload['credentials'];
             if (raw is List) {
               final lines = <String>[];
@@ -122,12 +124,10 @@ class _ExportPageState extends State<ExportPage> {
             advanceDays = (payload['advance_days'] as num?)?.toInt();
           }
         } catch (_) {
-          // 单条解密失败(密钥不匹配/被篡改):以空凭据导出,不阻断整体。
+          // 单条解密失败:以空凭据导出,不阻断整体。
         }
       }
-      final name = asset.categoryId == null
-          ? null
-          : categoryNames[asset.categoryId];
+      final name = asset.categoryId == null ? null : categoryNames[asset.categoryId];
       items.add(ExportItem(
         name: asset.name,
         assetType: asset.assetType,
@@ -136,12 +136,11 @@ class _ExportPageState extends State<ExportPage> {
         credentials: credentials,
         notes: notes,
         advanceDays: advanceDays,
+        inheritors: inheritors,
       ));
     }
     return items;
   }
-
-  static String _pad(int value) => value.toString().padLeft(2, '0');
 
   void _showError(String message) {
     if (!mounted) return;
@@ -155,7 +154,7 @@ class _ExportPageState extends State<ExportPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('导出资产')),
+      appBar: AppBar(title: const Text('导出 Excel')),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

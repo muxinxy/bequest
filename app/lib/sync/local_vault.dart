@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import '../crypto/asset_crypto.dart';
 import '../platform/string_store.dart';
 import '../platform/string_store_io.dart'
@@ -16,6 +18,13 @@ import '../storage/secure_store.dart';
 /// - 本地库对象(saveLocalData/loadLocalData):{"schema":1,"salt":...,"assets":[...],"categories":[...]}。
 class LocalVault {
   LocalVault({this.directory});
+
+  /// 离线缓存大小上限(字节,密文计)。超过则拒绝写入——
+  /// 防止离线缓存无限膨胀,仅保留"可离线查看/导出"所需。
+  /// 移动端 50 MB(存储充足,离线场景多);Web 5 MB(localStorage 上限)。
+  static int get maxCacheBytes => kIsWeb
+      ? 5 * 1024 * 1024   // Web: 5 MB (浏览器 localStorage 通常 5-10 MB)
+      : 50 * 1024 * 1024; // 移动端/桌面: 50 MB
 
   /// 测试可注入临时目录;默认使用应用文档目录。
   final String? directory;
@@ -40,6 +49,16 @@ class LocalVault {
     return _cached!;
   }
 
+  /// 加密快照;超限返回 null(不写入)。
+  /// 先按明文长度预判(base64 密文 ≈ 明文 × 4/3 + 开销,明文超限必超限),
+  /// 避免对大缓存做无谓加密。
+  Future<String?> _encryptBounded(String plain, String masterKeyB64) async {
+    if (plain.length > maxCacheBytes) return null;
+    final blob = encryptSensitiveData(plain, masterKeyB64);
+    if (blob.length > maxCacheBytes) return null;
+    return blob;
+  }
+
   /// 读取并解密快照原文;存储缺失/密钥错误/数据被篡改均返回 null。
   Future<String?> _readDecrypted(String masterKeyB64) async {
     try {
@@ -55,8 +74,11 @@ class LocalVault {
   Future<String?> loadVault(String masterKeyB64) => _readDecrypted(masterKeyB64);
 
   /// 加密并写入快照。注意:会覆盖本地库对象,两者互斥。
+  /// 超限时不写入(静默跳过,离线缓存有界)。
   Future<void> saveVault(String backupJson, String masterKeyB64) async {
-    await (await _store()).write(encryptSensitiveData(backupJson, masterKeyB64));
+    final blob = await _encryptBounded(backupJson, masterKeyB64);
+    if (blob == null) return;
+    await (await _store()).write(blob);
   }
 
   /// 读取本地库对象(解密 + JSON 解码)。无存储/密钥错误 → null。
@@ -82,15 +104,16 @@ class LocalVault {
   }
 
   /// 将本地库对象编码、加密并写入。可选 [salt] 供跨设备恢复主密钥派生。
+  /// 超限时不写入(静默跳过,离线缓存有界)。
   Future<void> saveLocalData(
     Map<String, dynamic> data,
     String masterKeyB64, {
     String? salt,
   }) async {
     if (salt != null) data['salt'] = salt;
-    await (await _store()).write(
-      encryptSensitiveData(jsonEncode(data), masterKeyB64),
-    );
+    final blob = await _encryptBounded(jsonEncode(data), masterKeyB64);
+    if (blob == null) return;
+    await (await _store()).write(blob);
   }
 
   /// 从本地库对象读取 salt(跨设备恢复用);旧版备份串/无 salt → null。

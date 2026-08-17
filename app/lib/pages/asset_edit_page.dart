@@ -32,8 +32,12 @@ class _AssetEditPageState extends State<AssetEditPage> {
   final _store = SecureStore();
 
   final _nameController = TextEditingController();
-  final _credentialsController = TextEditingController();
   final _notesController = TextEditingController();
+
+  /// 凭据键值对:每项 [key, value] 控制器,可增删。
+  final List<({TextEditingController key, TextEditingController value})>
+      _credentialFields = [];
+  static const _credentialSuggestions = ['账号', '密码', '邮箱', '密钥', '恢复码', '验证码'];
 
   List<Category> _categories = const [];
 
@@ -64,7 +68,10 @@ class _AssetEditPageState extends State<AssetEditPage> {
   @override
   void dispose() {
     _nameController.dispose();
-    _credentialsController.dispose();
+    for (final f in _credentialFields) {
+      f.key.dispose();
+      f.value.dispose();
+    }
     _notesController.dispose();
     super.dispose();
   }
@@ -77,7 +84,6 @@ class _AssetEditPageState extends State<AssetEditPage> {
       if (_isEdit) {
         final full = await widget.repository.getAsset(widget.asset!.id);
         final asset = Asset.fromJson(full);
-        String? credentials;
         String? notes;
         final encrypted = asset.encryptedData;
         _assetKeyWrappedMk = full['asset_key_wrapped_mk']?.toString();
@@ -95,9 +101,29 @@ class _AssetEditPageState extends State<AssetEditPage> {
               final payload =
                   jsonDecode(decryptSensitiveData(encrypted, key));
               if (payload is Map<String, dynamic>) {
-                credentials = payload['credentials']?.toString();
                 notes = payload['notes']?.toString();
                 _advanceDays = (payload['advance_days'] as num?)?.toInt();
+                // 凭据:新版为键值对数组 [{key,value}],旧版为纯字符串
+                // (当作单行"凭据"键值对,渐进兼容)。
+                final rawCred = payload['credentials'];
+                if (rawCred is List) {
+                  for (final item in rawCred) {
+                    if (item is Map) {
+                      _credentialFields.add((
+                        key: TextEditingController(text: item['key']?.toString() ?? ''),
+                        value: TextEditingController(text: item['value']?.toString() ?? ''),
+                      ));
+                    }
+                  }
+                } else {
+                  final s = rawCred?.toString() ?? '';
+                  if (s.isNotEmpty) {
+                    _credentialFields.add((
+                      key: TextEditingController(text: '凭据'),
+                      value: TextEditingController(text: s),
+                    ));
+                  }
+                }
               }
             }
           } catch (_) {
@@ -111,7 +137,6 @@ class _AssetEditPageState extends State<AssetEditPage> {
               ? (asset.categoryId ?? '')
               : '';
           _nameController.text = asset.name;
-          _credentialsController.text = credentials ?? '';
           _notesController.text = notes ?? '';
           _categories = categories;
           _loading = false;
@@ -263,9 +288,16 @@ class _AssetEditPageState extends State<AssetEditPage> {
         throw ApiException('未找到主密钥,请重新登录或进入本地模式');
       }
       final payload = <String, dynamic>{
-        'credentials': _credentialsController.text.trim(),
+        // 凭据键值对:非空对组成数组;空列表(全新)不写 credentials 字段。
+        'credentials': [
+          for (final f in _credentialFields)
+            if (f.key.text.trim().isNotEmpty || f.value.text.trim().isNotEmpty)
+              {'key': f.key.text.trim(), 'value': f.value.text.trim()},
+        ],
         'notes': _notesController.text.trim(),
       };
+      // 没有任何键值对时省略 credentials(与旧数据空凭据一致)。
+      if ((payload['credentials'] as List).isEmpty) payload.remove('credentials');
       // ponytail: 后端资产接口暂无 reminder_settings 字段,
       // 提前天数先随加密载荷往返,待 API 支持后再挪到独立字段。
       if (_advanceDays != null) payload['advance_days'] = _advanceDays;
@@ -322,6 +354,79 @@ class _AssetEditPageState extends State<AssetEditPage> {
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _addCredentialField() {
+    setState(() {
+      _credentialFields.add((
+        key: TextEditingController(),
+        value: TextEditingController(),
+      ));
+    });
+  }
+
+  void _removeCredentialField(int index) {
+    final f = _credentialFields.removeAt(index);
+    f.key.dispose();
+    f.value.dispose();
+    setState(() {});
+  }
+
+  /// 单行键值对:键(带常用提示)+ 值 + 删除按钮。
+  Widget _credentialRow(int index) {
+    final f = _credentialFields[index];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 110,
+            child: Autocomplete<String>(
+              initialValue: TextEditingValue(text: f.key.text),
+              optionsBuilder: (TextEditingValue editing) {
+                if (editing.text.isEmpty) return const Iterable<String>.empty();
+                return _credentialSuggestions.where(
+                  (s) => s.contains(editing.text) || editing.text.contains(s),
+                );
+              },
+              onSelected: (s) => f.key.text = s,
+              fieldViewBuilder: (context, controller, focusNode, onSubmit) {
+                // Autocomplete 用内部 controller 同步外部值。
+                controller.text = f.key.text;
+                controller.selection =
+                    TextSelection.collapsed(offset: controller.text.length);
+                return TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  onChanged: (v) => f.key.text = v,
+                  decoration: const InputDecoration(
+                    labelText: '键',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: f.value,
+              decoration: const InputDecoration(
+                labelText: '值',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: '删除',
+            icon: const Icon(Icons.remove_circle_outline),
+            onPressed: () => _removeCredentialField(index),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -386,15 +491,31 @@ class _AssetEditPageState extends State<AssetEditPage> {
                           setState(() => _categoryValue = value ?? ''),
                     ),
                     const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _credentialsController,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: '凭据',
-                        hintText: '账号、密码、密钥等,加密保存',
-                        border: OutlineInputBorder(),
-                      ),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '凭据(键值对)',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: _addCredentialField,
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('添加'),
+                        ),
+                      ],
                     ),
+                    for (var i = 0; i < _credentialFields.length; i++)
+                      _credentialRow(i),
+                    if (_credentialFields.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          '添加账号、密码、恢复码等(可选)',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ),
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _notesController,

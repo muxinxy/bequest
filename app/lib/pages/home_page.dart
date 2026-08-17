@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
@@ -9,6 +10,7 @@ import '../models/category.dart';
 import '../models/entitlements.dart';
 import '../models/reminder.dart';
 import '../repository/asset_repository.dart';
+import '../repository/offline_asset_repository.dart';
 import '../repository/repository_factory.dart';
 import '../storage/secure_store.dart';
 import '../sync/backup.dart';
@@ -44,6 +46,15 @@ class _HomePageState extends State<HomePage> {
   bool _isLocal = false;
   bool _hasJwt = false;
 
+  /// 离线模式:服务器不可达时加载本地缓存(仅可查看/导出)。
+  bool _offlineMode = false;
+
+  /// 检测网络恢复的定时器:离线加载后启动,网络恢复时自动静默刷新。
+  Timer? _offlineRecoveryTimer;
+
+  /// 离线模式手动刷新中的 loading 状态。
+  bool _refreshing = false;
+
   /// 云端 tier(free/member),来自 GET /api/v1/me;本地模式为 null(访客权益)。
   String? _tier;
 
@@ -62,15 +73,17 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _offlineRecoveryTimer?.cancel();
     super.dispose();
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
     var isLocal = false;
+    String? mk;
     try {
       final jwt = await _store.readJwt();
-      final mk = await _store.readMasterKey();
+      mk = await _store.readMasterKey();
       final mode = await _store.readStorageMode();
       isLocal = mode == 'local';
       if (isLocal) {
@@ -126,6 +139,15 @@ class _HomePageState extends State<HomePage> {
         await _logout();
         return;
       }
+      // 云端网络失败(非认证):尝试离线缓存,服务器恢复前可查看/导出。
+      if (!isLocal && await _loadFromOfflineCache(mk ?? '')) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('服务器连接失败,已加载本地缓存(仅可查看/导出)')),
+        );
+        return;
+      }
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(
@@ -134,6 +156,15 @@ class _HomePageState extends State<HomePage> {
       if (mounted) setState(() => _loading = false);
     } catch (_) {
       if (!mounted) return;
+      // 云端网络异常:尝试离线缓存。
+      if (!isLocal && await _loadFromOfflineCache(mk ?? '')) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('服务器连接失败,已加载本地缓存(仅可查看/导出)')),
+        );
+        return;
+      }
       // 本地模式读取加密库失败与网络无关,提示语要准确。
       ScaffoldMessenger.of(
         context,
@@ -142,6 +173,89 @@ class _HomePageState extends State<HomePage> {
       ));
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// 云端不可用时从本地缓存快照恢复资产/分类(仅离线查看/导出)。
+  /// 返回是否成功加载到缓存。
+  Future<bool> _loadFromOfflineCache(String masterKeyB64) async {
+    try {
+      final repo = OfflineAssetRepository(masterKeyB64: masterKeyB64);
+      // 有缓存数据(非空资产或分类)才视为可用。
+      final assets = (await repo.listAssets()).map(Asset.fromJson).toList();
+      final categories =
+          (await repo.listCategories()).map(Category.fromJson).toList();
+      if (assets.isEmpty && categories.isEmpty) return false;
+      if (!mounted) return false;
+      setState(() {
+        _repo = repo;
+        _categories = categories;
+        _categoryNames = {for (final c in categories) c.id: c.name};
+        _assets = assets;
+        _unreadReminders = 0;
+        _isLocal = false;
+        _hasJwt = false;
+        _offlineMode = true;
+        _loading = false;
+      });
+      // 启动网络恢复检测:10s 周期,恢复后自动静默刷新。
+      _startOfflineRecoveryCheck();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 离线加载成功后启动后台恢复检测:每 10s 检查服务器是否可达,
+  /// 可达则静默重新加载最新数据并提示用户。
+  void _startOfflineRecoveryCheck() {
+    _offlineRecoveryTimer?.cancel();
+    _offlineRecoveryTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) async {
+        if (!mounted || !_offlineMode) {
+          _offlineRecoveryTimer?.cancel();
+          return;
+        }
+        try {
+          // 快速探测服务器可达性(3s 超时)。
+          final api = await ApiConfig.client();
+          final jwt = await _store.readJwt();
+          if (jwt == null || jwt.isEmpty) return;
+          await api.me(jwt).timeout(const Duration(seconds: 3));
+          // 服务器恢复:静默刷新数据。
+          if (!mounted) return;
+          _offlineRecoveryTimer?.cancel();
+          _offlineMode = false;
+          _refreshLocalVault(jwt, api);
+          // 重新加载完整数据(云端仓库)。
+          final repo = await RepositoryFactory.resolve(
+            jwt: jwt,
+            masterKeyB64: await _store.readMasterKey() ?? '',
+          );
+          if (!mounted) return;
+          _repo = repo;
+          final categories = (await repo.listCategories())
+              .map(Category.fromJson)
+              .toList(growable: false);
+          final assets = (await repo.listAssets())
+              .map(Asset.fromJson)
+              .toList(growable: false);
+          setState(() {
+            _categories = categories;
+            _categoryNames = {for (final c in _categories) c.id: c.name};
+            _assets = assets;
+            _loading = false;
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('服务器已恢复,数据已更新为最新')),
+            );
+          }
+        } catch (_) {
+          // 服务器仍不可达,继续等待。
+        }
+      },
+    );
   }
 
   /// 后台刷新本地加密快照(登录后数据加载成功时调用),失败不影响主页。
@@ -155,6 +269,62 @@ class _HomePageState extends State<HomePage> {
         // 本地快照刷新失败可忽略,下次加载再试。
       }
     }());
+  }
+
+  /// 手动刷新:离线模式下用户点击"刷新"按钮,尝试重新加载云端最新数据。
+  Future<void> _attemptRefreshFromOffline() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    _offlineMode = false;
+    try {
+      final jwt = await _store.readJwt();
+      if (jwt == null) {
+        _offlineMode = true;
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('未登录,无法刷新')),
+        );
+        return;
+      }
+      final mk = await _store.readMasterKey() ?? '';
+      final repo = await RepositoryFactory.resolve(jwt: jwt, masterKeyB64: mk);
+      final api = await ApiConfig.client();
+      final me = await api.me(jwt);
+      final tier =
+          (me['user'] as Map<String, dynamic>?)?['tier'] as String?;
+      final reminders = await api.listReminders(jwt);
+      final unread = reminders
+          .map(Reminder.fromJson)
+          .where((r) => r.isUnread)
+          .length;
+      final categories = (await repo.listCategories())
+          .map(Category.fromJson)
+          .toList(growable: false);
+      final assets = (await repo.listAssets())
+          .map(Asset.fromJson)
+          .toList(growable: false);
+      _refreshLocalVault(jwt, api);
+      if (!mounted) return;
+      setState(() {
+        _categories = categories;
+        _categoryNames = {for (final c in categories) c.id: c.name};
+        _assets = assets;
+        _unreadReminders = unread;
+        _tier = tier;
+        _offlineMode = false;
+        _refreshing = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('数据已刷新为最新')),
+      );
+    } catch (_) {
+      _offlineMode = true;
+      if (!mounted) return;
+      setState(() => _refreshing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('刷新失败,服务器仍不可达')),
+      );
+    }
   }
 
   /// 退出登录:询问是否一并清除本机加密密钥。
@@ -246,6 +416,13 @@ class _HomePageState extends State<HomePage> {
   Future<void> _openEditor([Asset? asset]) async {
     final repo = _repo;
     if (repo == null) return;
+    if (_offlineMode) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('离线模式仅可查看与导出,无法修改资产')),
+      );
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => AssetEditPage(asset: asset, repository: repo, tier: _tier),
@@ -321,15 +498,40 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        tooltip: '添加资产',
-        onPressed: () => _openEditor(),
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: _offlineMode
+          ? null // 离线只读:不提供添加入口。
+          : FloatingActionButton(
+              tooltip: '添加资产',
+              onPressed: () => _openEditor(),
+              child: const Icon(Icons.add),
+            ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                if (_offlineMode)
+                  Container(
+                    width: double.infinity,
+                    color: Colors.orange.shade50,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '离线模式:服务器不可达,已加载本地缓存,仅可查看与导出',
+                            style: TextStyle(fontSize: 12, color: Colors.orange),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => _attemptRefreshFromOffline(),
+                          child: const Text('刷新'),
+                        ),
+                      ],
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: Row(

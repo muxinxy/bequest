@@ -42,4 +42,28 @@ void main() {
     await vault.clearVault();
     expect(await vault.loadVault(key), isNull);
   });
+
+  test('超过大小上限:不写入(离线缓存有界)', () async {
+    // 明文略超上限(加密后必超限)→ 预判跳过,不加密。
+    final big = '{"data":"${'x' * (LocalVault.maxCacheBytes + 100)}"}';
+    await vault.saveVault(big, key);
+    // 超限未写入 → 读取为 null。
+    expect(await vault.loadVault(key), isNull);
+
+    // saveLocalData 同样受限制。
+    await vault.saveLocalData(
+      {
+        'schema': 1,
+        'assets': [{'blob': 'x' * (LocalVault.maxCacheBytes + 100)}],
+      },
+      key,
+    );
+    expect(await vault.loadLocalData(key), isNull);
+  });
+
+  test('大小上限内正常写入', () async {
+    final small = '{"data":"ok"}';
+    await vault.saveVault(small, key);
+    expect(await vault.loadVault(key), small);
+  });
 }

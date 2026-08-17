@@ -73,45 +73,49 @@ class SftpSyncProvider implements SyncProvider {
 
   @override
   Future<void> upload(String remotePath, String data) async {
-    final (ssh, sftp) = await _connect();
-    try {
-      await _ensureBasePath(sftp);
-      final file = await sftp.open(
-        _fullPath(remotePath),
-        mode: SftpFileOpenMode.write | SftpFileOpenMode.create | SftpFileOpenMode.truncate,
-      );
+    await withRetry(() async {
+      final (ssh, sftp) = await _connect();
       try {
-        final bytes = utf8.encode(data);
-        await file.writeBytes(bytes).timeout(Duration(seconds: timeoutSeconds));
-        await file.close();
-      } catch (_) {
-        try { await file.close(); } catch (_) {}
-        rethrow;
+        await _ensureBasePath(sftp);
+        final file = await sftp.open(
+          _fullPath(remotePath),
+          mode: SftpFileOpenMode.write | SftpFileOpenMode.create | SftpFileOpenMode.truncate,
+        );
+        try {
+          final bytes = utf8.encode(data);
+          await file.writeBytes(bytes).timeout(Duration(seconds: timeoutSeconds));
+          await file.close();
+        } catch (_) {
+          try { await file.close(); } catch (_) {}
+          rethrow;
+        }
+      } finally {
+        ssh.close();
       }
-    } finally {
-      ssh.close();
-    }
+    });
   }
 
   @override
   Future<String> download(String remotePath) async {
-    final (ssh, sftp) = await _connect();
-    try {
-      await _ensureBasePath(sftp);
-      final file = await sftp.open(_fullPath(remotePath));
+    return withRetry(() async {
+      final (ssh, sftp) = await _connect();
       try {
-        final bytes = await file.readBytes().timeout(
-              Duration(seconds: timeoutSeconds),
-            );
-        await file.close();
-        return utf8.decode(bytes);
-      } catch (_) {
-        try { await file.close(); } catch (_) {}
-        rethrow;
+        await _ensureBasePath(sftp);
+        final file = await sftp.open(_fullPath(remotePath));
+        try {
+          final bytes = await file.readBytes().timeout(
+                Duration(seconds: timeoutSeconds),
+              );
+          await file.close();
+          return utf8.decode(bytes);
+        } catch (_) {
+          try { await file.close(); } catch (_) {}
+          rethrow;
+        }
+      } finally {
+        ssh.close();
       }
-    } finally {
-      ssh.close();
-    }
+    });
   }
 
   @override
@@ -129,43 +133,47 @@ class SftpSyncProvider implements SyncProvider {
 
   @override
   Future<List<BackupFileInfo>> listFiles() async {
-    final (ssh, sftp) = await _connect();
-    try {
-      await _ensureBasePath(sftp);
-      final path = basePath.replaceAll(RegExp(r'^/+|/+$'), '');
-      final dir = path.isEmpty ? '/' : '/$path';
-      final entries = await sftp.listdir(dir);
-      final files = entries
-          .where((e) => !e.longname.startsWith('d')) // 目录排除
-          .map((e) => BackupFileInfo(
-                name: e.filename,
-                size: e.attr.size ?? 0,
-                modified: e.attr.modifyTime == null
-                    ? null
-                    : DateTime.fromMillisecondsSinceEpoch(
-                        e.attr.modifyTime! * 1000,
-                      ),
-              ))
-          .toList()
-        ..sort((a, b) {
-          final am = a.modified ?? DateTime(1970);
-          final bm = b.modified ?? DateTime(1970);
-          return bm.compareTo(am);
-        });
-      return files;
-    } finally {
-      ssh.close();
-    }
+    return withRetry(() async {
+      final (ssh, sftp) = await _connect();
+      try {
+        await _ensureBasePath(sftp);
+        final path = basePath.replaceAll(RegExp(r'^/+|/+$'), '');
+        final dir = path.isEmpty ? '/' : '/$path';
+        final entries = await sftp.listdir(dir);
+        final files = entries
+            .where((e) => !e.longname.startsWith('d')) // 目录排除
+            .map((e) => BackupFileInfo(
+                  name: e.filename,
+                  size: e.attr.size ?? 0,
+                  modified: e.attr.modifyTime == null
+                      ? null
+                      : DateTime.fromMillisecondsSinceEpoch(
+                          e.attr.modifyTime! * 1000,
+                        ),
+                ))
+            .toList()
+          ..sort((a, b) {
+            final am = a.modified ?? DateTime(1970);
+            final bm = b.modified ?? DateTime(1970);
+            return bm.compareTo(am);
+          });
+        return files;
+      } finally {
+        ssh.close();
+      }
+    });
   }
 
   @override
   Future<void> delete(String remotePath) async {
-    final (ssh, sftp) = await _connect();
-    try {
-      await _ensureBasePath(sftp);
-      await sftp.remove(_fullPath(remotePath));
-    } finally {
-      ssh.close();
-    }
+    await withRetry(() async {
+      final (ssh, sftp) = await _connect();
+      try {
+        await _ensureBasePath(sftp);
+        await sftp.remove(_fullPath(remotePath));
+      } finally {
+        ssh.close();
+      }
+    });
   }
 }

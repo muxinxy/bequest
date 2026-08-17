@@ -45,7 +45,7 @@ Future<({bool ok, String? error, String? newMk})> resetMasterPassword({
       try {
         final full = await api.getAsset(jwt, id);
         final assetKey = generateAssetKey();
-        final emptyPayload = jsonEncode({'credentials': '', 'notes': ''});
+        final emptyPayload = jsonEncode({'notes': ''});
         await api.updateAsset(jwt, id, {
           'name': full['name']?.toString() ?? '',
           'asset_type': full['asset_type']?.toString() ?? 'physical',

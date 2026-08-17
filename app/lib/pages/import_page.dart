@@ -161,8 +161,15 @@ class _ImportPageState extends State<ImportPage> {
       throw const FormatException('缺少名称或类型');
     }
     final categoryId = await _resolveCategoryId(item, categoryNames);
+    // 导入的凭据:键值对数组或纯字符串(纯字符串 → 单行"凭据"键值对)。
+    final rawCred = item['credentials'];
     final payload = <String, dynamic>{
-      'credentials': item['credentials']?.toString() ?? '',
+      if (rawCred is List)
+        'credentials': rawCred
+      else if (rawCred != null && rawCred.toString().isNotEmpty)
+        'credentials': [
+          {'key': '凭据', 'value': rawCred.toString()},
+        ],
       'notes': item['notes']?.toString() ?? '',
     };
     final advanceDays = (item['advance_days'] as num?)?.toInt();

@@ -8,13 +8,13 @@ import (
 )
 
 // ---------- 按 IP 频率限制(内存滑动窗口) ----------
-// 登录/注册/继承领取/2FA:5 次/分钟/IP;其他 API:120 次/分钟/IP。
+// 登录/注册/继承领取/2FA:5 次/分钟/IP;其他 API:300 次/分钟/IP。
 // 单机内存计数;多实例部署需换共享存储(本项目单二进制,足够)。
 
 type rateWindow struct {
-	counts   []time.Time
-	limit    int
-	window   time.Duration
+	counts []time.Time
+	limit  int
+	window time.Duration
 }
 
 type ipLimiter struct {
@@ -29,10 +29,10 @@ var globalLimiter = &ipLimiter{
 }
 
 const (
-	authLimit     = 5
-	authWindow    = time.Minute
-	apiLimit      = 120
-	apiWindow     = time.Minute
+	authLimit  = 5
+	authWindow = time.Minute
+	apiLimit   = 300
+	apiWindow  = time.Minute
 )
 
 func clientIP(r *http.Request) string {

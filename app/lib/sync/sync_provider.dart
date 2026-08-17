@@ -76,6 +76,25 @@ abstract class SyncProvider {
   Future<void> delete(String remotePath);
 }
 
+/// 超时/网络错误自动重试,最多 [attempts] 次(默认 3)。
+/// 认证错误(401/403)、SyncException(业务错误)不重试。
+Future<T> withRetry<T>(
+  Future<T> Function() action, {
+  int attempts = 3,
+}) async {
+  for (var i = 0; i < attempts; i++) {
+    try {
+      return await action();
+    } on SyncException {
+      rethrow; // 业务错误(认证失败等)不重试。
+    } catch (_) {
+      if (i == attempts - 1) rethrow; // 最后一次仍失败则抛出。
+      await Future.delayed(Duration(milliseconds: 300 * (i + 1)));
+    }
+  }
+  throw StateError('unreachable');
+}
+
 /// 根据本地配置构建同步提供方;未知类型或缺字段返回 null。
 /// FTP/SFTP 为 socket 协议,仅桌面/移动端支持——由平台分支处理
 /// (web 端返回 null,UI 提示不可用)。
@@ -106,14 +125,16 @@ class WebDavSyncProvider implements SyncProvider {
   @override
   Future<void> upload(String remotePath, String data) async {
     await _ensureBasePath(); // 目录不存在则先创建,避免 PUT 409/404。
-    final response = await _client
-        .put(
-          _uriFor(remotePath),
-          headers: _headers(contentType: 'application/json'),
-          body: data,
-        )
-        .timeout(const Duration(seconds: 120));
-    _ensureSuccess(response);
+    await withRetry(() async {
+      final response = await _client
+          .put(
+            _uriFor(remotePath),
+            headers: _headers(contentType: 'application/json'),
+            body: data,
+          )
+          .timeout(const Duration(seconds: 120));
+      _ensureSuccess(response);
+    });
   }
 
   @override
@@ -125,7 +146,9 @@ class WebDavSyncProvider implements SyncProvider {
     //   Authorization → OSS 200;
     // - 桌面:http 自动跟随(无防盗链问题)。
     try {
-      return await fetchBodyNoReferer(uri, headers: _headers(), client: _client);
+      return await withRetry(
+        () => fetchBodyNoReferer(uri, headers: _headers(), client: _client),
+      );
     } catch (e) {
       throw SyncException('下载 $remotePath 失败: $e');
     }
@@ -153,7 +176,9 @@ class WebDavSyncProvider implements SyncProvider {
     <d:displayname/>
   </d:prop>
 </d:propfind>''';
-    final response = await _client.send(request).timeout(const Duration(seconds: 15));
+    final response = await withRetry(
+      () => _client.send(request).timeout(const Duration(seconds: 15)),
+    );
     if (response.statusCode != 207) {
       // 部分服务器(如某些 NAS)不支持 PROPFIND:回退为空列表,
       // 恢复页提示"无法列出"而非崩溃。
@@ -224,7 +249,9 @@ class WebDavSyncProvider implements SyncProvider {
   Future<void> delete(String remotePath) async {
     final request = http.Request('DELETE', _uriFor(remotePath));
     request.headers.addAll(_headers());
-    final response = await _client.send(request).timeout(const Duration(seconds: 15));
+    final response = await withRetry(
+      () => _client.send(request).timeout(const Duration(seconds: 15)),
+    );
     // 404 = 文件本就不存在,视为成功。
     if (response.statusCode >= 200 && response.statusCode < 300) return;
     if (response.statusCode == 404) return;
@@ -340,14 +367,16 @@ class S3SyncProvider implements SyncProvider {
       payloadHash: payloadHash,
       contentType: 'application/json',
     );
-    final response = await _client
-        .put(
-          uri,
-          headers: headers,
-          body: data,
-        )
-        .timeout(const Duration(seconds: 120));
-    _ensureSuccess(response);
+    await withRetry(() async {
+      final response = await _client
+          .put(
+            uri,
+            headers: headers,
+            body: data,
+          )
+          .timeout(const Duration(seconds: 120));
+      _ensureSuccess(response);
+    });
   }
 
   @override
@@ -361,7 +390,9 @@ class S3SyncProvider implements SyncProvider {
     // 与 WebDAV 一致:走平台下载(302 跟随 + web 端 no-referrer),
     // 兼容 S3 兼容网关(如 MinIO 经 CDN 返回重定向 + 防盗链)。
     try {
-      return await fetchBodyNoReferer(uri, headers: headers, client: _client);
+      return await withRetry(
+        () => fetchBodyNoReferer(uri, headers: headers, client: _client),
+      );
     } catch (e) {
       throw SyncException('下载 $remotePath 失败: $e');
     }
@@ -384,7 +415,9 @@ class S3SyncProvider implements SyncProvider {
       );
       // 与 download 一致:走平台请求(302 跟随 + web 端 no-referrer),
       // 兼容 S3 兼容网关(CDN 重定向/防盗链)。
-      final body = await fetchBodyNoReferer(uri, headers: headers, client: _client);
+      final body = await withRetry(
+        () => fetchBodyNoReferer(uri, headers: headers, client: _client),
+      );
       return _parseListXml(body, prefix: prefix);
     } on SyncException {
       rethrow;
@@ -437,7 +470,9 @@ class S3SyncProvider implements SyncProvider {
     );
     final request = http.Request('DELETE', uri);
     request.headers.addAll(headers);
-    final response = await _client.send(request).timeout(const Duration(seconds: 15));
+    final response = await withRetry(
+      () => _client.send(request).timeout(const Duration(seconds: 15)),
+    );
     if (response.statusCode >= 200 && response.statusCode < 300) return;
     if (response.statusCode == 404) return;
     throw SyncException('删除备份失败: HTTP ${response.statusCode}');

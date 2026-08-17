@@ -14,3 +14,11 @@ Future<bool> shareTextFile(
   String shareText,
 ) =>
     impl.shareTextFile(fileName, content, shareText);
+
+/// 分享字节内容为文件(如 Excel 二进制)。
+Future<bool> shareBytesFile(
+  String fileName,
+  List<int> bytes,
+  String shareText,
+) =>
+    impl.shareBytesFile(fileName, bytes, shareText);

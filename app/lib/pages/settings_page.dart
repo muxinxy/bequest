@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_config.dart';
 import '../models/asset.dart';
+import '../models/entitlements.dart';
 import '../repository/asset_repository.dart';
 import '../repository/local_asset_repository.dart';
 import '../storage/secure_store.dart';
@@ -12,6 +13,7 @@ import 'app_lock_setup_page.dart';
 import 'audit_page.dart';
 import 'category_page.dart';
 import 'change_master_password_page.dart';
+import 'excel_export_page.dart';
 import 'export_page.dart';
 import 'import_page.dart';
 import 'inheritance_status_page.dart';
@@ -93,7 +95,57 @@ class _SettingsPageState extends State<SettingsPage> {
       ).showSnackBar(const SnackBar(content: Text('暂无资产可导出')));
       return;
     }
-    // 可选加密导出:加密文件(.beq)需主密码才能解密导入。
+    // 导出方式:JSON(可选加密) / Excel(会员)。
+    final jwt = await _store.readJwt();
+    final ent = Entitlements.forJwtAndTier(
+      hasJwt: jwt != null && jwt.isNotEmpty,
+      tier: _isLocal ? null : await _currentTier(jwt),
+    );
+    if (!context.mounted) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('导出资产'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop('json'),
+            child: const ListTile(
+              leading: Icon(Icons.code),
+              title: Text('JSON(可加密)'),
+              subtitle: Text('通用格式,可再导入'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => ent.exportExcel
+                ? Navigator.of(context).pop('excel')
+                : Navigator.of(context).pop('excel_locked'),
+            child: ListTile(
+              leading: const Icon(Icons.table_chart),
+              title: const Text('Excel 表格'),
+              subtitle: Text(
+                ent.exportExcel ? '表格查看,适合打印分享' : '会员权益,升级后可用',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+    if (choice == 'excel_locked') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Excel 导出为会员权益,请联系管理员开通会员')),
+      );
+      return;
+    }
+    if (choice == 'excel') {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ExcelExportPage(assets: assets, repository: widget.repository),
+        ),
+      );
+      return;
+    }
+    // JSON:可选加密。
     final encrypt = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -118,6 +170,17 @@ class _SettingsPageState extends State<SettingsPage> {
             ExportPage(assets: assets, repository: widget.repository, encrypt: encrypt),
       ),
     );
+  }
+
+  /// 当前会员层级(仅云端;本地模式返回 null → 访客权益)。
+  Future<String?> _currentTier(String? jwt) async {
+    if (jwt == null || jwt.isEmpty) return null;
+    try {
+      final me = await (await ApiConfig.client()).me(jwt);
+      return (me['user'] as Map<String, dynamic>?)?['tier'] as String?;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _importFlow(BuildContext context) async {
@@ -266,14 +329,9 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           _section(context, '存储与服务器'),
           _entry(
-            Icons.cloud_outlined,
-            '存储模式',
-            () => _push(context, const ServerSettingsPage(showUrl: false)),
-          ),
-          _entry(
             Icons.dns_outlined,
             '服务器地址',
-            () => _push(context, const ServerSettingsPage(showMode: false)),
+            () => _push(context, const ServerSettingsPage()),
           ),
           _entry(
             Icons.sync_outlined,

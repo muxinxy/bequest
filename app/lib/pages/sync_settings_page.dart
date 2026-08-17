@@ -169,7 +169,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     }
   }
 
-  /// 切换协议:保存当前表单到已存配置(供切换回来恢复),再加载目标协议配置。
+  /// 切换协议:保存当前表单到已存配置(供切换回来恢复),再加载目标协议字段。
+  /// 注意:不能调用 _loadConfig(它会按已存 type 覆盖 _protocol,导致切不过去)。
   Future<void> _switchProtocol(String next) async {
     if (next == _protocol) return;
     // 当前表单写入配置,再加载目标协议字段。
@@ -182,8 +183,23 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       } catch (_) {}
     }
     await _store.saveSyncConfig(jsonEncode({...existing, ..._formConfig()}));
+    // 从已存配置读取目标协议字段,但不重设 type(否则被覆盖回原协议)。
+    final merged = {...existing, ..._formConfig()};
     setState(() => _protocol = next);
-    await _loadConfig();
+    _loadFtpFields(merged, next);
+    if (next == 'webdav') {
+      _wdUrl.text = merged['url']?.toString() ?? '';
+      _wdUser.text = merged['user']?.toString() ?? '';
+      _wdPass.text = merged['password']?.toString() ?? '';
+      _wdBasePath.text = merged['base_path']?.toString() ?? '/bequest';
+    } else if (next == 's3') {
+      _s3Endpoint.text = merged['endpoint']?.toString() ?? '';
+      _s3Bucket.text = merged['bucket']?.toString() ?? '';
+      _s3Region.text = merged['region']?.toString() ?? 'us-east-1';
+      _s3AccessKey.text = merged['access_key']?.toString() ?? '';
+      _s3SecretKey.text = merged['secret_key']?.toString() ?? '';
+      _s3Prefix.text = merged['prefix']?.toString() ?? 'bequest/';
+    }
   }
 
   Future<void> _save() async {

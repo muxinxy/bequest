@@ -16,6 +16,7 @@ class ExportItem {
     required this.credentials,
     required this.notes,
     this.advanceDays,
+    this.inheritors,
   });
 
   final String name;
@@ -26,6 +27,9 @@ class ExportItem {
   final String notes;
   final int? advanceDays;
 
+  /// 继承人名称列表(Excel 导出展示;JSON 导出附加字段,向后兼容)。
+  final List<String>? inheritors;
+
   Map<String, dynamic> toJson() => {
         'name': name,
         'asset_type': assetType,
@@ -34,6 +38,8 @@ class ExportItem {
         'credentials': credentials,
         'notes': notes,
         if (advanceDays != null) 'advance_days': advanceDays,
+        if (inheritors != null && inheritors!.isNotEmpty)
+          'inheritors': inheritors,
       };
 }
 

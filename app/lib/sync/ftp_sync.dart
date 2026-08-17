@@ -75,38 +75,42 @@ class FtpSyncProvider implements SyncProvider {
 
   @override
   Future<void> upload(String remotePath, String data) async {
-    final ftp = await _connect();
-    try {
-      await _ensureBasePath(ftp);
-      final tmp = File('${Directory.systemTemp.path}/bequest_upload_${DateTime.now().millisecondsSinceEpoch}');
-      await tmp.writeAsString(data, encoding: utf8);
+    await withRetry(() async {
+      final ftp = await _connect();
       try {
-        final ok = await ftp.uploadFile(tmp, sRemoteName: remotePath);
-        if (!ok) throw SyncException('FTP 上传失败: $remotePath');
+        await _ensureBasePath(ftp);
+        final tmp = File('${Directory.systemTemp.path}/bequest_upload_${DateTime.now().millisecondsSinceEpoch}');
+        await tmp.writeAsString(data, encoding: utf8);
+        try {
+          final ok = await ftp.uploadFile(tmp, sRemoteName: remotePath);
+          if (!ok) throw SyncException('FTP 上传失败: $remotePath');
+        } finally {
+          try { await tmp.delete(); } catch (_) {}
+        }
       } finally {
-        try { await tmp.delete(); } catch (_) {}
+        await ftp.disconnect();
       }
-    } finally {
-      await ftp.disconnect();
-    }
+    });
   }
 
   @override
   Future<String> download(String remotePath) async {
-    final ftp = await _connect();
-    try {
-      await _ensureBasePath(ftp);
-      final tmp = File('${Directory.systemTemp.path}/bequest_download_${DateTime.now().millisecondsSinceEpoch}');
+    return withRetry(() async {
+      final ftp = await _connect();
       try {
-        final ok = await ftp.downloadFile(remotePath, tmp);
-        if (!ok) throw SyncException('FTP 下载失败: $remotePath');
-        return await tmp.readAsString(encoding: utf8);
+        await _ensureBasePath(ftp);
+        final tmp = File('${Directory.systemTemp.path}/bequest_download_${DateTime.now().millisecondsSinceEpoch}');
+        try {
+          final ok = await ftp.downloadFile(remotePath, tmp);
+          if (!ok) throw SyncException('FTP 下载失败: $remotePath');
+          return await tmp.readAsString(encoding: utf8);
+        } finally {
+          try { await tmp.delete(); } catch (_) {}
+        }
       } finally {
-        try { await tmp.delete(); } catch (_) {}
+        await ftp.disconnect();
       }
-    } finally {
-      await ftp.disconnect();
-    }
+    });
   }
 
   @override
@@ -124,37 +128,41 @@ class FtpSyncProvider implements SyncProvider {
 
   @override
   Future<List<BackupFileInfo>> listFiles() async {
-    final ftp = await _connect();
-    try {
-      await _ensureBasePath(ftp);
-      final entries = await ftp.listDirectoryContent();
-      final files = entries
-          .where((e) => e.type == FTPEntryType.file)
-          .map((e) => BackupFileInfo(
-                name: e.name,
-                size: e.size ?? 0,
-                modified: e.modifyTime,
-              ))
-          .toList()
-        ..sort((a, b) {
-          final am = a.modified ?? DateTime(1970);
-          final bm = b.modified ?? DateTime(1970);
-          return bm.compareTo(am);
-        });
-      return files;
-    } finally {
-      await ftp.disconnect();
-    }
+    return withRetry(() async {
+      final ftp = await _connect();
+      try {
+        await _ensureBasePath(ftp);
+        final entries = await ftp.listDirectoryContent();
+        final files = entries
+            .where((e) => e.type == FTPEntryType.file)
+            .map((e) => BackupFileInfo(
+                  name: e.name,
+                  size: e.size ?? 0,
+                  modified: e.modifyTime,
+                ))
+            .toList()
+          ..sort((a, b) {
+            final am = a.modified ?? DateTime(1970);
+            final bm = b.modified ?? DateTime(1970);
+            return bm.compareTo(am);
+          });
+        return files;
+      } finally {
+        await ftp.disconnect();
+      }
+    });
   }
 
   @override
   Future<void> delete(String remotePath) async {
-    final ftp = await _connect();
-    try {
-      await _ensureBasePath(ftp);
-      await ftp.deleteFile(remotePath);
-    } finally {
-      await ftp.disconnect();
-    }
+    await withRetry(() async {
+      final ftp = await _connect();
+      try {
+        await _ensureBasePath(ftp);
+        await ftp.deleteFile(remotePath);
+      } finally {
+        await ftp.disconnect();
+      }
+    });
   }
 }
