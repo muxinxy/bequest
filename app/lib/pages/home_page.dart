@@ -15,6 +15,7 @@ import '../storage/secure_store.dart';
 import '../sync/backup.dart';
 import '../main.dart';
 import 'asset_edit_page.dart';
+import 'category_inheritors_page.dart';
 import 'group_detail_page.dart';
 import 'login_page.dart';
 import 'recycle_bin_page.dart';
@@ -529,8 +530,7 @@ class _HomePageState extends State<HomePage> {
   /// 多选删除分组:先把分组内资产移入未分组,再软删分组。
   /// 后端软删分组不会改资产 category_id——不移除会让资产"消失"
   /// (原分组已排除、未分组也查不到),故前端先 moveAssets 再删。
-  Future<void> _deleteSelectedGroups() async {
-    final confirmed = await showDialog<bool>(
+  Future<void> _deleteSelectedGroups() async {    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除分组'),
@@ -577,6 +577,36 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// 多选设置继承人:依次为每个选中分组打开继承人管理页。
+  Future<void> _setSelectedGroupInheritors() async {
+    final repo = _repo;
+    if (repo == null) return;
+    setState(() {
+      _multiSelect = false;
+      final ids = List.of(_selectedGroupIds);
+      _selectedGroupIds.clear();
+      // 逐个打开分组继承人管理页(跳过未分组,无继承管理)。
+      Future<void> openNext(int i) async {
+        if (i >= ids.length) return;
+        final group = _groups.where((g) => g.$1 == ids[i] && g.$1.isNotEmpty).firstOrNull;
+        if (group != null && mounted) {
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => CategoryInheritorsPage(
+                categoryId: group.$1,
+                categoryName: group.$2,
+                repository: repo,
+              ),
+            ),
+          );
+        }
+        if (mounted) await openNext(i + 1);
+      }
+
+      openNext(0);
+    });
+  }
+
   /// 打开子页面,返回后刷新数据。
   Future<void> _openPage(Widget page) async {
     await Navigator.of(
@@ -613,6 +643,13 @@ class _HomePageState extends State<HomePage> {
             : const Text('托孤'),
         actions: _multiSelect
             ? [
+                IconButton(
+                  tooltip: '设置继承人',
+                  icon: const Icon(Icons.family_restroom),
+                  onPressed: _selectedGroupIds.isEmpty
+                      ? null
+                      : _setSelectedGroupInheritors,
+                ),
                 IconButton(
                   tooltip: '删除',
                   icon: const Icon(Icons.delete_outline),

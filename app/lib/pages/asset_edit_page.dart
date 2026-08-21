@@ -498,15 +498,25 @@ class _AssetEditPageState extends State<AssetEditPage> {
                           (value == null || value.trim().isEmpty) ? '请输入名称' : null,
                     ),
                     const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      initialValue: _categoryValue,
-                      decoration: const InputDecoration(
-                        labelText: '分组',
-                        border: OutlineInputBorder(),
+                    InkWell(
+                      onTap: _showCategoryPicker,
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: '分组',
+                          border: OutlineInputBorder(),
+                          suffixIcon: Icon(Icons.search),
+                        ),
+                        child: Text(
+                          _categoryValue.isEmpty
+                              ? '未分组'
+                              : (_categories
+                                      .where((c) => c.id == _categoryValue)
+                                      .firstOrNull
+                                      ?.name ??
+                                  '未分组'),
+                          style: const TextStyle(fontSize: 16),
+                        ),
                       ),
-                      items: _categoryItems(),
-                      onChanged: (value) =>
-                          setState(() => _categoryValue = value ?? ''),
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
@@ -619,16 +629,67 @@ class _AssetEditPageState extends State<AssetEditPage> {
     );
   }
 
-  List<DropdownMenuItem<String>> _categoryItems() {
-    // 分组不区分类型,展示全部(预设与自定义同表)。
-    return [
-      const DropdownMenuItem(value: '', child: Text('未分组')),
-      ..._categories.map(
-        (c) => DropdownMenuItem(
-          value: c.id,
-          child: Text(c.isPreset ? '${c.name}(预设)' : c.name),
+  /// 带搜索的分组选择对话框(匹配分组名称),返回选中分组 id('' = 未分组)。
+  Future<void> _showCategoryPicker() async {
+    final searchController = TextEditingController();
+    var query = '';
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('选择分组'),
+          content: SizedBox(
+            width: 320,
+            height: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: searchController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search),
+                    hintText: '搜索分组名称',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) =>
+                      setDialogState(() => query = value.trim()),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      ListTile(
+                        dense: true,
+                        title: const Text('未分组'),
+                        selected: _categoryValue.isEmpty,
+                        onTap: () => Navigator.of(context).pop(''),
+                      ),
+                      for (final c in _categories.where(
+                        (c) => query.isEmpty || c.name.contains(query),
+                      ))
+                        ListTile(
+                          dense: true,
+                          title: Text(
+                            c.isPreset ? '${c.name}(预设)' : c.name,
+                          ),
+                          selected: _categoryValue == c.id,
+                          onTap: () => Navigator.of(context).pop(c.id),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
-    ];
+    );
+    searchController.dispose();
+    if (picked != null && mounted) {
+      setState(() => _categoryValue = picked);
+    }
   }
 }

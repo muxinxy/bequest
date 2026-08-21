@@ -149,6 +149,29 @@ func TestUpdateCategory(t *testing.T) {
 		t.Fatalf("put retarget only: status=%d body=%s", rr.Code, rr.Body.String())
 	}
 
+	// remark-only PUT (no name) -> 200, name preserved, remark applied
+	rr = doReq(t, ts, http.MethodPut, fmt.Sprintf("/api/v1/categories/%d", preset.ID),
+		`{"remark":"仅备注"}`, tokenA)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("put remark only: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var gotRemark struct {
+		Remark string `json:"remark"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &gotRemark); err != nil {
+		t.Fatalf("decode remark response: %v", err)
+	}
+	if gotRemark.Remark != "仅备注" {
+		t.Fatalf("remark after put = %q, want %q", gotRemark.Remark, "仅备注")
+	}
+	// 分组名应保留(未回退为空)。
+	cats2 := listCategories(t, ts, tokenA)
+	for _, c := range cats2 {
+		if c.ID == preset.ID && c.Name != "交通工具" {
+			t.Fatalf("name lost on remark-only put = %q, want 交通工具", c.Name)
+		}
+	}
+
 	// validation -> 400
 	for _, body := range []string{
 		`{"name":"   ","asset_type":"physical"}`,

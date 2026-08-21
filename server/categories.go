@@ -148,11 +148,8 @@ func handleUpdateCategory(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
-		name := strings.TrimSpace(req.Name)
-		if name == "" {
-			writeError(w, http.StatusBadRequest, "name is required")
-			return
-		}
+		nameRaw := req.Name
+		name := strings.TrimSpace(nameRaw)
 		assetType := req.AssetType
 		if assetType == "" {
 			assetType = "physical"
@@ -161,15 +158,39 @@ func handleUpdateCategory(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "asset_type must be physical or virtual")
 			return
 		}
-		// UNIQUE(user_id,name) is checked against other rows only, so updating
-		// a row to its own current name (retarget-only PUT) is not a conflict.
+		// name 可省略(仅更新备注/asset_type 时):JSON 缺省为 ""。
+		// 一旦显式传入 name,则必须是非空名称(纯空格 → 400),并检查重复。
+		if nameRaw != "" {
+			if name == "" {
+				writeError(w, http.StatusBadRequest, "name is required")
+				return
+			}
+			var dup int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM categories
+				WHERE user_id = ? AND name = ? AND id != ? AND deleted_at IS NULL`,
+				userID(r), name, id).Scan(&dup); err != nil {
+				log.Printf("check category name: %v", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			if dup > 0 {
+				writeError(w, http.StatusConflict, "category already exists")
+				return
+			}
+		}
 		remark := req.Remark
 		var remarkArg any
 		if remark != "" {
 			remarkArg = remark
 		}
-		res, err := db.Exec(`UPDATE categories SET name = ?, asset_type = ?, remark = ? WHERE id = ? AND user_id = ?`,
-			name, assetType, remarkArg, id, userID(r))
+		var res sql.Result
+		if name != "" {
+			res, err = db.Exec(`UPDATE categories SET name = ?, asset_type = ?, remark = ? WHERE id = ? AND user_id = ?`,
+				name, assetType, remarkArg, id, userID(r))
+		} else {
+			res, err = db.Exec(`UPDATE categories SET asset_type = ?, remark = ? WHERE id = ? AND user_id = ?`,
+				assetType, remarkArg, id, userID(r))
+		}
 		if err != nil {
 			if isUniqueViolation(err) {
 				writeError(w, http.StatusConflict, "category already exists")
