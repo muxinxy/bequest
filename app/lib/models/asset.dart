@@ -11,6 +11,7 @@ class Asset {
     this.credentials,
     this.notes,
     this.updatedAt,
+    this.status = 'active',
   });
 
   factory Asset.fromJson(Map<String, dynamic> json) => Asset(
@@ -21,6 +22,7 @@ class Asset {
         expiryDate: json['expiry_date']?.toString(),
         encryptedData: json['encrypted_data']?.toString(),
         updatedAt: json['updated_at']?.toString(),
+        status: json['status']?.toString() ?? 'active',
       );
 
   final String id;
@@ -32,6 +34,7 @@ class Asset {
   final String? credentials; // 解密后的凭据,仅本地
   final String? notes; // 解密后的备注,仅本地
   final String? updatedAt;
+  final String status; // active | inactive | pending | expired
 
   /// 序列化。与 [Asset.fromJson] 互为逆:id/updated_at 一并保留,
   /// 否则主页列表经 toJson→fromJson 往返后 id 变为空串,
@@ -45,5 +48,6 @@ class Asset {
         'encrypted_data': encryptedData,
         'expiry_date': expiryDate,
         'updated_at': updatedAt,
+        'status': status,
       };
 }

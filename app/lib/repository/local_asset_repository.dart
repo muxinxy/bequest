@@ -86,6 +86,7 @@ class LocalAssetRepository implements AssetRepository {
           'physical',
       'is_preset': old['is_preset'] ?? 0,
       'created_at': old['created_at']?.toString(),
+      'remark': body['remark']?.toString() ?? old['remark']?.toString() ?? '',
     };
     categories[index] = updated;
     await _save(data);
@@ -161,6 +162,7 @@ class LocalAssetRepository implements AssetRepository {
           : old['expiry_date']?.toString(),
       'created_at': old['created_at']?.toString(),
       'updated_at': _nowString(),
+      'status': body['status']?.toString() ?? old['status']?.toString() ?? 'active',
     };
     assets[index] = updated;
     await _save(data);

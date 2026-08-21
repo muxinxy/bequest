@@ -17,11 +17,20 @@ import 'login_page.dart';
 /// 凭据与备注用主密钥加密后经仓储写入(云端或本地库)。
 /// tier 为云端权益层级(free/member),本地模式传 null(访客权益)。
 class AssetEditPage extends StatefulWidget {
-  const AssetEditPage({super.key, this.asset, required this.repository, this.tier});
+  const AssetEditPage({
+    super.key,
+    this.asset,
+    required this.repository,
+    this.tier,
+    this.initialCategoryId,
+  });
 
   final Asset? asset;
   final AssetRepository repository;
   final String? tier;
+
+  /// 新建时预选的分组 id(null = 未分类),来自主页 FAB 的分组选择流程。
+  final String? initialCategoryId;
 
   @override
   State<AssetEditPage> createState() => _AssetEditPageState();
@@ -43,6 +52,9 @@ class _AssetEditPageState extends State<AssetEditPage> {
 
   /// 分类下拉值:'' = 未分类,其他 = 分类 id(预设与自定义同表)。
   String _categoryValue = '';
+
+  /// 资产状态:active/inactive/pending/expired。
+  String _statusValue = 'active';
   String? _expiryDate;
 
   /// 到期提醒提前天数:null = 不提醒,0 = 到期当天。
@@ -133,6 +145,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
         if (!mounted) return;
         setState(() {
           _expiryDate = asset.expiryDate;
+          _statusValue = asset.status;
           _categoryValue = categories.any((c) => c.id == asset.categoryId)
               ? (asset.categoryId ?? '')
               : '';
@@ -159,6 +172,10 @@ class _AssetEditPageState extends State<AssetEditPage> {
         if (!mounted) return;
         setState(() {
           _categories = categories;
+          // 主页 FAB 选择分组后预选;分组不存在则回退未分类。
+          _categoryValue = categories.any((c) => c.id == widget.initialCategoryId)
+              ? (widget.initialCategoryId ?? '')
+              : '';
           _loading = false;
         });
       }
@@ -307,6 +324,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
         'asset_type': 'physical',
         'category_id': _categoryIdToSubmit(),
         'expiry_date': _expiryDate,
+        'status': _statusValue,
       };
       if (_isLocalRepo) {
         // 本地模式:无继承,直接用主密钥加密(与旧数据一致,渐进兼容)。
@@ -489,6 +507,22 @@ class _AssetEditPageState extends State<AssetEditPage> {
                       items: _categoryItems(),
                       onChanged: (value) =>
                           setState(() => _categoryValue = value ?? ''),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      initialValue: _statusValue,
+                      decoration: const InputDecoration(
+                        labelText: '状态',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'active', child: Text('正常')),
+                        DropdownMenuItem(value: 'inactive', child: Text('停用')),
+                        DropdownMenuItem(value: 'pending', child: Text('待处理')),
+                        DropdownMenuItem(value: 'expired', child: Text('已过期')),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _statusValue = value ?? 'active'),
                     ),
                     const SizedBox(height: 16),
                     Row(

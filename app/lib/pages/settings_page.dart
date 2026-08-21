@@ -12,7 +12,6 @@ import 'about_page.dart';
 import 'account_settings_page.dart';
 import 'app_lock_setup_page.dart';
 import 'audit_page.dart';
-import 'category_page.dart';
 import 'change_master_password_page.dart';
 import 'excel_export_page.dart';
 import 'export_page.dart';
@@ -242,11 +241,6 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(
         children: [
           _section(context, '数据'),
-          _entry(
-            Icons.category_outlined,
-            '分类管理',
-            () => _push(context, CategoryPage(repository: widget.repository)),
-          ),
           _entry(
             Icons.file_download_outlined,
             '导入资产',

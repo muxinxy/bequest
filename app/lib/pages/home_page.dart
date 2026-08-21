@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../models/asset.dart';
-import '../models/asset_filter.dart';
 import '../models/category.dart';
 import '../models/entitlements.dart';
 import '../models/reminder.dart';
@@ -16,11 +15,15 @@ import '../storage/secure_store.dart';
 import '../sync/backup.dart';
 import '../main.dart';
 import 'asset_edit_page.dart';
+import 'group_detail_page.dart';
 import 'login_page.dart';
+import 'recycle_bin_page.dart';
 import 'reminders_page.dart';
 import 'settings_page.dart';
 
-/// 主页:按分类过滤展示资产列表,提供分类管理、应用锁与退出登录。
+/// 主页:分组列表视图。每个分组卡片显示名称与资产数量,
+/// 支持搜索(分组名)、排序(名称/数量/创建时间)、长按多选删除;
+/// 点击分组进入分组详情页。保留离线横幅、提醒/回收站/锁定/设置/退出入口。
 /// 云端模式经 ApiClient 访问后端;本地模式经 LocalAssetRepository 读加密库。
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -29,6 +32,9 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
+/// 分组排序方式。
+enum _GroupSort { name, count, created }
+
 class _HomePageState extends State<HomePage> {
   final _store = SecureStore();
   final _searchController = TextEditingController();
@@ -36,12 +42,10 @@ class _HomePageState extends State<HomePage> {
   AssetRepository? _repo;
   List<Asset> _assets = const [];
   List<Category> _categories = const [];
-  Map<String, String> _categoryNames = const {};
   int _unreadReminders = 0;
 
-  /// 过滤值:null = 全部;自定义/预设分类 id;'未分类' → 无分类资产。
-  String? _filterCategoryId;
   String _search = '';
+  _GroupSort _sort = _GroupSort.name;
   bool _loading = true;
   bool _isLocal = false;
   bool _hasJwt = false;
@@ -61,8 +65,9 @@ class _HomePageState extends State<HomePage> {
   /// 应用锁是否已设置(设置页完成 PIN/图案配置后为 true);未设置则不显示锁定按钮。
   bool _lockEnabled = false;
 
-  /// 折叠的分组 id 集合(分组视图下点击分组标题折叠/展开)。
-  final Set<String> _collapsedGroups = {};
+  /// 分组多选:长按进入多选模式,可批量删除分组。
+  bool _multiSelect = false;
+  final Set<String> _selectedGroupIds = {};
 
   @override
   void initState() {
@@ -123,7 +128,6 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       setState(() {
         _categories = categories.map(Category.fromJson).toList(growable: false);
-        _categoryNames = {for (final c in _categories) c.id: c.name};
         _assets = assets.map(Asset.fromJson).toList(growable: false);
         _unreadReminders = unread;
         _isLocal = isLocal;
@@ -148,12 +152,13 @@ class _HomePageState extends State<HomePage> {
         );
         return;
       }
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(
         content: Text(isLocal ? '加载失败,本地数据读取异常' : '加载失败,请检查网络后重试'),
       ));
-      if (mounted) setState(() => _loading = false);
+      setState(() => _loading = false);
     } catch (_) {
       if (!mounted) return;
       // 云端网络异常:尝试离线缓存。
@@ -165,13 +170,14 @@ class _HomePageState extends State<HomePage> {
         );
         return;
       }
+      if (!mounted) return;
       // 本地模式读取加密库失败与网络无关,提示语要准确。
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(
         content: Text(isLocal ? '加载失败,本地数据读取异常' : '加载失败,请检查网络后重试'),
       ));
-      if (mounted) setState(() => _loading = false);
+      setState(() => _loading = false);
     }
   }
 
@@ -189,7 +195,6 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _repo = repo;
         _categories = categories;
-        _categoryNames = {for (final c in categories) c.id: c.name};
         _assets = assets;
         _unreadReminders = 0;
         _isLocal = false;
@@ -242,7 +247,6 @@ class _HomePageState extends State<HomePage> {
               .toList(growable: false);
           setState(() {
             _categories = categories;
-            _categoryNames = {for (final c in _categories) c.id: c.name};
             _assets = assets;
             _loading = false;
           });
@@ -307,7 +311,6 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       setState(() {
         _categories = categories;
-        _categoryNames = {for (final c in categories) c.id: c.name};
         _assets = assets;
         _unreadReminders = unread;
         _tier = tier;
@@ -372,63 +375,135 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 预设分类与'未分类'同为分类表中的真实行,过滤直接按 id 精确匹配。
-  List<Asset> get _filteredAssets {
-    final maps = filterAssets(
-      assets: _assets.map((a) => a.toJson()).toList(growable: false),
-      typeFilter: null,
-      categoryFilter: _filterCategoryId,
-      search: _search,
-      categoryNames: _categoryNames,
-    );
-    return maps.map(Asset.fromJson).toList(growable: false);
-  }
-
-  /// 分组视图:资产按分组分组。返回 [(分组 id/名称, 分组资产)] 列表,
-  /// 含'未分类'组(尾部)。搜索激活时保持分组结构,空分组不显示。
-  List<(String, String, List<Asset>)> get _groupedAssets {
-    final assets = _filteredAssets;
-    final groups = <String, List<Asset>>{};
-    for (final a in assets) {
-      final id = a.categoryId ?? '';
-      groups.putIfAbsent(id, () => []).add(a);
-    }
-    final result = <(String, String, List<Asset>)>[];
-    for (final c in _categories) {
-      final list = groups.remove(c.id);
-      if (list != null && list.isNotEmpty) {
-        result.add((c.id, c.name, list));
+  /// 分组列表:(id, 名称, 资产数)。资产数按当前资产列表本地统计
+  /// (云端/本地/离线一致),未分类 = category_id 为空的资产数。
+  /// 支持搜索(分组名)与排序(名称/数量/创建时间),未分类固定排最后。
+  List<(String, String, int)> get _groups {
+    final counts = <String, int>{};
+    var uncategorized = 0;
+    for (final a in _assets) {
+      final cid = a.categoryId;
+      if (cid == null || cid.isEmpty) {
+        uncategorized++;
+      } else {
+        counts[cid] = (counts[cid] ?? 0) + 1;
       }
     }
-    final uncategorized = groups.remove('');
-    if (uncategorized != null && uncategorized.isNotEmpty) {
-      result.add(('', '未分类', uncategorized));
+    final groups = <(String, String, int, String?)>[
+      for (final c in _categories) (c.id, c.name, counts[c.id] ?? 0, c.createdAt),
+      ('', '未分类', uncategorized, null),
+    ];
+    final query = _search.trim().toLowerCase();
+    final filtered = query.isEmpty
+        ? groups
+        : groups.where((g) => g.$2.toLowerCase().contains(query)).toList();
+    switch (_sort) {
+      case _GroupSort.name:
+        filtered.sort((a, b) => a.$2.compareTo(b.$2));
+      case _GroupSort.count:
+        filtered.sort((a, b) => b.$3.compareTo(a.$3));
+      case _GroupSort.created:
+        filtered.sort((a, b) => (b.$4 ?? '').compareTo(a.$4 ?? ''));
     }
-    // 搜索激活时可能有资产挂在已删除/未知分类下。
-    for (final entry in groups.entries) {
-      if (entry.value.isNotEmpty) {
-        result.add((entry.key, _categoryNames[entry.key] ?? '未分类', entry.value));
-      }
-    }
-    return result;
+    // 未分类固定最后。
+    final rest = filtered.where((g) => g.$1.isNotEmpty).toList();
+    final uncat = filtered.where((g) => g.$1.isEmpty).toList();
+    return [...rest, ...uncat].map((g) => (g.$1, g.$2, g.$3)).toList();
   }
 
-  Future<void> _openEditor([Asset? asset]) async {
+  /// 打开分组详情页;返回后刷新(分组内可能发生增删改)。
+  Future<void> _openGroup(String id) async {
     final repo = _repo;
     if (repo == null) return;
-    if (_offlineMode) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('离线模式仅可查看与导出,无法修改资产')),
-      );
-      return;
-    }
+    final category = id.isEmpty
+        ? null
+        : _categories.where((c) => c.id == id).firstOrNull;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AssetEditPage(asset: asset, repository: repo, tier: _tier),
+        builder: (_) => GroupDetailPage(
+          category: category,
+          repository: repo,
+          tier: _tier,
+        ),
       ),
     );
     if (mounted) _load();
+  }
+
+  /// FAB 添加资产:先选目标分组(未分类或已有分组),再进编辑页。
+  Future<void> _addAssetFlow() async {
+    final repo = _repo;
+    if (repo == null) return;
+    final target = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('添加到分组'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop(''),
+            child: const Text('未分类'),
+          ),
+          for (final c in _categories)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(c.id),
+              child: Text(c.name),
+            ),
+        ],
+      ),
+    );
+    if (target == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AssetEditPage(
+          repository: repo,
+          tier: _tier,
+          initialCategoryId: target.isEmpty ? null : target,
+        ),
+      ),
+    );
+    if (mounted) _load();
+  }
+
+  /// 多选删除分组:分组内资产移入未分类。
+  Future<void> _deleteSelectedGroups() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除分组'),
+        content: Text(
+          '确定删除所选 ${_selectedGroupIds.length} 个分组?分组内资产将变为未分类。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final repo = _repo;
+    if (repo == null) return;
+    try {
+      for (final id in _selectedGroupIds) {
+        // moveTo 为空:资产解关联变未分类(与单删语义一致)。
+        await repo.deleteCategory(id);
+      }
+      setState(() {
+        _multiSelect = false;
+        _selectedGroupIds.clear();
+      });
+      await _load();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('删除失败,请检查网络后重试')),
+      );
+    }
   }
 
   /// 打开子页面,返回后刷新数据。
@@ -459,50 +534,79 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _filteredAssets;
+    final groups = _groups;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('托孤'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: _tierBadge(),
-          ),
-          IconButton(
-            tooltip: '提醒',
-            icon: Badge.count(
-              count: _unreadReminders,
-              isLabelVisible: _unreadReminders > 0,
-              child: const Icon(Icons.notifications_outlined),
-            ),
-            onPressed: () => _openPage(const RemindersPage()),
-          ),
-          if (_lockEnabled)
-            IconButton(
-              tooltip: '锁定',
-              icon: const Icon(Icons.lock_outline),
-              onPressed: LockGate.lockNow,
-            ),
-          IconButton(
-            tooltip: '设置',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () {
-              final repo = _repo;
-              if (repo == null) return;
-              _openPage(SettingsPage(repository: repo));
-            },
-          ),
-          TextButton(
-            onPressed: _isLocal ? _exitLocal : _logout,
-            child: Text(_isLocal ? '退出本地模式' : '退出登录'),
-          ),
-        ],
+        title: _multiSelect
+            ? Text('已选 ${_selectedGroupIds.length} 项')
+            : const Text('托孤'),
+        actions: _multiSelect
+            ? [
+                IconButton(
+                  tooltip: '删除',
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: _selectedGroupIds.isEmpty
+                      ? null
+                      : _deleteSelectedGroups,
+                ),
+                IconButton(
+                  tooltip: '取消',
+                  icon: const Icon(Icons.close),
+                  onPressed: () => setState(() {
+                    _multiSelect = false;
+                    _selectedGroupIds.clear();
+                  }),
+                ),
+              ]
+            : [
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: _tierBadge(),
+                ),
+                IconButton(
+                  tooltip: '提醒',
+                  icon: Badge.count(
+                    count: _unreadReminders,
+                    isLabelVisible: _unreadReminders > 0,
+                    child: const Icon(Icons.notifications_outlined),
+                  ),
+                  onPressed: () => _openPage(const RemindersPage()),
+                ),
+                IconButton(
+                  tooltip: '回收站',
+                  icon: const Icon(Icons.restore_from_trash),
+                  onPressed: () {
+                    final repo = _repo;
+                    if (repo == null) return;
+                    _openPage(RecycleBinPage(repository: repo));
+                  },
+                ),
+                if (_lockEnabled)
+                  IconButton(
+                    tooltip: '锁定',
+                    icon: const Icon(Icons.lock_outline),
+                    onPressed: LockGate.lockNow,
+                  ),
+                IconButton(
+                  tooltip: '设置',
+                  icon: const Icon(Icons.settings_outlined),
+                  onPressed: () {
+                    final repo = _repo;
+                    if (repo == null) return;
+                    _openPage(SettingsPage(repository: repo));
+                  },
+                ),
+                TextButton(
+                  onPressed: _isLocal ? _exitLocal : _logout,
+                  child: Text(_isLocal ? '退出本地模式' : '退出登录'),
+                ),
+              ],
       ),
-      floatingActionButton: _offlineMode
-          ? null // 离线只读:不提供添加入口。
+      floatingActionButton: _offlineMode || _multiSelect
+          ? null // 离线只读 / 多选模式:不提供添加入口。
           : FloatingActionButton(
               tooltip: '添加资产',
-              onPressed: () => _openEditor(),
+              onPressed: _addAssetFlow,
               child: const Icon(Icons.add),
             ),
       body: _loading
@@ -536,67 +640,54 @@ class _HomePageState extends State<HomePage> {
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: Row(
                     children: [
-                      const Text('分类', style: TextStyle(color: Colors.grey)),
-                      const SizedBox(width: 12),
                       Expanded(
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          value: _filterCategoryId ?? '全部',
-                          items: _filterItems(),
-                          onChanged: (value) => setState(() {
-                            _filterCategoryId = (value == null ||
-                                    value == '全部')
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.search),
+                            hintText: '搜索分组名称',
+                            isDense: true,
+                            border: const OutlineInputBorder(),
+                            suffixIcon: _search.isEmpty
                                 ? null
-                                : value;
-                          }),
+                                : IconButton(
+                                    tooltip: '清空',
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _search = '');
+                                    },
+                                  ),
+                          ),
+                          onChanged: (value) => setState(() => _search = value),
                         ),
+                      ),
+                      IconButton(
+                        tooltip: '排序',
+                        icon: const Icon(Icons.sort),
+                        onPressed: () => _pickSort(),
                       ),
                     ],
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.search),
-                      hintText: '搜索分组或资产名称',
-                      isDense: true,
-                      border: const OutlineInputBorder(),
-                      suffixIcon: _search.isEmpty
-                          ? null
-                          : IconButton(
-                              tooltip: '清空',
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() => _search = '');
-                              },
-                            ),
-                    ),
-                    onChanged: (value) => setState(() => _search = value),
-                  ),
-                ),
                 const SizedBox(height: 8),
                 Expanded(
-                  child: filtered.isEmpty
+                  child: groups.isEmpty
                       ? Center(
                           child: Text(
-                            _assets.isEmpty ? '暂无资产,点击右下角 + 添加' : '没有匹配的资产',
+                            _categories.isEmpty && _assets.isEmpty
+                                ? '暂无分组,点击右下角 + 添加资产'
+                                : '没有匹配的分组',
                           ),
                         )
                       : RefreshIndicator(
                           onRefresh: _load,
-                          child: _GroupedAssetList(
-                            groups: _groupedAssets,
-                            collapsed: _collapsedGroups,
-                            onToggle: (id) => setState(() {
-                              if (!_collapsedGroups.remove(id)) {
-                                _collapsedGroups.add(id);
-                              }
-                            }),
-                            onTapAsset: _openEditor,
-                            onOrganizeUncategorized: _organizeUncategorized,
+                          child: ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.only(bottom: 88),
+                            itemCount: groups.length,
+                            itemBuilder: (context, index) =>
+                                _groupCard(groups[index]),
                           ),
                         ),
                 ),
@@ -605,169 +696,75 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 未分类批量整理:把未分类资产全部移至目标分组。
-  Future<void> _organizeUncategorized() async {
-    final targets = _categories;
-    if (targets.isEmpty) return;
-    final target = await showDialog<String>(
+  /// 排序菜单:按名称 / 数量 / 创建时间。
+  Future<void> _pickSort() async {
+    final choice = await showDialog<_GroupSort>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('未分类资产移至'),
+        title: const Text('分组排序'),
         children: [
-          for (final c in targets)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(context).pop(c.id),
-              child: Text(c.name),
-            ),
+          _sortOption(_GroupSort.name, '按名称', '名称'),
+          _sortOption(_GroupSort.count, '按数量', '数量'),
+          _sortOption(_GroupSort.created, '按创建时间', '创建时间'),
         ],
       ),
     );
-    if (target == null || !mounted) return;
-    final ids = _assets
-        .where((a) => a.categoryId == null || a.categoryId!.isEmpty)
-        .map((a) => a.id)
-        .where((i) => i.isNotEmpty)
-        .toList();
-    if (ids.isEmpty) return;
-    final repo = _repo;
-    if (repo == null) return;
-    try {
-      // categoryId 传字符串分组 id:云端实现内部转 int64,
-      // 本地模式直接用字符串 id(避免 int.tryParse 把本地 id 变 null → 误移未分类)。
-      await repo.moveAssets(ids, target);
-      await _load();
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('移动失败,请检查网络后重试')),
-      );
-    }
+    if (choice == null || !mounted) return;
+    setState(() => _sort = choice);
   }
 
-  List<DropdownMenuItem<String>> _filterItems() {
-    return [
-      const DropdownMenuItem(value: '全部', child: Text('全部')),
-      const DropdownMenuItem(value: '未分类', child: Text('未分类')),
-      ..._categories.map(
-        (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
-      ),
-    ];
-  }
-}
-
-/// 分组资产列表:分组标题行(可折叠)+ 组内资产。
-/// 组标题显示分组名与资产数,点击折叠/展开。
-class _GroupedAssetList extends StatelessWidget {
-  const _GroupedAssetList({
-    required this.groups,
-    required this.collapsed,
-    required this.onToggle,
-    required this.onTapAsset,
-    this.onOrganizeUncategorized,
-  });
-
-  final List<(String, String, List<Asset>)> groups;
-  final Set<String> collapsed;
-  final void Function(String groupId) onToggle;
-  final void Function(Asset) onTapAsset;
-
-  /// 未分类整理入口(仅未分类分组显示)。
-  final VoidCallback? onOrganizeUncategorized;
-
-  /// 资产是否 30 天内到期(日期粒度,本地时区)。
-  bool _expiresSoon(Asset a) {
-    final d = a.expiryDate;
-    if (d == null || d.isEmpty) return false;
-    final exp = DateTime.tryParse(d);
-    if (exp == null) return false;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final days = exp.difference(today).inDays;
-    return days >= 0 && days <= 30;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final children = <Widget>[];
-    for (final (id, name, assets) in groups) {
-      final isCollapsed = collapsed.contains(id);
-      final hasExpirySoon = assets.any(_expiresSoon);
-      children.add(
-        InkWell(
-          onTap: () => onToggle(id),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Row(
-              children: [
-                Icon(
-                  isCollapsed ? Icons.chevron_right : Icons.expand_more,
-                  size: 20,
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-                if (hasExpirySoon)
-                  Tooltip(
-                    message: '有资产 30 天内到期',
-                    child: Icon(
-                      Icons.warning_amber_rounded,
-                      size: 18,
-                      color: Colors.orange.shade700,
-                    ),
-                  ),
-                const SizedBox(width: 6),
-                Text(
-                  '${assets.length}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-                // 未分类整理:全部移至目标分组。
-                if (id == '' && assets.isNotEmpty && onOrganizeUncategorized != null)
-                  InkWell(
-                    onTap: onOrganizeUncategorized,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: Tooltip(
-                        message: '未分类资产移至分组',
-                        child: Icon(
-                          Icons.drive_file_move_outline,
-                          size: 18,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+  Widget _sortOption(_GroupSort value, String label, String currentLabel) {
+    return SimpleDialogOption(
+      onPressed: () => Navigator.of(context).pop(value),
+      child: Row(
+        children: [
+          Icon(
+            _sort == value ? Icons.radio_button_checked : Icons.radio_button_off,
+            color: _sort == value ? Theme.of(context).colorScheme.primary : null,
           ),
+          const SizedBox(width: 12),
+          Text(label),
+          if (_sort == value) ...[
+            const Spacer(),
+            Text(currentLabel, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _groupCard((String, String, int) group) {
+    final (id, name, count) = group;
+    final selected = _selectedGroupIds.contains(id);
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: InkWell(
+        onLongPress: _offlineMode
+            ? null
+            : () => setState(() {
+                  _multiSelect = true;
+                  _selectedGroupIds.add(id);
+                }),
+        onTap: _multiSelect
+            ? () => setState(() {
+                  if (!_selectedGroupIds.remove(id)) _selectedGroupIds.add(id);
+                })
+            : () => _openGroup(id),
+        child: ListTile(
+          leading: Icon(
+            id.isEmpty ? Icons.folder_off_outlined : Icons.folder_outlined,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          title: Text(name),
+          subtitle: Text('$count 个资产'),
+          trailing: _multiSelect
+              ? Icon(
+                  selected ? Icons.check_circle : Icons.circle_outlined,
+                  color: selected ? Theme.of(context).colorScheme.primary : null,
+                )
+              : const Icon(Icons.chevron_right),
         ),
-      );
-      if (!isCollapsed) {
-        for (final asset in assets) {
-          children.add(
-            ListTile(
-              contentPadding: const EdgeInsets.only(left: 40, right: 16),
-              leading: const Icon(Icons.inventory_2_outlined, size: 20),
-              title: Text(asset.name),
-              subtitle: asset.expiryDate == null
-                  ? null
-                  : Text('到期 ${asset.expiryDate}'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => onTapAsset(asset),
-            ),
-          );
-        }
-      }
-    }
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: children,
+      ),
     );
   }
 }

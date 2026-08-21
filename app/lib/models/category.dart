@@ -8,6 +8,7 @@ class Category {
     this.isPreset = false,
     this.createdAt,
     this.assetCount = 0,
+    this.remark = '',
   });
 
   factory Category.fromJson(Map<String, dynamic> json) => Category(
@@ -17,6 +18,7 @@ class Category {
         isPreset: json['is_preset'] == 1 || json['is_preset'] == true,
         createdAt: json['created_at']?.toString(),
         assetCount: (json['asset_count'] as num?)?.toInt() ?? 0,
+        remark: json['remark']?.toString() ?? '',
       );
 
   final String id;
@@ -27,4 +29,7 @@ class Category {
 
   /// 分组内资产数(服务端统计)。
   final int assetCount;
+
+  /// 分组备注。
+  final String remark;
 }
