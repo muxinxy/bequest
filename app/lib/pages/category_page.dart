@@ -4,8 +4,8 @@ import '../models/category.dart';
 import '../repository/asset_repository.dart';
 import 'category_inheritors_page.dart';
 
-/// 分类管理:列表(含预设与自定义)、新增、改名、删除。
-/// 预设分类是服务端按用户预置的真实行,与自定义分类一样可编辑/删除。
+/// 分组管理:列表(含预设与自定义)、新增、改名、删除。
+/// 预设分组是服务端按用户预置的真实行,与自定义分组一样可编辑/删除。
 class CategoryPage extends StatefulWidget {
   const CategoryPage({super.key, required this.repository});
 
@@ -41,11 +41,11 @@ class _CategoryPageState extends State<CategoryPage> {
     }
   }
 
-  /// 新增/编辑共用的分类对话框;编辑时预填名称。
+  /// 新增/编辑共用的分组对话框;编辑时预填名称。
   /// 返回输入的名称或 null(取消)。
   Future<String?> _showCategoryDialog({
     String initialName = '',
-    String title = '新增分类',
+    String title = '新增分组',
   }) async {
     final controller = TextEditingController(text: initialName);
     final result = await showDialog<String>(
@@ -57,7 +57,7 @@ class _CategoryPageState extends State<CategoryPage> {
           autofocus: true,
           maxLength: 20,
           decoration: const InputDecoration(
-            labelText: '分类名称',
+            labelText: '分组名称',
             border: OutlineInputBorder(),
           ),
         ),
@@ -71,7 +71,7 @@ class _CategoryPageState extends State<CategoryPage> {
               final value = controller.text.trim();
               if (value.isEmpty) {
                 ScaffoldMessenger.of(context)
-                    .showSnackBar(const SnackBar(content: Text('请输入分类名称')));
+                    .showSnackBar(const SnackBar(content: Text('请输入分组名称')));
                 return;
               }
               Navigator.of(context).pop(value);
@@ -89,7 +89,7 @@ class _CategoryPageState extends State<CategoryPage> {
     final name = await _showCategoryDialog();
     if (name == null) return;
     try {
-      // 分类类型走仓储默认(physical),UI 不再区分实体/虚拟。
+      // 分组类型走仓储默认(physical),UI 不再区分实体/虚拟。
       await widget.repository.createCategory(name);
       await _load();
     } catch (_) {
@@ -100,7 +100,7 @@ class _CategoryPageState extends State<CategoryPage> {
   Future<void> _editCategory(Category category) async {
     final name = await _showCategoryDialog(
       initialName: category.name,
-      title: '编辑分类',
+      title: '编辑分组',
     );
     if (name == null) return;
     try {
@@ -146,29 +146,29 @@ class _CategoryPageState extends State<CategoryPage> {
     String? moveToId; // null = 未分类
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('删除分类'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('「${category.name}」含 ${category.assetCount} 个资产。'),
-              const SizedBox(height: 8),
-              Text(
-                '删除后这些资产将移入所选分组(默认未分类)。',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-              ),
-              const SizedBox(height: 12),
-              if (others.isNotEmpty)
-                DropdownButtonFormField<String?>(
-                  initialValue: null,
-                  decoration: const InputDecoration(
-                    labelText: '资产移入',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('未分类')),
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('删除分组'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('「${category.name}」含 ${category.assetCount} 个资产。'),
+                const SizedBox(height: 8),
+                Text(
+                  '删除后这些资产将移入所选分组(默认未分组)。',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 12),
+                if (others.isNotEmpty)
+                  DropdownButtonFormField<String?>(
+                    initialValue: null,
+                    decoration: const InputDecoration(
+                      labelText: '资产移入',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('未分组')),
                     ...others.map(
                       (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
                     ),
@@ -177,7 +177,7 @@ class _CategoryPageState extends State<CategoryPage> {
                 )
               else
                 Text(
-                  '无可移入的分组,资产将变为未分类。',
+                  '无可移入的分组,资产将变为未分组。',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
             ],
@@ -215,10 +215,10 @@ class _CategoryPageState extends State<CategoryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('分类管理'),
+        title: const Text('分组管理'),
         actions: [
           IconButton(
-            tooltip: '添加分类',
+            tooltip: '添加分组',
             icon: const Icon(Icons.add),
             onPressed: _addCategory,
           ),
@@ -227,7 +227,7 @@ class _CategoryPageState extends State<CategoryPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _categories.isEmpty
-              ? const Center(child: Text('暂无分类,点击右上角 + 新增'))
+              ? const Center(child: Text('暂无分组,点击右上角 + 新增'))
               : ListView.separated(
                   itemCount: _categories.length,
                   separatorBuilder: (_, _) => const Divider(height: 1),

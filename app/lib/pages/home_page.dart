@@ -376,8 +376,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// 分组列表:(id, 名称, 资产数)。资产数按当前资产列表本地统计
-  /// (云端/本地/离线一致),未分类 = category_id 为空的资产数。
-  /// 支持搜索(分组名)与排序(名称/数量/创建时间),未分类固定排最后。
+  /// (云端/本地/离线一致),未分组 = category_id 为空的资产数。
+  /// 支持搜索(分组名)与排序(名称/数量/创建时间),未分组固定排最后。
   List<(String, String, int)> get _groups {
     final counts = <String, int>{};
     var uncategorized = 0;
@@ -391,7 +391,7 @@ class _HomePageState extends State<HomePage> {
     }
     final groups = <(String, String, int, String?)>[
       for (final c in _categories) (c.id, c.name, counts[c.id] ?? 0, c.createdAt),
-      ('', '未分类', uncategorized, null),
+      ('', '未分组', uncategorized, null),
     ];
     final query = _search.trim().toLowerCase();
     final filtered = query.isEmpty
@@ -405,7 +405,7 @@ class _HomePageState extends State<HomePage> {
       case _GroupSort.created:
         filtered.sort((a, b) => (b.$4 ?? '').compareTo(a.$4 ?? ''));
     }
-    // 未分类固定最后。
+    // 未分组固定最后。
     final rest = filtered.where((g) => g.$1.isNotEmpty).toList();
     final uncat = filtered.where((g) => g.$1.isEmpty).toList();
     return [...rest, ...uncat].map((g) => (g.$1, g.$2, g.$3)).toList();
@@ -430,48 +430,112 @@ class _HomePageState extends State<HomePage> {
     if (mounted) _load();
   }
 
-  /// FAB 添加资产:先选目标分组(未分类或已有分组),再进编辑页。
-  Future<void> _addAssetFlow() async {
+  /// 右下角 + 菜单:新增资产(默认未分组)或新增分组。
+  Future<void> _fabMenu() async {
     final repo = _repo;
     if (repo == null) return;
-    final target = await showDialog<String>(
+    final choice = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('添加到分组'),
+        title: const Text('新增'),
         children: [
           SimpleDialogOption(
-            onPressed: () => Navigator.of(context).pop(''),
-            child: const Text('未分类'),
-          ),
-          for (final c in _categories)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(context).pop(c.id),
-              child: Text(c.name),
+            onPressed: () => Navigator.of(context).pop('asset'),
+            child: const ListTile(
+              leading: Icon(Icons.inventory_2_outlined),
+              title: Text('新增资产'),
+              subtitle: Text('默认未分组'),
             ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop('group'),
+            child: const ListTile(
+              leading: Icon(Icons.create_new_folder_outlined),
+              title: Text('新增分组'),
+            ),
+          ),
         ],
       ),
     );
-    if (target == null || !mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => AssetEditPage(
-          repository: repo,
-          tier: _tier,
-          initialCategoryId: target.isEmpty ? null : target,
+    if (choice == null || !mounted) return;
+    if (choice == 'asset') {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AssetEditPage(
+            repository: repo,
+            tier: _tier,
+            initialCategoryId: null,
+          ),
         ),
-      ),
-    );
-    if (mounted) _load();
+      );
+      if (mounted) _load();
+    } else {
+      await _addGroup();
+    }
   }
 
-  /// 多选删除分组:分组内资产移入未分类。
+  /// 新增分组:输入名称创建,创建后刷新列表。
+  Future<void> _addGroup() async {
+    final repo = _repo;
+    if (repo == null) return;
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('新增分组'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 20,
+          decoration: const InputDecoration(
+            labelText: '分组名称',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = controller.text.trim();
+              if (value.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('请输入分组名称')),
+                );
+                return;
+              }
+              Navigator.of(context).pop(value);
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty || !mounted) return;
+    try {
+      await repo.createCategory(name);
+      if (mounted) _load();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('新增分组失败,请检查网络后重试')),
+      );
+    }
+  }
+
+  /// 多选删除分组:先把分组内资产移入未分组,再软删分组。
+  /// 后端软删分组不会改资产 category_id——不移除会让资产"消失"
+  /// (原分组已排除、未分组也查不到),故前端先 moveAssets 再删。
   Future<void> _deleteSelectedGroups() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除分组'),
         content: Text(
-          '确定删除所选 ${_selectedGroupIds.length} 个分组?分组内资产将变为未分类。',
+          '确定删除所选 ${_selectedGroupIds.length} 个分组?分组内资产将变为未分组。',
         ),
         actions: [
           TextButton(
@@ -489,8 +553,15 @@ class _HomePageState extends State<HomePage> {
     final repo = _repo;
     if (repo == null) return;
     try {
+      // 先把各分组下资产移到未分组(category_id = null)。
       for (final id in _selectedGroupIds) {
-        // moveTo 为空:资产解关联变未分类(与单删语义一致)。
+        final ids = [
+          for (final a in _assets)
+            if (a.categoryId == id) a.id,
+        ];
+        if (ids.isNotEmpty) await repo.moveAssets(ids, null);
+      }
+      for (final id in _selectedGroupIds) {
         await repo.deleteCategory(id);
       }
       setState(() {
@@ -605,8 +676,8 @@ class _HomePageState extends State<HomePage> {
       floatingActionButton: _offlineMode || _multiSelect
           ? null // 离线只读 / 多选模式:不提供添加入口。
           : FloatingActionButton(
-              tooltip: '添加资产',
-              onPressed: _addAssetFlow,
+              tooltip: '添加',
+              onPressed: _fabMenu,
               child: const Icon(Icons.add),
             ),
       body: _loading
@@ -676,7 +747,7 @@ class _HomePageState extends State<HomePage> {
                       ? Center(
                           child: Text(
                             _categories.isEmpty && _assets.isEmpty
-                                ? '暂无分组,点击右下角 + 添加资产'
+                                ? '暂无分组,点击右下角 + 新增资产'
                                 : '没有匹配的分组',
                           ),
                         )
@@ -736,19 +807,25 @@ class _HomePageState extends State<HomePage> {
   Widget _groupCard((String, String, int) group) {
     final (id, name, count) = group;
     final selected = _selectedGroupIds.contains(id);
+    // 未分组是特殊分组:不可删除、不可多选(无长按入口,多选态点击也不选中)。
+    final isUngrouped = id.isEmpty;
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: InkWell(
-        onLongPress: _offlineMode
+        onLongPress: _offlineMode || isUngrouped
             ? null
             : () => setState(() {
                   _multiSelect = true;
                   _selectedGroupIds.add(id);
                 }),
         onTap: _multiSelect
-            ? () => setState(() {
-                  if (!_selectedGroupIds.remove(id)) _selectedGroupIds.add(id);
-                })
+            ? isUngrouped
+                ? null
+                : () => setState(() {
+                      if (!_selectedGroupIds.remove(id)) {
+                        _selectedGroupIds.add(id);
+                      }
+                    })
             : () => _openGroup(id),
         child: ListTile(
           leading: Icon(

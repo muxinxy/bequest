@@ -3,7 +3,7 @@ import 'package:excel/excel.dart';
 import '../models/export_format.dart';
 
 /// 把资产导出项生成为 xlsx 字节(会员权益)。
-/// 列:名称 / 类型 / 分类 / 到期日 / 凭据 / 备注 / 提前提醒天数。
+/// 列:名称 / 类型 / 分组 / 到期日 / 凭据 / 备注 / 提前提醒天数。
 List<int> buildExcelBytes(List<ExportItem> items) {
   final excel = Excel.createExcel();
   // 先建资产表(此时有 Sheet1+资产 两个 sheet),再删默认 Sheet1——
@@ -16,7 +16,7 @@ List<int> buildExcelBytes(List<ExportItem> items) {
   sheet.appendRow([
     TextCellValue('名称'),
     TextCellValue('类型'),
-    TextCellValue('分类'),
+    TextCellValue('分组'),
     TextCellValue('到期日'),
     TextCellValue('凭据'),
     TextCellValue('备注'),

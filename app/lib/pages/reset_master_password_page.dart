@@ -9,7 +9,7 @@ import 'change_master_password_page.dart';
 /// 忘记主密码 → 用账户密码重置。
 ///
 /// 端到端加密的固有代价:**旧敏感数据(凭据/备注)不可恢复**——重置后资产
-/// 保留名称/分类/到期日,凭据清空需重新填写。本地模式无账户密码,不可用。
+/// 保留名称/分组/到期日,凭据清空需重新填写。本地模式无账户密码,不可用。
 class ResetMasterPasswordPage extends StatefulWidget {
   const ResetMasterPasswordPage({super.key});
 
@@ -58,10 +58,10 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
         content: Text(
           assetCount == null
               ? '重置后将无法解密现有的资产凭据与备注(端到端加密),'
-                  '资产将保留名称/分类,凭据需重新填写。此操作不可撤销。'
+                  '资产将保留名称/分组,凭据需重新填写。此操作不可撤销。'
               : '将影响 ${assetCount == 0 ? '0' : assetCount} 条资产:'
                   '重置后无法解密其凭据与备注(端到端加密),'
-                  '资产将保留名称/分类,凭据需重新填写。此操作不可撤销。',
+                  '资产将保留名称/分组,凭据需重新填写。此操作不可撤销。',
         ),
         actions: [
           TextButton(
@@ -161,7 +161,7 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
               const SizedBox(height: 16),
               const Text(
                 '忘记主密码时,用账户密码重置。'
-                '端到端加密意味着旧数据不可恢复:重置后资产保留名称/分类,'
+                '端到端加密意味着旧数据不可恢复:重置后资产保留名称/分组,'
                 '凭据与备注清空,需重新填写。',
                 style: TextStyle(color: Colors.grey),
               ),

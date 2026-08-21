@@ -13,7 +13,7 @@ import 'category_inheritors_page.dart';
 
 /// 分组详情:展示分组内资产列表(名称/继承人/状态/修改时间),
 /// 支持搜索、排序(名称/修改时间/状态)与多选操作(删除/复制/移动/设置继承人)。
-/// [category] 为 null 时表示「未分类」特殊分组。
+/// [category] 为 null 时表示「未分组」特殊分组。
 class GroupDetailPage extends StatefulWidget {
   const GroupDetailPage({
     super.key,
@@ -77,7 +77,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
   @override
   void initState() {
     super.initState();
-    _groupName = widget.category?.name ?? '未分类';
+    _groupName = widget.category?.name ?? '未分组';
     _load();
   }
 
@@ -187,7 +187,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除资产'),
-        content: Text('确定删除所选 ${_selectedIds.length} 个资产?删除后进入回收站,可恢复。'),
+        content: Text('确定删除所选 ${_selectedIds.length} 个资产?删除后资产将进入回收站,可在回收站恢复。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -210,11 +210,36 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     }
   }
 
-  /// 复制:逐条复制所选资产。
+  /// 复制到分组:先选目标分组(未分组或任一现有分组),逐条复制后移动过去。
+  /// 后端 copyAsset 会保留原分组,故前端"复制后移动"落到所选分组。
   Future<void> _copySelected() async {
+    final target = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('复制到分组'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop(''),
+            child: const Text('未分组'),
+          ),
+          for (final c in _categories)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(c.id),
+              child: Text(c.name),
+            ),
+        ],
+      ),
+    );
+    if (target == null || !mounted) return;
     try {
       for (final id in _selectedIds) {
-        await widget.repository.copyAsset(id);
+        final copied = await widget.repository.copyAsset(id);
+        final newId = copied['id']?.toString();
+        if (newId == null || newId.isEmpty) continue;
+        await widget.repository.moveAssets(
+          [newId],
+          target.isEmpty ? null : target,
+        );
       }
       _exitMultiSelect();
       await _load();
@@ -232,7 +257,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.of(context).pop(''),
-            child: const Text('未分类'),
+            child: const Text('未分组'),
           ),
           for (final c in targets)
             SimpleDialogOption(
@@ -489,7 +514,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                 ),
               ]
             : [
-                // 未分类无分组操作;离线只读。
+                // 未分组无分组操作;离线只读。
                 if (_groupId.isNotEmpty && !_readOnly)
                   PopupMenuButton<String>(
                     tooltip: '分组操作',
@@ -562,7 +587,28 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
               ],
             ),
       bottomNavigationBar: _multiSelect ? _buildBottomBar() : null,
+      floatingActionButton: _readOnly || _multiSelect
+          ? null // 离线只读 / 多选模式:不提供添加入口。
+          : FloatingActionButton(
+              tooltip: '新增资产',
+              onPressed: _addAsset,
+              child: const Icon(Icons.add),
+            ),
     );
+  }
+
+  /// 新增资产:预选当前分组(未分组详情页则为未分组),进编辑页后刷新。
+  Future<void> _addAsset() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AssetEditPage(
+          repository: widget.repository,
+          tier: widget.tier,
+          initialCategoryId: _groupId.isEmpty ? null : _groupId,
+        ),
+      ),
+    );
+    if (mounted) _load();
   }
 
   Widget _buildBottomBar() {

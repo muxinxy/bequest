@@ -186,7 +186,7 @@ class _RecycleBinPageState extends State<RecycleBinPage> {
       title: Text(name),
       subtitle: Text(
         isAsset
-            ? '原分组:${category ?? '未分类'} · 删除于 $deletedAt'
+            ? '原分组:${category ?? '未分组'} · 删除于 $deletedAt'
             : '删除于 $deletedAt',
       ),
       trailing: Row(

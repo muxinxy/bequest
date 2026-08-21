@@ -1,17 +1,17 @@
-/// 主页资产过滤的纯函数:类型 / 分类 / 名称搜索,便于单元测试。
+/// 主页资产过滤的纯函数:类型 / 分组 / 名称搜索,便于单元测试。
 /// 入参为服务器形状的资产 map(含 name/asset_type/category_id)。
 library;
 
-/// 分类下拉'全部'哨兵:不过滤。
+/// 分组下拉'全部'哨兵:不过滤。
 const String kAllFilter = '全部';
 
-/// 分类下拉'未分类'哨兵:匹配无分类资产。
-const String kUncategorizedFilter = '未分类';
+/// 分组下拉'未分组'哨兵:匹配无分组资产。
+const String kUncategorizedFilter = '未分组';
 
 /// 依过滤条件筛选资产。名称搜索不区分大小写;
-/// 传入 [categoryNames](分类 id → 名称)时搜索同时匹配**分组名**。
+/// 传入 [categoryNames](分组 id → 名称)时搜索同时匹配**分组名**。
 /// [typeFilter] 为 'physical'/'virtual' 或 null(全部);
-/// [categoryFilter] 为分类 id、[kUncategorizedFilter] 或 null(全部)。
+/// [categoryFilter] 为分组 id、[kUncategorizedFilter] 或 null(全部)。
 List<Map<String, dynamic>> filterAssets({
   required List<Map<String, dynamic>> assets,
   String? typeFilter,

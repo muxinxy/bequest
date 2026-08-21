@@ -29,7 +29,7 @@ class AssetEditPage extends StatefulWidget {
   final AssetRepository repository;
   final String? tier;
 
-  /// 新建时预选的分组 id(null = 未分类),来自主页 FAB 的分组选择流程。
+  /// 新建时预选的分组 id(null = 未分组),来自主页 FAB 的分组选择流程。
   final String? initialCategoryId;
 
   @override
@@ -50,7 +50,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
 
   List<Category> _categories = const [];
 
-  /// 分类下拉值:'' = 未分类,其他 = 分类 id(预设与自定义同表)。
+  /// 分组下拉值:'' = 未分组,其他 = 分组 id(预设与自定义同表)。
   String _categoryValue = '';
 
   /// 资产状态:active/inactive/pending/expired。
@@ -172,7 +172,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
         if (!mounted) return;
         setState(() {
           _categories = categories;
-          // 主页 FAB 选择分组后预选;分组不存在则回退未分类。
+          // 主页 FAB 选择分组后预选;分组不存在则回退未分组。
           _categoryValue = categories.any((c) => c.id == widget.initialCategoryId)
               ? (widget.initialCategoryId ?? '')
               : '';
@@ -243,7 +243,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 
-  /// 分类 id 提交值:
+  /// 分组 id 提交值:
   /// - 云端:数字(服务端 assetRequest.CategoryID 为 int64,字符串会 400 invalid JSON);
   /// - 本地:'L<时间戳><序号>' 字符串,原样保留。
   Object? _categoryIdToSubmit() {
@@ -258,7 +258,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除资产'),
-        content: const Text('确定删除该资产?此操作不可恢复'),
+        content: const Text('确定删除该资产?删除后资产将进入回收站,可在回收站恢复。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -501,7 +501,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
                     DropdownButtonFormField<String>(
                       initialValue: _categoryValue,
                       decoration: const InputDecoration(
-                        labelText: '分类',
+                        labelText: '分组',
                         border: OutlineInputBorder(),
                       ),
                       items: _categoryItems(),
@@ -620,9 +620,9 @@ class _AssetEditPageState extends State<AssetEditPage> {
   }
 
   List<DropdownMenuItem<String>> _categoryItems() {
-    // 分类不区分类型,展示全部(预设与自定义同表)。
+    // 分组不区分类型,展示全部(预设与自定义同表)。
     return [
-      const DropdownMenuItem(value: '', child: Text('未分类')),
+      const DropdownMenuItem(value: '', child: Text('未分组')),
       ..._categories.map(
         (c) => DropdownMenuItem(
           value: c.id,

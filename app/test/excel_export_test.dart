@@ -32,7 +32,7 @@ void main() {
     final header = sheet.rows.first.map((c) => c?.value.toString()).toList();
     expect(
       header,
-      containsAll(['名称', '类型', '分类', '到期日', '凭据', '备注', '继承人']),
+      containsAll(['名称', '类型', '分组', '到期日', '凭据', '备注', '继承人']),
     );
     // 数据行。
     final row = sheet.rows[1].map((c) => c?.value.toString()).toList();

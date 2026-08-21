@@ -20,7 +20,7 @@ void main() {
     expect(filterAssets(assets: assets, categoryFilter: 'c1'), hasLength(1));
   });
 
-  test('未分类过滤', () {
+  test('未分组过滤', () {
     expect(
       filterAssets(assets: assets, categoryFilter: kUncategorizedFilter),
       hasLength(1),
