@@ -76,6 +76,12 @@ class OfflineAssetRepository implements AssetRepository {
   Future<void> deleteAsset(String id) =>
       Future.error(UnsupportedError('离线模式不可修改'));
   @override
+  Future<int> batchDeleteAssets(List<String> ids) =>
+      Future.error(UnsupportedError('离线模式不可修改'));
+  @override
+  Future<Map<String, dynamic>> copyAsset(String id) =>
+      Future.error(UnsupportedError('离线模式不可修改'));
+  @override
   Future<List<Map<String, dynamic>>> listAssetInheritors(String assetId) async => const [];
   @override
   Future<Map<String, dynamic>> createAssetInheritor(String assetId, Map<String, dynamic> body) =>

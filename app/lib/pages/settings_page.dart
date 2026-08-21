@@ -7,6 +7,7 @@ import '../models/entitlements.dart';
 import '../repository/asset_repository.dart';
 import '../repository/local_asset_repository.dart';
 import '../storage/secure_store.dart';
+import '../main.dart' show BequestApp;
 import 'about_page.dart';
 import 'account_settings_page.dart';
 import 'app_lock_setup_page.dart';
@@ -327,6 +328,12 @@ class _SettingsPageState extends State<SettingsPage> {
             () => _push(context, const AuditPage()),
             enabled: !_isLocal,
           ),
+          _section(context, '外观'),
+          _entry(
+            Icons.palette_outlined,
+            '主题',
+            _pickTheme,
+          ),
           _section(context, '存储与服务器'),
           _entry(
             Icons.dns_outlined,
@@ -376,4 +383,52 @@ class _SettingsPageState extends State<SettingsPage> {
     trailing: Icon(Icons.chevron_right, color: enabled ? null : Colors.grey),
     onTap: enabled ? onTap : null,
   );
+
+  /// 主题选择:浅色 / 深色 / 跟随系统。
+  Future<void> _pickTheme() async {
+    final current = await _store.readThemeMode() ?? 'system';
+    if (!mounted) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('主题'),
+        children: [
+          _themeOption('system', '跟随系统', current),
+          _themeOption('light', '浅色', current),
+          _themeOption('dark', '深色', current),
+        ],
+      ),
+    );
+    if (choice == null || choice == current) return;
+    await _store.saveThemeMode(choice);
+    // 刷新 MaterialApp 主题。
+    BequestApp.notifyThemeChanged();
+  }
+
+  Widget _themeOption(String value, String label, String current) {
+    return SimpleDialogOption(
+      onPressed: () => Navigator.of(context).pop(value),
+      child: Row(
+        children: [
+          Icon(
+            value == 'system'
+                ? Icons.brightness_auto
+                : value == 'light'
+                    ? Icons.light_mode
+                    : Icons.dark_mode,
+            color: current == value ? Theme.of(context).colorScheme.primary : null,
+          ),
+          const SizedBox(width: 12),
+          Text(label),
+          if (current == value) ...[
+            const Spacer(),
+            Icon(
+              Icons.check,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }

@@ -26,6 +26,7 @@ class SecureStore {
   static const _recentUrlsKey = 'bequest_recent_urls';
   static const _storageModeKey = 'bequest_storage_mode';
   static const _masterHintKey = 'bequest_master_hint';
+  static const _themeModeKey = 'bequest_theme_mode';
 
   // ---- 本地账户(多账户本地模式) ----
   static const _localProfilesKey = 'bequest_local_profiles';
@@ -248,6 +249,12 @@ class SecureStore {
 
   Future<void> saveStorageMode(String mode) =>
       _storage.write(key: _storageModeKey, value: mode);
+
+  /// 主题模式:'system' | 'light' | 'dark' | null(默认 system)。
+  Future<String?> readThemeMode() => _storage.read(key: _themeModeKey);
+
+  Future<void> saveThemeMode(String mode) =>
+      _storage.write(key: _themeModeKey, value: mode);
 
   // ---------- 本地账户(多账户本地模式) ----------
 

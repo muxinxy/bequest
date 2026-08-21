@@ -30,6 +30,7 @@ type categoryJSON struct {
 	CreatedAt  string `json:"created_at"`
 	SortOrder  int    `json:"sort_order"`
 	AssetCount int    `json:"asset_count"`
+	Remark     string `json:"remark"`
 }
 
 // validAssetType reports whether s is a supported category type.
@@ -38,21 +39,26 @@ func validAssetType(s string) bool {
 }
 
 // scanCategory fills a categoryJSON from the canonical column order:
-// id, name, asset_type, is_preset, created_at, sort_order, asset_count.
+// id, name, asset_type, is_preset, created_at, sort_order, asset_count, remark.
 func scanCategory(scanner interface{ Scan(...any) error }) (*categoryJSON, error) {
 	var c categoryJSON
-	if err := scanner.Scan(&c.ID, &c.Name, &c.AssetType, &c.IsPreset, &c.CreatedAt, &c.SortOrder, &c.AssetCount); err != nil {
+	var remark sql.NullString
+	if err := scanner.Scan(&c.ID, &c.Name, &c.AssetType, &c.IsPreset, &c.CreatedAt, &c.SortOrder, &c.AssetCount, &remark); err != nil {
 		return nil, err
+	}
+	if remark.Valid {
+		c.Remark = remark.String
 	}
 	return &c, nil
 }
 
-// handleListCategories: GET /api/v1/categories -> 200 [] (按 sort_order 排序)
+// handleListCategories: GET /api/v1/categories -> 200 [] (按 sort_order 排序,排除回收站)
 func handleListCategories(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rows, err := db.Query(`SELECT c.id, c.name, c.asset_type, c.is_preset, c.created_at, c.sort_order,
-				(SELECT COUNT(*) FROM assets a WHERE a.category_id = c.id) AS asset_count
-			FROM categories c WHERE c.user_id = ? ORDER BY c.sort_order, c.id`, userID(r))
+				(SELECT COUNT(*) FROM assets a WHERE a.category_id = c.id AND a.deleted_at IS NULL) AS asset_count,
+				c.remark
+			FROM categories c WHERE c.user_id = ? AND c.deleted_at IS NULL ORDER BY c.sort_order, c.id`, userID(r))
 		if err != nil {
 			log.Printf("list categories: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -112,7 +118,8 @@ func handleCreateCategory(db *sql.DB) http.HandlerFunc {
 		// 新分组排最后(sort_order 用 id 即单调递增)。
 		db.Exec(`UPDATE categories SET sort_order = ? WHERE id = ?`, id, id)
 		c, err := scanCategory(db.QueryRow(`SELECT id, name, asset_type, is_preset, created_at, sort_order,
-			(SELECT COUNT(*) FROM assets a WHERE a.category_id = categories.id) FROM categories WHERE id = ?`, id))
+			(SELECT COUNT(*) FROM assets a WHERE a.category_id = categories.id AND a.deleted_at IS NULL),
+			remark FROM categories WHERE id = ?`, id))
 		if err != nil {
 			log.Printf("fetch created category: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -135,6 +142,7 @@ func handleUpdateCategory(db *sql.DB) http.HandlerFunc {
 		var req struct {
 			Name      string `json:"name"`
 			AssetType string `json:"asset_type"`
+			Remark    string `json:"remark"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -155,8 +163,13 @@ func handleUpdateCategory(db *sql.DB) http.HandlerFunc {
 		}
 		// UNIQUE(user_id,name) is checked against other rows only, so updating
 		// a row to its own current name (retarget-only PUT) is not a conflict.
-		res, err := db.Exec(`UPDATE categories SET name = ?, asset_type = ? WHERE id = ? AND user_id = ?`,
-			name, assetType, id, userID(r))
+		remark := req.Remark
+		var remarkArg any
+		if remark != "" {
+			remarkArg = remark
+		}
+		res, err := db.Exec(`UPDATE categories SET name = ?, asset_type = ?, remark = ? WHERE id = ? AND user_id = ?`,
+			name, assetType, remarkArg, id, userID(r))
 		if err != nil {
 			if isUniqueViolation(err) {
 				writeError(w, http.StatusConflict, "category already exists")
@@ -171,7 +184,8 @@ func handleUpdateCategory(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		c, err := scanCategory(db.QueryRow(`SELECT id, name, asset_type, is_preset, created_at, sort_order,
-			(SELECT COUNT(*) FROM assets a WHERE a.category_id = categories.id) FROM categories WHERE id = ?`, id))
+			(SELECT COUNT(*) FROM assets a WHERE a.category_id = categories.id AND a.deleted_at IS NULL),
+			remark FROM categories WHERE id = ?`, id))
 		if err != nil {
 			log.Printf("fetch updated category: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -226,6 +240,7 @@ func handleReorderCategories(db *sql.DB) http.HandlerFunc {
 // handleDeleteCategory: DELETE /api/v1/categories/{id}?move_to={target} -> 204
 // (或 200 {"moved":n} 当带 move_to)。move_to 先把该分组资产移入目标分组再删,
 // 防止误删后资产散落"未分类"。分组继承人绑定由 ON DELETE CASCADE 清理。
+// 软删除(deleted_at = now)进回收站,恢复见 handleRestoreItem。
 func handleDeleteCategory(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
@@ -236,7 +251,7 @@ func handleDeleteCategory(db *sql.DB) http.HandlerFunc {
 		uid := userID(r)
 		// 确认分组存在且属于当前用户
 		var n int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND user_id = ?`, id, uid).Scan(&n); err != nil || n == 0 {
+		if err := db.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, id, uid).Scan(&n); err != nil || n == 0 {
 			writeError(w, http.StatusNotFound, "category not found")
 			return
 		}
@@ -260,8 +275,8 @@ func handleDeleteCategory(db *sql.DB) http.HandlerFunc {
 			}
 			moved, _ = res.RowsAffected()
 		}
-		if _, err := db.Exec(`DELETE FROM categories WHERE id = ? AND user_id = ?`, id, uid); err != nil {
-			log.Printf("delete category: %v", err)
+		if _, err := db.Exec(`UPDATE categories SET deleted_at = datetime('now') WHERE id = ? AND user_id = ?`, id, uid); err != nil {
+			log.Printf("soft delete category: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}

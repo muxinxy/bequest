@@ -82,6 +82,7 @@ type assetListJSON struct {
 	AssetType  string  `json:"asset_type"`
 	CategoryID *int64  `json:"category_id"`
 	ExpiryDate *string `json:"expiry_date"`
+	Status     string  `json:"status"`
 	UpdatedAt  string  `json:"updated_at"`
 }
 
@@ -101,6 +102,7 @@ type assetRequest struct {
 	AssetKeyWrappedMk  string  `json:"asset_key_wrapped_mk"`
 	AssetKeyWrappedWk  string  `json:"asset_key_wrapped_wk"`
 	ExpiryDate         *string `json:"expiry_date"`
+	Status             string  `json:"status"`
 }
 
 // validateAsset returns a 400 message, or ("", err) for internal DB errors.
@@ -151,9 +153,9 @@ func fetchAsset(db *sql.DB, id, uid int64) (*assetJSON, error) {
 	var data []byte
 	var wkMk, wkWk sql.NullString
 	err := db.QueryRow(`SELECT id, name, asset_type, category_id, encrypted_data,
-			expiry_date, updated_at, asset_key_wrapped_mk, asset_key_wrapped_wk
-		FROM assets WHERE id = ? AND user_id = ?`, id, uid).
-		Scan(&a.ID, &a.Name, &a.AssetType, &catID, &data, &exp, &a.UpdatedAt, &wkMk, &wkWk)
+			expiry_date, status, updated_at, asset_key_wrapped_mk, asset_key_wrapped_wk
+		FROM assets WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, id, uid).
+		Scan(&a.ID, &a.Name, &a.AssetType, &catID, &data, &exp, &a.Status, &a.UpdatedAt, &wkMk, &wkWk)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errNotFound
 	}
@@ -176,11 +178,11 @@ func fetchAsset(db *sql.DB, id, uid int64) (*assetJSON, error) {
 	return &a, nil
 }
 
-// handleListAssets: GET /api/v1/assets -> 200 metadata only
+// handleListAssets: GET /api/v1/assets -> 200 metadata only (排除回收站)
 func handleListAssets(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rows, err := db.Query(`SELECT id, name, asset_type, category_id, expiry_date, updated_at
-			FROM assets WHERE user_id = ? ORDER BY id`, userID(r))
+		rows, err := db.Query(`SELECT id, name, asset_type, category_id, expiry_date, status, updated_at
+			FROM assets WHERE user_id = ? AND deleted_at IS NULL ORDER BY id`, userID(r))
 		if err != nil {
 			log.Printf("list assets: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -192,7 +194,7 @@ func handleListAssets(db *sql.DB) http.HandlerFunc {
 			var a assetListJSON
 			var catID sql.NullInt64
 			var exp sql.NullString
-			if err := rows.Scan(&a.ID, &a.Name, &a.AssetType, &catID, &exp, &a.UpdatedAt); err != nil {
+			if err := rows.Scan(&a.ID, &a.Name, &a.AssetType, &catID, &exp, &a.Status, &a.UpdatedAt); err != nil {
 				log.Printf("scan asset: %v", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
@@ -321,11 +323,19 @@ func handleUpdateAsset(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, msg)
 			return
 		}
+		status := req.Status
+		if status == "" {
+			status = "active"
+		}
+		if status != "active" && status != "inactive" && status != "pending" && status != "expired" {
+			writeError(w, http.StatusBadRequest, "invalid status")
+			return
+		}
 		data, _ := base64.StdEncoding.DecodeString(req.EncryptedData)
 		res, err := db.Exec(`UPDATE assets SET category_id = ?, asset_type = ?, name = ?, encrypted_data = ?,
-			expiry_date = ?, updated_at = datetime('now'), asset_key_wrapped_mk = ?, asset_key_wrapped_wk = ?
+			expiry_date = ?, status = ?, updated_at = datetime('now'), asset_key_wrapped_mk = ?, asset_key_wrapped_wk = ?
 			WHERE id = ? AND user_id = ?`,
-			req.CategoryID, req.AssetType, req.Name, data, req.ExpiryDate,
+			req.CategoryID, req.AssetType, req.Name, data, req.ExpiryDate, status,
 			nullable(req.AssetKeyWrappedMk), nullable(req.AssetKeyWrappedWk), id, uid)
 		if err != nil {
 			log.Printf("update asset: %v", err)
@@ -346,7 +356,8 @@ func handleUpdateAsset(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// handleDeleteAsset: DELETE /api/v1/assets/{id} -> 204; 404 not owned
+// handleDeleteAsset: DELETE /api/v1/assets/{id} -> 204; 404 not owned.
+// 软删除(deleted_at = now)进回收站,恢复见 handleRestoreItem。
 func handleDeleteAsset(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
@@ -354,9 +365,9 @@ func handleDeleteAsset(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid id")
 			return
 		}
-		res, err := db.Exec(`DELETE FROM assets WHERE id = ? AND user_id = ?`, id, userID(r))
+		res, err := db.Exec(`UPDATE assets SET deleted_at = datetime('now') WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, id, userID(r))
 		if err != nil {
-			log.Printf("delete asset: %v", err)
+			log.Printf("soft delete asset: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -366,4 +377,69 @@ func handleDeleteAsset(db *sql.DB) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// handleCopyAsset: POST /api/v1/assets/{id}/copy -> 201 复制资产(新 id,名称加"副本")。
+func handleCopyAsset(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := parseID(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid id")
+			return
+		}
+		uid := userID(r)
+		var src assetJSON
+		var catID sql.NullInt64
+		var exp sql.NullString
+		var data []byte
+		var wkMk, wkWk sql.NullString
+		if err := db.QueryRow(`SELECT id, name, asset_type, category_id, encrypted_data,
+			expiry_date, asset_key_wrapped_mk, asset_key_wrapped_wk
+			FROM assets WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, id, uid).
+			Scan(&src.ID, &src.Name, &src.AssetType, &catID, &data, &exp, &wkMk, &wkWk); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "asset not found")
+				return
+			}
+			log.Printf("copy asset query: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		// 名称加"副本"后缀。
+		newName := src.Name + " 副本"
+		res, err := db.Exec(`INSERT INTO assets (user_id, category_id, asset_type, name, encrypted_data, expiry_date,
+				status, asset_key_wrapped_mk, asset_key_wrapped_wk)
+			VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+			uid, nullableInt64(catID), src.AssetType, newName, data, nullableStr(exp),
+			nullable(wkMk.String), nullable(wkWk.String))
+		if err != nil {
+			log.Printf("copy asset insert: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		newID, _ := res.LastInsertId()
+		a, err := fetchAsset(db, newID, uid)
+		if err != nil {
+			log.Printf("fetch copied asset: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		writeJSON(w, http.StatusCreated, a)
+	}
+}
+
+// nullableInt64 converts an invalid sql.NullInt64 to nil.
+func nullableInt64(v sql.NullInt64) any {
+	if !v.Valid {
+		return nil
+	}
+	return v.Int64
+}
+
+// nullableStr converts an invalid sql.NullString to nil.
+func nullableStr(v sql.NullString) any {
+	if !v.Valid {
+		return nil
+	}
+	return v.String
 }

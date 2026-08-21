@@ -71,6 +71,15 @@ class CloudAssetRepository implements AssetRepository {
   Future<void> deleteAsset(String id) => _api.deleteAsset(jwt, id);
 
   @override
+  Future<int> batchDeleteAssets(List<String> ids) async {
+    final res = await _api.batchDeleteAssets(jwt, ids.map(int.parse).toList());
+    return (res['deleted'] as num?)?.toInt() ?? 0;
+  }
+
+  @override
+  Future<Map<String, dynamic>> copyAsset(String id) => _api.copyAsset(jwt, id);
+
+  @override
   Future<List<Map<String, dynamic>>> listAssetInheritors(String assetId) =>
       _api.listAssetInheritors(jwt, assetId);
 

@@ -29,17 +29,62 @@ void main() {
 /// (锁屏在独立 Navigator 覆盖层,无法用自身 context 导航主栈)。
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
-class BequestApp extends StatelessWidget {
+class BequestApp extends StatefulWidget {
   const BequestApp({super.key});
+
+  /// 设置页切换主题后通知全局刷新。
+  static void notifyThemeChanged() => _BequestAppState._instance?.reloadTheme();
+
+  @override
+  State<BequestApp> createState() => _BequestAppState();
+}
+
+class _BequestAppState extends State<BequestApp> {
+  ThemeMode _themeMode = ThemeMode.system;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    try {
+      final mode = await SecureStore().readThemeMode();
+      if (!mounted) return;
+      setState(() {
+        _themeMode = switch (mode) {
+          'light' => ThemeMode.light,
+          'dark' => ThemeMode.dark,
+          _ => ThemeMode.system,
+        };
+      });
+    } catch (_) {
+      // 读取失败保持默认(跟随系统)。
+    }
+  }
+
+  /// 重新加载主题(设置页切换后调用)。
+  void reloadTheme() => _loadTheme();
+
+  static _BequestAppState? _instance;
 
   @override
   Widget build(BuildContext context) {
+    _instance = this;
     return MaterialApp(
       navigatorKey: appNavigatorKey,
       title: '托孤',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+          brightness: Brightness.dark,
+        ),
+      ),
+      themeMode: _themeMode,
       builder: (context, child) =>
           LockGate(child: child ?? const SizedBox.shrink()),
       home: const LoginPage(),

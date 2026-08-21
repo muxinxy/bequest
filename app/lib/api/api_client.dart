@@ -170,6 +170,36 @@ class ApiClient {
     return _postAuth('/api/v1/assets/move', {'ids': ids, 'category_id': categoryId}, jwt);
   }
 
+  /// POST /api/v1/assets/batch-delete 批量软删除(进回收站)。
+  Future<Map<String, dynamic>> batchDeleteAssets(String jwt, List<int> ids) {
+    return _postAuth('/api/v1/assets/batch-delete', {'ids': ids}, jwt);
+  }
+
+  /// POST /api/v1/assets/{id}/copy 复制资产。
+  Future<Map<String, dynamic>> copyAsset(String jwt, String id) {
+    return _postAuth('/api/v1/assets/$id/copy', {}, jwt);
+  }
+
+  /// GET /api/v1/recycle-bin 回收站列表。
+  Future<List<Map<String, dynamic>>> listRecycleBin(String jwt) {
+    return _getList('/api/v1/recycle-bin', jwt);
+  }
+
+  /// POST /api/v1/recycle-bin/{kind}/{id}/restore 恢复。
+  Future<Map<String, dynamic>> restoreRecycleItem(String jwt, String kind, String id) {
+    return _postAuth('/api/v1/recycle-bin/$kind/$id/restore', {}, jwt);
+  }
+
+  /// DELETE /api/v1/recycle-bin/{kind}/{id} 永久删除。
+  Future<void> purgeRecycleItem(String jwt, String kind, String id) {
+    return _delete('/api/v1/recycle-bin/$kind/$id', jwt);
+  }
+
+  /// DELETE /api/v1/recycle-bin 清空回收站。
+  Future<void> emptyRecycleBin(String jwt) {
+    return _delete('/api/v1/recycle-bin', jwt);
+  }
+
   /// GET /api/v1/categories/{id}/inheritors/{iid}/assets 分组继承预览。
   Future<Map<String, dynamic>> listCategoryInheritorAssets(
     String jwt,

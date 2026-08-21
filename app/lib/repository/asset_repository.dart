@@ -13,6 +13,10 @@ abstract class AssetRepository {
   Future<Map<String, dynamic>> createAsset(Map<String, dynamic> body);
   Future<Map<String, dynamic>> updateAsset(String id, Map<String, dynamic> body);
   Future<void> deleteAsset(String id);
+  // 批量软删除(进回收站)。
+  Future<int> batchDeleteAssets(List<String> ids);
+  // 复制资产(新 id,名称加"副本")。
+  Future<Map<String, dynamic>> copyAsset(String id);
   // 资产级继承人绑定(仅云端模式支持;本地模式返回空/抛错)。
   Future<List<Map<String, dynamic>>> listAssetInheritors(String assetId);
   Future<Map<String, dynamic>> createAssetInheritor(String assetId, Map<String, dynamic> body);

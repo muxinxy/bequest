@@ -107,6 +107,13 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("GET /api/v1/categories/{id}/inheritors/{iid}/assets", auth(handleListCategoryInheritorAssets(db)))
 	mux.Handle("PUT /api/v1/categories/order", auth(handleReorderCategories(db)))
 	mux.Handle("POST /api/v1/assets/move", auth(handleBatchMoveAssets(db)))
+	mux.Handle("POST /api/v1/assets/batch-delete", auth(handleBatchDeleteAssets(db)))
+	mux.Handle("POST /api/v1/assets/{id}/copy", auth(handleCopyAsset(db)))
+	// 回收站。
+	mux.Handle("GET /api/v1/recycle-bin", auth(handleListRecycleBin(db)))
+	mux.Handle("DELETE /api/v1/recycle-bin", auth(handleEmptyRecycleBin(db)))
+	mux.Handle("POST /api/v1/recycle-bin/{kind}/{id}/restore", auth(handleRestoreRecycleItem(db)))
+	mux.Handle("DELETE /api/v1/recycle-bin/{kind}/{id}", auth(handlePurgeRecycleItem(db)))
 	mux.Handle("GET /api/v1/inheritors/{id}/assets", auth(handleListInheritorAssets(db)))
 	mux.Handle("GET /api/v1/inheritors", auth(handleListInheritors(db)))
 	mux.Handle("POST /api/v1/inheritors", auth(handleCreateInheritor(db)))

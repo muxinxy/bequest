@@ -81,6 +81,47 @@ class LocalVault {
     await (await _store()).write(blob);
   }
 
+  /// 有界写入:若完整备份超限,按资产 updated_at 降序保留最新部分
+  /// (队列式:保最新、弃最旧),直到加密后不超限。
+  /// 保留的资产仍含完整 encrypted_data,离线可查看/导出最新数据。
+  Future<void> saveVaultBounded(String backupJson, String masterKeyB64) async {
+    final blob = await _encryptBounded(backupJson, masterKeyB64);
+    if (blob != null) {
+      await (await _store()).write(blob);
+      return;
+    }
+    // 超限:逐条丢弃最旧资产,直到能放下。
+    Object? decoded;
+    try {
+      decoded = jsonDecode(backupJson);
+    } catch (_) {
+      return; // 非 JSON,无法截断。
+    }
+    if (decoded is! Map<String, dynamic> || decoded['assets'] is! List) {
+      return; // 结构不符,无法截断。
+    }
+    final assets = (decoded['assets'] as List)
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    // updated_at 降序(新→旧);无 updated_at 排最后(先丢)。
+    assets.sort((a, b) {
+      final at = a['updated_at']?.toString() ?? '';
+      final bt = b['updated_at']?.toString() ?? '';
+      return bt.compareTo(at);
+    });
+    // 逐条丢弃最旧,直到可写入;留一条兜底(单条仍超限则放弃)。
+    for (var keep = assets.length - 1; keep >= 1; keep--) {
+      final trimmed = Map<String, dynamic>.from(decoded)
+        ..['assets'] = assets.sublist(0, keep);
+      final tBlob = await _encryptBounded(jsonEncode(trimmed), masterKeyB64);
+      if (tBlob != null) {
+        await (await _store()).write(tBlob);
+        return;
+      }
+    }
+    // 单条都放不下:放弃缓存(保持旧缓存或为空)。
+  }
+
   /// 读取本地库对象(解密 + JSON 解码)。无存储/密钥错误 → null。
   /// 旧版纯备份串(无 schema 字段)按空库返回,不崩溃。
   Future<Map<String, dynamic>?> loadLocalData(String masterKeyB64) async {

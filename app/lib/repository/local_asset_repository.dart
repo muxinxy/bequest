@@ -174,6 +174,37 @@ class LocalAssetRepository implements AssetRepository {
     await _save(data);
   }
 
+  @override
+  Future<int> batchDeleteAssets(List<String> ids) async {
+    final data = await _load();
+    final idSet = ids.toSet();
+    final before = (data['assets'] as List).length;
+    (data['assets'] as List).removeWhere(
+      (a) => idSet.contains('${(a as Map)['id']}'),
+    );
+    await _save(data);
+    return before - (data['assets'] as List).length;
+  }
+
+  @override
+  Future<Map<String, dynamic>> copyAsset(String id) async {
+    final data = await _load();
+    final assets = data['assets'] as List;
+    final index = assets.indexWhere((a) => '${(a as Map)['id']}' == id);
+    if (index < 0) throw StateError('资产不存在(id: $id)');
+    final src = assets[index] as Map<String, dynamic>;
+    final copy = <String, dynamic>{
+      ...src,
+      'id': _newId(),
+      'name': '${src['name']} 副本',
+      'created_at': _nowString(),
+      'updated_at': _nowString(),
+    };
+    assets.add(copy);
+    await _save(data);
+    return copy;
+  }
+
   // 本地模式无继承概念:继承人绑定为空列表(避免 UI 崩溃),写操作抛错。
   @override
   Future<List<Map<String, dynamic>>> listAssetInheritors(String assetId) async =>

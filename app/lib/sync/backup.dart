@@ -69,7 +69,8 @@ Future<String> buildBackupJson(
 }
 
 /// 强制刷新本地加密快照:从服务器拉取全量数据并覆盖保存。
-/// 登录成功后调用,保证本地快照与云端一致。
+/// 若数据超出缓存上限,按资产 updated_at 降序保留最新部分(队列式:
+/// 保最新、弃最旧),确保离线缓存始终有界且包含最近数据。
 Future<void> refreshLocalVault(
   String jwt,
   ApiClient api,
@@ -77,16 +78,16 @@ Future<void> refreshLocalVault(
   LocalVault? vault,
 }) async {
   final backup = await _fetchAll(jwt, api);
-  await (vault ?? LocalVault()).saveVault(backup, masterKeyB64);
+  await (vault ?? LocalVault()).saveVaultBounded(backup, masterKeyB64);
 }
 
-/// 将备份写入本地加密快照(未登录时恢复的落点)。
+/// 将备份写入本地加密快照(未登录时恢复的落点)。超出上限同样截断。
 Future<void> restoreToLocal(
   String backupJson,
   String masterKeyB64, {
   LocalVault? vault,
 }) async {
-  await (vault ?? LocalVault()).saveVault(backupJson, masterKeyB64);
+  await (vault ?? LocalVault()).saveVaultBounded(backupJson, masterKeyB64);
 }
 
 /// 将备份 JSON 用主密钥加密为上传负载。
