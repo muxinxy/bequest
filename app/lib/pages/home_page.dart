@@ -15,7 +15,6 @@ import '../storage/secure_store.dart';
 import '../sync/backup.dart';
 import '../main.dart';
 import 'asset_edit_page.dart';
-import 'category_inheritors_page.dart';
 import 'group_detail_page.dart';
 import 'login_page.dart';
 import 'recycle_bin_page.dart';
@@ -577,34 +576,88 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 多选设置继承人:依次为每个选中分组打开继承人管理页。
+  /// 多选统一设置继承人:选一名继承人,批量绑定到所有选中分组。
   Future<void> _setSelectedGroupInheritors() async {
     final repo = _repo;
     if (repo == null) return;
+    final jwt = await SecureStore().readJwt();
+    if (jwt == null || jwt.isEmpty) {
+      _showSnack('未登录,无法设置继承人');
+      return;
+    }
+    List<Map<String, dynamic>> inheritors;
+    try {
+      inheritors = await (await ApiConfig.client()).listInheritors(jwt);
+    } catch (_) {
+      _showSnack('加载继承人失败,请检查网络后重试');
+      return;
+    }
+    if (inheritors.isEmpty) {
+      _showSnack('暂无继承人,请先在设置中创建');
+      return;
+    }
+    // 过滤出真实分组(跳过未分组 id='')。
+    final groupIds = _selectedGroupIds.where((id) => id.isNotEmpty).toList();
+    if (groupIds.isEmpty) return;
+    var selected = '${inheritors.first['id']}';
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('设置继承人'),
+          content: DropdownButtonFormField<String>(
+            initialValue: selected,
+            decoration: const InputDecoration(labelText: '继承人'),
+            items: [
+              for (final i in inheritors)
+                DropdownMenuItem(
+                  value: '${i['id']}',
+                  child: Text(
+                    '${i['name']}${i['email'] == null ? '' : ' (${i['email']})'}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (v) => setDialogState(() => selected = v ?? selected),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('绑定'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      for (final id in groupIds) {
+        await repo.createCategoryInheritor(id, {
+          'inheritor_id': int.tryParse(selected),
+          'priority': 1,
+          'trigger_days': null,
+        });
+      }
+    } catch (_) {
+      _showSnack('绑定失败');
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       _multiSelect = false;
-      final ids = List.of(_selectedGroupIds);
       _selectedGroupIds.clear();
-      // 逐个打开分组继承人管理页(跳过未分组,无继承管理)。
-      Future<void> openNext(int i) async {
-        if (i >= ids.length) return;
-        final group = _groups.where((g) => g.$1 == ids[i] && g.$1.isNotEmpty).firstOrNull;
-        if (group != null && mounted) {
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => CategoryInheritorsPage(
-                categoryId: group.$1,
-                categoryName: group.$2,
-                repository: repo,
-              ),
-            ),
-          );
-        }
-        if (mounted) await openNext(i + 1);
-      }
-
-      openNext(0);
     });
+    _showSnack('已为 ${groupIds.length} 个分组设置继承人');
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// 打开子页面,返回后刷新数据。

@@ -131,7 +131,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
                   final s = rawCred?.toString() ?? '';
                   if (s.isNotEmpty) {
                     _credentialFields.add((
-                      key: TextEditingController(text: '凭据'),
+                      key: TextEditingController(text: '属性'),
                       value: TextEditingController(text: s),
                     ));
                   }
@@ -418,7 +418,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
                   focusNode: focusNode,
                   onChanged: (v) => f.key.text = v,
                   decoration: const InputDecoration(
-                    labelText: '键',
+                    labelText: '属性名称',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
@@ -431,7 +431,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
             child: TextField(
               controller: f.value,
               decoration: const InputDecoration(
-                labelText: '值',
+                labelText: '属性值',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
@@ -539,7 +539,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
                       children: [
                         const Expanded(
                           child: Text(
-                            '凭据(键值对)',
+                            '属性',
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),

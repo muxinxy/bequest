@@ -18,7 +18,7 @@ List<int> buildExcelBytes(List<ExportItem> items) {
     TextCellValue('类型'),
     TextCellValue('分组'),
     TextCellValue('到期日'),
-    TextCellValue('凭据'),
+    TextCellValue('属性'),
     TextCellValue('备注'),
     TextCellValue('提前提醒(天)'),
     TextCellValue('继承人'),

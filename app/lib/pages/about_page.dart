@@ -141,7 +141,7 @@ class _AboutPageState extends State<AboutPage> {
           const SizedBox(height: 4),
           const Text(
             '数字资产保险箱 + 数字遗嘱。端到端加密,自托管同步,继承交接。'
-            '您的资产凭据只属于您自己。',
+            '您的资产信息只属于您自己。',
             style: TextStyle(fontSize: 14, height: 1.5),
           ),
           const SizedBox(height: 16),
