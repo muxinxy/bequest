@@ -219,10 +219,11 @@ class _InheritorsPageState extends State<InheritorsPage> {
                       child: TextField(
                         controller: codeController,
                         decoration: InputDecoration(
-                          labelText: '继承码(留空则不修改)',
+                          labelText: '新继承码',
                           hintText: inheritor.accessCode.isEmpty
                               ? '8 位字母数字'
-                              : '当前:${inheritor.accessCode}',
+                              : '留空则不修改',
+                          helperText: '留空表示不修改继承码',
                           border: const OutlineInputBorder(),
                         ),
                       ),

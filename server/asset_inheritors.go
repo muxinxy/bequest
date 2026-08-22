@@ -3,6 +3,8 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -32,12 +34,12 @@ func handleListAssetInheritors(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		assetID, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		uid := userID(r)
 		if !assetOwnedBy(db, assetID, uid) {
-			writeError(w, http.StatusNotFound, "asset not found")
+			writeError(w, http.StatusNotFound, "资产不存在")
 			return
 		}
 		rows, err := db.Query(`SELECT ai.id, ai.asset_id, ai.inheritor_id, i.name,
@@ -47,7 +49,7 @@ func handleListAssetInheritors(db *sql.DB) http.HandlerFunc {
 			WHERE ai.asset_id = ? ORDER BY ai.priority, ai.id`, assetID)
 		if err != nil {
 			log.Printf("list asset inheritors: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -58,7 +60,7 @@ func handleListAssetInheritors(db *sql.DB) http.HandlerFunc {
 			var lid sql.NullInt64
 			if err := rows.Scan(&a.ID, &a.AssetID, &a.InheritorID, &a.InheritorName, &a.Priority, &td, &lid, &a.LadderName); err != nil {
 				log.Printf("scan asset inheritor: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if td.Valid {
@@ -80,28 +82,28 @@ func handleCreateAssetInheritor(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		assetID, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		uid := userID(r)
 		if !assetOwnedBy(db, assetID, uid) {
-			writeError(w, http.StatusNotFound, "asset not found")
+			writeError(w, http.StatusNotFound, "资产不存在")
 			return
 		}
 		var req assetInheritorRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		// inheritor must belong to the same user.
 		var n int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM inheritors WHERE id = ? AND user_id = ?`,
 			req.InheritorID, uid).Scan(&n); err != nil || n == 0 {
-			writeError(w, http.StatusBadRequest, "invalid inheritor")
+			writeError(w, http.StatusBadRequest, "无效的继承人")
 			return
 		}
 		if req.LadderID != nil && !ladderOwnedBy(db, *req.LadderID, uid) {
-			writeError(w, http.StatusBadRequest, "invalid ladder")
+			writeError(w, http.StatusBadRequest, "无效的触发阶梯")
 			return
 		}
 		priority := req.Priority
@@ -114,11 +116,19 @@ func handleCreateAssetInheritor(db *sql.DB) http.HandlerFunc {
 		if err != nil {
 			// UNIQUE(asset_id, inheritor_id) 冲突 = 已绑定。
 			log.Printf("insert asset inheritor: %v", err)
-			writeError(w, http.StatusBadRequest, "inheritor already bound to asset")
+			writeError(w, http.StatusBadRequest, "该继承人已绑定此资产")
 			return
 		}
 		id, _ := res.LastInsertId()
-		logAudit(db, userID(r), "绑定资产继承人", map[string]any{"asset_id": assetID, "inheritor_id": req.InheritorID})
+		var assetName, inName string
+		if err := db.QueryRow(`SELECT a.name, i.name FROM assets a JOIN inheritors i ON i.id = ?
+			WHERE a.id = ? AND a.user_id = ? AND i.user_id = ?`,
+			req.InheritorID, assetID, uid, uid).Scan(&assetName, &inName); err != nil {
+			log.Printf("query bind names: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		logAudit(db, userID(r), fmt.Sprintf("将继承人「%s」绑定为资产「%s」的继承人", inName, assetName), map[string]any{"asset_id": assetID, "inheritor_id": req.InheritorID})
 		writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 	}
 }
@@ -128,31 +138,43 @@ func handleDeleteAssetInheritor(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		assetID, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		uid := userID(r)
 		if !assetOwnedBy(db, assetID, uid) {
-			writeError(w, http.StatusNotFound, "asset not found")
+			writeError(w, http.StatusNotFound, "资产不存在")
 			return
 		}
 		iidStr := r.PathValue("iid")
 		iid, err := strconv.ParseInt(iidStr, 10, 64)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid inheritor id")
+			writeError(w, http.StatusBadRequest, "无效的继承人 ID")
+			return
+		}
+		var assetName, inName string
+		if err := db.QueryRow(`SELECT a.name, i.name FROM asset_inheritors ai
+			JOIN assets a ON a.id = ai.asset_id JOIN inheritors i ON i.id = ai.inheritor_id
+			WHERE ai.asset_id = ? AND ai.id = ?`, assetID, iid).Scan(&assetName, &inName); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "绑定关系不存在")
+				return
+			}
+			log.Printf("query unbind names: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		res, err := db.Exec(`DELETE FROM asset_inheritors WHERE asset_id = ? AND id = ?`, assetID, iid)
 		if err != nil {
 			log.Printf("delete asset inheritor: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "binding not found")
+			writeError(w, http.StatusNotFound, "绑定关系不存在")
 			return
 		}
-		logAudit(db, userID(r), "解绑资产继承人", map[string]any{"asset_id": assetID, "binding_id": iid})
+		logAudit(db, userID(r), fmt.Sprintf("解除继承人「%s」对资产「%s」的绑定", inName, assetName), map[string]any{"asset_id": assetID, "binding_id": iid})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -163,42 +185,54 @@ func handleUpdateAssetInheritorLadder(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		assetID, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		uid := userID(r)
 		if !assetOwnedBy(db, assetID, uid) {
-			writeError(w, http.StatusNotFound, "asset not found")
+			writeError(w, http.StatusNotFound, "资产不存在")
 			return
 		}
 		iid, err := strconv.ParseInt(r.PathValue("iid"), 10, 64)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid inheritor id")
+			writeError(w, http.StatusBadRequest, "无效的继承人 ID")
 			return
 		}
 		var req struct {
 			LadderID *int64 `json:"ladder_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if req.LadderID != nil && !ladderOwnedBy(db, *req.LadderID, uid) {
-			writeError(w, http.StatusBadRequest, "invalid ladder")
+			writeError(w, http.StatusBadRequest, "无效的触发阶梯")
+			return
+		}
+		var assetName, inName string
+		if err := db.QueryRow(`SELECT a.name, i.name FROM asset_inheritors ai
+			JOIN assets a ON a.id = ai.asset_id JOIN inheritors i ON i.id = ai.inheritor_id
+			WHERE ai.asset_id = ? AND ai.id = ?`, assetID, iid).Scan(&assetName, &inName); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "绑定关系不存在")
+				return
+			}
+			log.Printf("query ladder names: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		res, err := db.Exec(`UPDATE asset_inheritors SET ladder_id = ? WHERE asset_id = ? AND id = ?`,
 			nullableLadderID(req.LadderID), assetID, iid)
 		if err != nil {
 			log.Printf("update asset inheritor ladder: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "binding not found")
+			writeError(w, http.StatusNotFound, "绑定关系不存在")
 			return
 		}
-		logAudit(db, uid, "修改资产继承人触发阶梯", map[string]any{"asset_id": assetID, "binding_id": iid, "ladder_id": req.LadderID})
+		logAudit(db, uid, fmt.Sprintf("修改资产「%s」继承人「%s」的触发阶梯", assetName, inName), map[string]any{"asset_id": assetID, "binding_id": iid, "ladder_id": req.LadderID})
 		writeJSON(w, http.StatusOK, map[string]any{"id": iid, "ladder_id": req.LadderID})
 	}
 }
@@ -246,14 +280,14 @@ func handleListCategoryInheritors(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		catID, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		uid := userID(r)
 		var n int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND user_id = ?`,
 			catID, uid).Scan(&n); err != nil || n == 0 {
-			writeError(w, http.StatusNotFound, "category not found")
+			writeError(w, http.StatusNotFound, "分组不存在")
 			return
 		}
 		rows, err := db.Query(`SELECT ci.id, ci.category_id, ci.inheritor_id, i.name,
@@ -263,7 +297,7 @@ func handleListCategoryInheritors(db *sql.DB) http.HandlerFunc {
 			WHERE ci.category_id = ? ORDER BY ci.priority, ci.id`, catID)
 		if err != nil {
 			log.Printf("list category inheritors: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -274,7 +308,7 @@ func handleListCategoryInheritors(db *sql.DB) http.HandlerFunc {
 			var lid sql.NullInt64
 			if err := rows.Scan(&a.ID, &a.CategoryID, &a.InheritorID, &a.InheritorName, &a.Priority, &td, &lid, &a.LadderName); err != nil {
 				log.Printf("scan category inheritor: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if td.Valid {
@@ -296,28 +330,28 @@ func handleCreateCategoryInheritor(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		catID, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		uid := userID(r)
 		var req assetInheritorRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		var n int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND user_id = ?`,
 			catID, uid).Scan(&n); err != nil || n == 0 {
-			writeError(w, http.StatusNotFound, "category not found")
+			writeError(w, http.StatusNotFound, "分组不存在")
 			return
 		}
 		if err := db.QueryRow(`SELECT COUNT(*) FROM inheritors WHERE id = ? AND user_id = ?`,
 			req.InheritorID, uid).Scan(&n); err != nil || n == 0 {
-			writeError(w, http.StatusBadRequest, "invalid inheritor")
+			writeError(w, http.StatusBadRequest, "无效的继承人")
 			return
 		}
 		if req.LadderID != nil && !ladderOwnedBy(db, *req.LadderID, uid) {
-			writeError(w, http.StatusBadRequest, "invalid ladder")
+			writeError(w, http.StatusBadRequest, "无效的触发阶梯")
 			return
 		}
 		priority := req.Priority
@@ -329,11 +363,19 @@ func handleCreateCategoryInheritor(db *sql.DB) http.HandlerFunc {
 			catID, req.InheritorID, priority, nullableInt(req.TriggerDays), nullableLadderID(req.LadderID))
 		if err != nil {
 			log.Printf("insert category inheritor: %v", err)
-			writeError(w, http.StatusBadRequest, "inheritor already bound to group")
+			writeError(w, http.StatusBadRequest, "该继承人已绑定此分组")
 			return
 		}
 		id, _ := res.LastInsertId()
-		logAudit(db, userID(r), "绑定分组继承人", map[string]any{"category_id": catID, "inheritor_id": req.InheritorID})
+		var catName, inName string
+		if err := db.QueryRow(`SELECT c.name, i.name FROM categories c JOIN inheritors i ON i.id = ?
+			WHERE c.id = ? AND c.user_id = ? AND i.user_id = ?`,
+			req.InheritorID, catID, uid, uid).Scan(&catName, &inName); err != nil {
+			log.Printf("query bind names: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		logAudit(db, userID(r), fmt.Sprintf("将继承人「%s」绑定为分组「%s」的继承人", inName, catName), map[string]any{"category_id": catID, "inheritor_id": req.InheritorID})
 		writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 	}
 }
@@ -343,33 +385,45 @@ func handleDeleteCategoryInheritor(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		catID, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		uid := userID(r)
 		var n int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND user_id = ?`,
 			catID, uid).Scan(&n); err != nil || n == 0 {
-			writeError(w, http.StatusNotFound, "category not found")
+			writeError(w, http.StatusNotFound, "分组不存在")
 			return
 		}
 		iidStr := r.PathValue("iid")
 		iid, err := strconv.ParseInt(iidStr, 10, 64)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid inheritor id")
+			writeError(w, http.StatusBadRequest, "无效的继承人 ID")
+			return
+		}
+		var catName, inName string
+		if err := db.QueryRow(`SELECT c.name, i.name FROM category_inheritors ci
+			JOIN categories c ON c.id = ci.category_id JOIN inheritors i ON i.id = ci.inheritor_id
+			WHERE ci.category_id = ? AND ci.id = ?`, catID, iid).Scan(&catName, &inName); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "绑定关系不存在")
+				return
+			}
+			log.Printf("query unbind names: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		res, err := db.Exec(`DELETE FROM category_inheritors WHERE category_id = ? AND id = ?`, catID, iid)
 		if err != nil {
 			log.Printf("delete category inheritor: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "binding not found")
+			writeError(w, http.StatusNotFound, "绑定关系不存在")
 			return
 		}
-		logAudit(db, userID(r), "解绑分组继承人", map[string]any{"category_id": catID, "binding_id": iid})
+		logAudit(db, userID(r), fmt.Sprintf("解除继承人「%s」对分组「%s」的绑定", inName, catName), map[string]any{"category_id": catID, "binding_id": iid})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -380,44 +434,56 @@ func handleUpdateCategoryInheritorLadder(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		catID, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		uid := userID(r)
 		var n int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND user_id = ?`,
 			catID, uid).Scan(&n); err != nil || n == 0 {
-			writeError(w, http.StatusNotFound, "category not found")
+			writeError(w, http.StatusNotFound, "分组不存在")
 			return
 		}
 		iid, err := strconv.ParseInt(r.PathValue("iid"), 10, 64)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid inheritor id")
+			writeError(w, http.StatusBadRequest, "无效的继承人 ID")
 			return
 		}
 		var req struct {
 			LadderID *int64 `json:"ladder_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if req.LadderID != nil && !ladderOwnedBy(db, *req.LadderID, uid) {
-			writeError(w, http.StatusBadRequest, "invalid ladder")
+			writeError(w, http.StatusBadRequest, "无效的触发阶梯")
+			return
+		}
+		var catName, inName string
+		if err := db.QueryRow(`SELECT c.name, i.name FROM category_inheritors ci
+			JOIN categories c ON c.id = ci.category_id JOIN inheritors i ON i.id = ci.inheritor_id
+			WHERE ci.category_id = ? AND ci.id = ?`, catID, iid).Scan(&catName, &inName); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "绑定关系不存在")
+				return
+			}
+			log.Printf("query ladder names: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		res, err := db.Exec(`UPDATE category_inheritors SET ladder_id = ? WHERE category_id = ? AND id = ?`,
 			nullableLadderID(req.LadderID), catID, iid)
 		if err != nil {
 			log.Printf("update category inheritor ladder: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "binding not found")
+			writeError(w, http.StatusNotFound, "绑定关系不存在")
 			return
 		}
-		logAudit(db, uid, "修改分组继承人触发阶梯", map[string]any{"category_id": catID, "binding_id": iid, "ladder_id": req.LadderID})
+		logAudit(db, uid, fmt.Sprintf("修改分组「%s」继承人「%s」的触发阶梯", catName, inName), map[string]any{"category_id": catID, "binding_id": iid, "ladder_id": req.LadderID})
 		writeJSON(w, http.StatusOK, map[string]any{"id": iid, "ladder_id": req.LadderID})
 	}
 }
@@ -429,20 +495,20 @@ func handleListCategoryInheritorAssets(db *sql.DB) http.HandlerFunc {
 		uid := userID(r)
 		catID, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		iidStr := r.PathValue("iid")
 		iid, err := strconv.ParseInt(iidStr, 10, 64)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid inheritor id")
+			writeError(w, http.StatusBadRequest, "无效的继承人 ID")
 			return
 		}
 		var n int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM category_inheritors ci
 			JOIN categories c ON c.id = ci.category_id
 			WHERE ci.id = ? AND ci.category_id = ? AND c.user_id = ?`, iid, catID, uid).Scan(&n); err != nil || n == 0 {
-			writeError(w, http.StatusNotFound, "binding not found")
+			writeError(w, http.StatusNotFound, "绑定关系不存在")
 			return
 		}
 		rows, err := db.Query(`SELECT a.id, a.name, a.asset_type, a.expiry_date
@@ -452,7 +518,7 @@ func handleListCategoryInheritorAssets(db *sql.DB) http.HandlerFunc {
 			ORDER BY a.name`, catID, uid)
 		if err != nil {
 			log.Printf("list category inheritor assets: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -468,7 +534,7 @@ func handleListCategoryInheritorAssets(db *sql.DB) http.HandlerFunc {
 			var exp sql.NullString
 			if err := rows.Scan(&a.ID, &a.Name, &a.AssetType, &exp); err != nil {
 				log.Printf("scan category inheritor asset: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if exp.Valid {
@@ -502,13 +568,13 @@ func handleListInheritorAssets(db *sql.DB) http.HandlerFunc {
 		inIDStr := r.PathValue("id")
 		inID, err := strconv.ParseInt(inIDStr, 10, 64)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid inheritor id")
+			writeError(w, http.StatusBadRequest, "无效的继承人 ID")
 			return
 		}
 		var n int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM inheritors WHERE id = ? AND user_id = ?`,
 			inID, uid).Scan(&n); err != nil || n == 0 {
-			writeError(w, http.StatusNotFound, "inheritor not found")
+			writeError(w, http.StatusNotFound, "继承人不存在")
 			return
 		}
 		// 分组绑定:一行一个分组(含经该分组继承的资产数,排除已资产级绑定的资产)。
@@ -528,7 +594,7 @@ func handleListInheritorAssets(db *sql.DB) http.HandlerFunc {
 			ORDER BY bt, category_name, asset_name`, uid, inID, uid, inID)
 		if err != nil {
 			log.Printf("list inheritor assets: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -540,7 +606,7 @@ func handleListInheritorAssets(db *sql.DB) http.HandlerFunc {
 			var count int
 			if err := rows.Scan(&a.BindingType, &a.BindingID, &catID, &assetID, &assetName, &catName, &td, &count); err != nil {
 				log.Printf("scan inheritor asset: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if assetID.Valid {

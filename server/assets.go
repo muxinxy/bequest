@@ -32,21 +32,21 @@ func handleBatchMoveAssets(db *sql.DB) http.HandlerFunc {
 			CategoryID *int64  `json:"category_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if len(req.IDs) == 0 {
-			writeError(w, http.StatusBadRequest, "ids required")
+			writeError(w, http.StatusBadRequest, "请提供 ID 列表")
 			return
 		}
 		if len(req.IDs) > 500 {
-			writeError(w, http.StatusBadRequest, "too many ids")
+			writeError(w, http.StatusBadRequest, "资产数量过多")
 			return
 		}
 		if req.CategoryID != nil {
 			var n int
 			if err := db.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND user_id = ?`, *req.CategoryID, uid).Scan(&n); err != nil || n == 0 {
-				writeError(w, http.StatusNotFound, "target category not found")
+				writeError(w, http.StatusNotFound, "目标分组不存在")
 				return
 			}
 		}
@@ -64,11 +64,11 @@ func handleBatchMoveAssets(db *sql.DB) http.HandlerFunc {
 			WHERE id IN (`+placeholders+`) AND user_id = ?`, append([]any{cat}, args...)...)
 		if err != nil {
 			log.Printf("batch move assets: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		n, _ := res.RowsAffected()
-		logApp(db, userID(r), "移动资产", map[string]any{"ids": req.IDs, "category_id": req.CategoryID})
+		logApp(db, userID(r), fmt.Sprintf("移动 %d 个资产", len(req.IDs)), map[string]any{"ids": req.IDs, "category_id": req.CategoryID})
 		writeJSON(w, http.StatusOK, map[string]int64{"moved": n})
 	}
 }
@@ -109,29 +109,29 @@ type assetRequest struct {
 // validateAsset returns a 400 message, or ("", err) for internal DB errors.
 func validateAsset(db *sql.DB, uid int64, req *assetRequest) (string, error) {
 	if strings.TrimSpace(req.Name) == "" {
-		return "name is required", nil
+		return "名称必填", nil
 	}
 	if req.AssetType != "physical" && req.AssetType != "virtual" {
-		return "asset_type must be physical or virtual", nil
+		return "资产类型必须为 physical 或 virtual", nil
 	}
 	if strings.TrimSpace(req.EncryptedData) == "" {
-		return "encrypted_data is required", nil
+		return "encrypted_data 必填", nil
 	}
 	if _, err := base64.StdEncoding.DecodeString(req.EncryptedData); err != nil {
-		return "encrypted_data must be base64", nil
+		return "encrypted_data 必须为 base64 编码", nil
 	}
 	if req.AssetKeyWrappedMk != "" {
 		if _, err := base64.StdEncoding.DecodeString(req.AssetKeyWrappedMk); err != nil {
-			return "asset_key_wrapped_mk must be base64", nil
+			return "asset_key_wrapped_mk 必须为 base64 编码", nil
 		}
 	}
 	if req.AssetKeyWrappedWk != "" {
 		if _, err := base64.StdEncoding.DecodeString(req.AssetKeyWrappedWk); err != nil {
-			return "asset_key_wrapped_wk must be base64", nil
+			return "asset_key_wrapped_wk 必须为 base64 编码", nil
 		}
 	}
 	if req.ExpiryDate != nil && strings.TrimSpace(*req.ExpiryDate) == "" {
-		return "expiry_date must be a non-empty string if provided", nil
+		return "expiry_date 若提供则不能为空", nil
 	}
 	if req.CategoryID != nil {
 		var n int
@@ -140,7 +140,7 @@ func validateAsset(db *sql.DB, uid int64, req *assetRequest) (string, error) {
 			return "", err
 		}
 		if n == 0 {
-			return "invalid category", nil
+			return "无效的分组", nil
 		}
 	}
 	return "", nil
@@ -186,7 +186,7 @@ func handleListAssets(db *sql.DB) http.HandlerFunc {
 			FROM assets WHERE user_id = ? AND deleted_at IS NULL ORDER BY id`, userID(r))
 		if err != nil {
 			log.Printf("list assets: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -197,7 +197,7 @@ func handleListAssets(db *sql.DB) http.HandlerFunc {
 			var exp sql.NullString
 			if err := rows.Scan(&a.ID, &a.Name, &a.AssetType, &catID, &exp, &a.Status, &a.UpdatedAt); err != nil {
 				log.Printf("scan asset: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if catID.Valid {
@@ -217,17 +217,17 @@ func handleGetAsset(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		a, err := fetchAsset(db, id, userID(r))
 		if errors.Is(err, errNotFound) {
-			writeError(w, http.StatusNotFound, "asset not found")
+			writeError(w, http.StatusNotFound, "资产不存在")
 			return
 		}
 		if err != nil {
 			log.Printf("get asset: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusOK, a)
@@ -249,13 +249,13 @@ func handleCreateAsset(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req assetRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		uid := userID(r)
 		if msg, err := validateAsset(db, uid, &req); err != nil {
 			log.Printf("validate asset: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		} else if msg != "" {
 			writeError(w, http.StatusBadRequest, msg)
@@ -265,14 +265,14 @@ func handleCreateAsset(db *sql.DB) http.HandlerFunc {
 		var tier string
 		if err := db.QueryRow(`SELECT tier FROM users WHERE id = ?`, uid).Scan(&tier); err != nil {
 			log.Printf("query user tier: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if tier == "free" {
 			n, err := assetCount(db, uid)
 			if err != nil {
 				log.Printf("count assets: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if n >= freeAssetQuota {
@@ -288,17 +288,17 @@ func handleCreateAsset(db *sql.DB) http.HandlerFunc {
 			nullable(req.AssetKeyWrappedMk), nullable(req.AssetKeyWrappedWk))
 		if err != nil {
 			log.Printf("insert asset: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		id, _ := res.LastInsertId()
 		a, err := fetchAsset(db, id, uid)
 		if err != nil {
 			log.Printf("fetch created asset: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		logAudit(db, uid, "新增资产", map[string]any{"id": id, "name": a.Name})
+		logAudit(db, uid, fmt.Sprintf("新增资产「%s」", a.Name), map[string]any{"id": id})
 		writeJSON(w, http.StatusCreated, a)
 	}
 }
@@ -308,18 +308,18 @@ func handleUpdateAsset(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		uid := userID(r)
 		var req assetRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if msg, err := validateAsset(db, uid, &req); err != nil {
 			log.Printf("validate asset: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		} else if msg != "" {
 			writeError(w, http.StatusBadRequest, msg)
@@ -330,7 +330,7 @@ func handleUpdateAsset(db *sql.DB) http.HandlerFunc {
 			status = "active"
 		}
 		if status != "active" && status != "inactive" && status != "pending" && status != "expired" {
-			writeError(w, http.StatusBadRequest, "invalid status")
+			writeError(w, http.StatusBadRequest, "无效的状态")
 			return
 		}
 		data, _ := base64.StdEncoding.DecodeString(req.EncryptedData)
@@ -341,20 +341,20 @@ func handleUpdateAsset(db *sql.DB) http.HandlerFunc {
 			nullable(req.AssetKeyWrappedMk), nullable(req.AssetKeyWrappedWk), id, uid)
 		if err != nil {
 			log.Printf("update asset: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "asset not found")
+			writeError(w, http.StatusNotFound, "资产不存在")
 			return
 		}
 		a, err := fetchAsset(db, id, uid)
 		if err != nil {
 			log.Printf("fetch updated asset: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		logAudit(db, uid, "修改资产", map[string]any{"id": id, "name": a.Name})
+		logAudit(db, uid, fmt.Sprintf("修改资产「%s」", a.Name), map[string]any{"id": id})
 		writeJSON(w, http.StatusOK, a)
 	}
 }
@@ -365,20 +365,31 @@ func handleDeleteAsset(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
-		res, err := db.Exec(`UPDATE assets SET deleted_at = datetime('now') WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, id, userID(r))
+		uid := userID(r)
+		var name string
+		if err := db.QueryRow(`SELECT name FROM assets WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, id, uid).Scan(&name); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "资产不存在")
+				return
+			}
+			log.Printf("query asset name: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		res, err := db.Exec(`UPDATE assets SET deleted_at = datetime('now') WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, id, uid)
 		if err != nil {
 			log.Printf("soft delete asset: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "asset not found")
+			writeError(w, http.StatusNotFound, "资产不存在")
 			return
 		}
-		logAudit(db, userID(r), "删除资产", map[string]any{"id": id})
+		logAudit(db, uid, fmt.Sprintf("删除资产「%s」(进回收站)", name), map[string]any{"id": id})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -388,7 +399,7 @@ func handleCopyAsset(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		uid := userID(r)
@@ -402,11 +413,11 @@ func handleCopyAsset(db *sql.DB) http.HandlerFunc {
 			FROM assets WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, id, uid).
 			Scan(&src.ID, &src.Name, &src.AssetType, &catID, &data, &exp, &src.Status, &wkMk, &wkWk); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				writeError(w, http.StatusNotFound, "asset not found")
+				writeError(w, http.StatusNotFound, "资产不存在")
 				return
 			}
 			log.Printf("copy asset query: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if src.Status == "" {
@@ -421,17 +432,17 @@ func handleCopyAsset(db *sql.DB) http.HandlerFunc {
 			src.Status, nullable(wkMk.String), nullable(wkWk.String))
 		if err != nil {
 			log.Printf("copy asset insert: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		newID, _ := res.LastInsertId()
 		a, err := fetchAsset(db, newID, uid)
 		if err != nil {
 			log.Printf("fetch copied asset: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		logAudit(db, uid, "复制资产", map[string]any{"source_id": id, "new_id": newID, "name": a.Name})
+		logAudit(db, uid, fmt.Sprintf("复制资产「%s」,生成副本「%s」", src.Name, a.Name), map[string]any{"source_id": id, "new_id": newID})
 		writeJSON(w, http.StatusCreated, a)
 	}
 }

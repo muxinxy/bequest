@@ -11,7 +11,6 @@ import '../main.dart' show BequestApp;
 import 'about_page.dart';
 import 'account_settings_page.dart';
 import 'app_lock_setup_page.dart';
-import 'audit_page.dart';
 import 'change_master_password_page.dart';
 import 'excel_export_page.dart';
 import 'export_page.dart';
@@ -325,14 +324,8 @@ class _SettingsPageState extends State<SettingsPage> {
             enabled: !_isLocal,
           ),
           _entry(
-            Icons.receipt_long_outlined,
-            '审计日志',
-            () => _push(context, const AuditPage()),
-            enabled: !_isLocal,
-          ),
-          _entry(
             Icons.article_outlined,
-            '日志',
+            '操作记录',
             () => _push(context, const LogPage()),
             enabled: !_isLocal,
           ),

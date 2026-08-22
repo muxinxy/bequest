@@ -6,10 +6,14 @@ import '../platform/file_share.dart';
 import '../storage/secure_store.dart';
 import '../utils/time_format.dart';
 
-/// 日志页:审计/应用日志查看、CSV 导出、按月清除。
+/// 操作记录页:审计日志查看、CSV 导出、按月清除。
+/// debug=true 时为调试模式:显示全部(审计+应用)日志,含 detail 原始 JSON。
 /// kind 筛选:'' = 全部,'audit' = 审计,'app' = 应用;年月从 /logs/months 推导。
 class LogPage extends StatefulWidget {
-  const LogPage({super.key});
+  const LogPage({super.key, this.debug = false});
+
+  /// 调试模式:显示全部日志与 detail,标题"调试日志"。
+  final bool debug;
 
   @override
   State<LogPage> createState() => _LogPageState();
@@ -18,12 +22,14 @@ class LogPage extends StatefulWidget {
 class _LogPageState extends State<LogPage> {
   final _store = SecureStore();
 
-  String _kind = '';
   List<Map<String, dynamic>> _logs = const [];
   List<String> _months = const [];
   String? _year;
   String? _month;
   bool _loading = true;
+
+  /// 操作记录只看审计;调试模式看全部。
+  String get _kind => widget.debug ? '' : 'audit';
 
   @override
   void initState() {
@@ -99,7 +105,11 @@ class _LogPageState extends State<LogPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('清除日志'),
-        content: const Text('确定清除当前筛选下的日志吗?此操作不可恢复。'),
+        content: Text(
+          widget.debug
+              ? '确定清除全部日志(审计+应用)吗?此操作不可恢复。'
+              : '确定清除当前筛选下的操作记录吗?此操作不可恢复。',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -137,7 +147,7 @@ class _LogPageState extends State<LogPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('日志'),
+        title: Text(widget.debug ? '调试日志' : '操作记录'),
         actions: [
           IconButton(
             tooltip: '导出 CSV',
@@ -153,22 +163,6 @@ class _LogPageState extends State<LogPage> {
       ),
       body: Column(
         children: [
-          // kind 筛选:全部 / 审计 / 应用。
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: '', label: Text('全部')),
-                ButtonSegment(value: 'audit', label: Text('审计')),
-                ButtonSegment(value: 'app', label: Text('应用')),
-              ],
-              selected: {_kind},
-              onSelectionChanged: (s) {
-                setState(() => _kind = s.first);
-                _load();
-              },
-            ),
-          ),
           // 年月筛选:年份 + 月份(可用月份从 months 推导)。
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -222,7 +216,7 @@ class _LogPageState extends State<LogPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _logs.isEmpty
-                    ? const Center(child: Text('暂无日志'))
+                    ? Center(child: Text(widget.debug ? '暂无日志' : '暂无操作记录'))
                     : RefreshIndicator(
                         onRefresh: _load,
                         child: ListView.separated(
@@ -234,23 +228,34 @@ class _LogPageState extends State<LogPage> {
                             final action = log['action']?.toString() ?? '';
                             final detail = log['detail']?.toString();
                             final createdAt = log['created_at']?.toString();
+                            final time = createdAt == null || createdAt.isEmpty
+                                ? ''
+                                : formatServerTime(createdAt);
+                            if (!widget.debug) {
+                              // 操作记录:只显示时间 + 整句中文 action。
+                              return ListTile(
+                                title: Text(action),
+                                subtitle: time.isEmpty ? null : Text(time),
+                              );
+                            }
+                            // 调试模式:类型标签 + 时间 + action + detail(原始 JSON)。
                             final isAudit = '${log['kind']}' == 'audit';
                             return ListTile(
-                              leading: Icon(
-                                isAudit
-                                    ? Icons.verified_user_outlined
-                                    : Icons.history,
-                              ),
+                              leading: _KindTag(isAudit: isAudit),
                               title: Text(action),
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  if (time.isNotEmpty) Text(time),
                                   if (detail != null && detail.isNotEmpty)
-                                    Text(detail),
-                                  Text(
-                                    '${isAudit ? '审计' : '应用'}'
-                                    '${createdAt == null || createdAt.isEmpty ? '' : ' · ${formatServerTime(createdAt)}'}',
-                                  ),
+                                    Text(
+                                      detail,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade600,
+                                        fontFamily: 'monospace',
+                                      ),
+                                    ),
                                 ],
                               ),
                             );
@@ -259,6 +264,29 @@ class _LogPageState extends State<LogPage> {
                       ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 日志类型小色块:审计 = 蓝,应用 = 灰。
+class _KindTag extends StatelessWidget {
+  const _KindTag({required this.isAudit});
+
+  final bool isAudit;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isAudit ? Colors.blue.shade600 : Colors.grey.shade500;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        isAudit ? '审计' : '应用',
+        style: TextStyle(fontSize: 11, color: color),
       ),
     );
   }

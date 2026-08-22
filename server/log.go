@@ -58,12 +58,12 @@ type logJSON struct {
 func parseLogQuery(r *http.Request) (kind string, month string, limit int, bad string) {
 	kind = r.URL.Query().Get("kind")
 	if kind != "" && kind != logKindAudit && kind != logKindApp {
-		return "", "", 0, "kind must be audit or app"
+		return "", "", 0, "kind 必须为 audit 或 app"
 	}
 	month = r.URL.Query().Get("month")
 	if month != "" {
 		if _, err := time.Parse("2006-01", month); err != nil {
-			return "", "", 0, "month must be YYYY-MM"
+			return "", "", 0, "month 必须为 YYYY-MM 格式"
 		}
 	}
 	limit = 500
@@ -97,7 +97,7 @@ func handleListLogs(db *sql.DB) http.HandlerFunc {
 			FROM audit_logs `+where+` ORDER BY id DESC LIMIT ?`, append(args, limit)...)
 		if err != nil {
 			log.Printf("list logs: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -106,7 +106,7 @@ func handleListLogs(db *sql.DB) http.HandlerFunc {
 			var l logJSON
 			if err := rows.Scan(&l.ID, &l.Kind, &l.Action, &l.Detail, &l.CreatedAt); err != nil {
 				log.Printf("scan log: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			list = append(list, l)
@@ -137,7 +137,7 @@ func handleExportLogs(db *sql.DB) http.HandlerFunc {
 			FROM audit_logs `+where+` ORDER BY id`, args...)
 		if err != nil {
 			log.Printf("export logs: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -184,7 +184,7 @@ func handleClearLogs(db *sql.DB) http.HandlerFunc {
 		res, err := db.Exec(`DELETE FROM audit_logs `+where, args...)
 		if err != nil {
 			log.Printf("clear logs: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		n, _ := res.RowsAffected()
@@ -201,7 +201,7 @@ func handleLogMonths(db *sql.DB) http.HandlerFunc {
 			FROM audit_logs WHERE user_id = ? ORDER BY ym DESC`, userID(r))
 		if err != nil {
 			log.Printf("log months: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -210,7 +210,7 @@ func handleLogMonths(db *sql.DB) http.HandlerFunc {
 			var m string
 			if err := rows.Scan(&m); err != nil {
 				log.Printf("scan month: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			months = append(months, m)

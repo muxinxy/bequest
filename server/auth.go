@@ -164,13 +164,13 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 
 func validateCredentials(username, email, password string) string {
 	if strings.TrimSpace(username) == "" || strings.TrimSpace(password) == "" {
-		return "username and password are required"
+		return "用户名和密码必填"
 	}
 	if len(password) < 8 {
-		return "password must be at least 8 characters"
+		return "密码至少 8 个字符"
 	}
 	if !strings.Contains(email, "@") {
-		return "email must contain @"
+		return "邮箱必须包含 @"
 	}
 	return ""
 }
@@ -190,7 +190,7 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req registerRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if !verifyCaptcha(req.CaptchaID, req.Captcha) {
@@ -206,7 +206,7 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 		if req.MasterKeyWrapped != "" {
 			decoded, err := base64.StdEncoding.DecodeString(req.MasterKeyWrapped)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, "master_key_wrapped must be base64")
+				writeError(w, http.StatusBadRequest, "master_key_wrapped 必须为 base64 编码")
 				return
 			}
 			mkw = decoded
@@ -215,14 +215,14 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 		hash, err := hashPassword(req.Password)
 		if err != nil {
 			log.Printf("hash password: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 
 		tx, err := db.Begin()
 		if err != nil {
 			log.Printf("begin register: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		res, err := tx.Exec(`INSERT INTO users (username, email, password_hash, master_key_wrapped, master_salt) VALUES (?, ?, ?, ?, ?)`,
@@ -230,11 +230,11 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 		if err != nil {
 			tx.Rollback()
 			if isUniqueViolation(err) {
-				writeError(w, http.StatusConflict, "username or email already taken")
+				writeError(w, http.StatusConflict, "用户名或邮箱已被占用")
 				return
 			}
 			log.Printf("insert user: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		id, _ := res.LastInsertId()
@@ -243,7 +243,7 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 			id, defaultLadderDays("free")); err != nil {
 			tx.Rollback()
 			log.Printf("seed global ladder: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		// Seed per-user preset categories (editable/deletable). Names are
@@ -254,12 +254,12 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 			id, id, id, id, id, id, id, id, id, id); err != nil {
 			tx.Rollback()
 			log.Printf("seed preset categories: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if err := tx.Commit(); err != nil {
 			log.Printf("commit register: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]any{
@@ -282,7 +282,7 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req loginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if !verifyCaptcha(req.CaptchaID, req.Captcha) {
@@ -298,12 +298,12 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 			WHERE username = ? OR email = ?`, identifier, identifier).
 			Scan(&id, &username, &email, &hash, &tier, &role, &disabled, &salt, &tokenVersion)
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusUnauthorized, "invalid username or password")
+			writeError(w, http.StatusUnauthorized, "用户名或密码错误")
 			return
 		}
 		if err != nil {
 			log.Printf("query user: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if disabled == 1 {
@@ -312,7 +312,7 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 		}
 		ok, err := verifyPassword(hash, req.Password)
 		if err != nil || !ok {
-			writeError(w, http.StatusUnauthorized, "invalid username or password")
+			writeError(w, http.StatusUnauthorized, "用户名或密码错误")
 			return
 		}
 		// Login is the owner's "still alive" proof: reset the dead man's
@@ -351,7 +351,7 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 			pending, err := sign2FAPendingToken(id)
 			if err != nil {
 				log.Printf("sign pending token: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
@@ -386,32 +386,32 @@ func handleVerify2FA(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req verify2FARequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		c, err := verifyToken(req.PendingToken)
 		if err != nil || !c.Pending2FA {
-			writeError(w, http.StatusUnauthorized, "invalid or expired token")
+			writeError(w, http.StatusUnauthorized, "无效或已过期的令牌")
 			return
 		}
 		var role, secret string
 		var tokenVersion int
 		if err := db.QueryRow(`SELECT role, totp_secret, token_version FROM users WHERE id = ?`, c.UserID).Scan(&role, &secret, &tokenVersion); err != nil {
-			writeError(w, http.StatusUnauthorized, "user no longer exists")
+			writeError(w, http.StatusUnauthorized, "用户已不存在")
 			return
 		}
 		if role != "admin" || secret == "" {
-			writeError(w, http.StatusForbidden, "2FA not enabled")
+			writeError(w, http.StatusForbidden, "2FA 未启用")
 			return
 		}
 		if !verifyTOTP(secret, strings.TrimSpace(req.Code), time.Now()) {
-			writeError(w, http.StatusUnauthorized, "invalid code")
+			writeError(w, http.StatusUnauthorized, "无效的验证码")
 			return
 		}
 		var username, email, tier string
 		if err := db.QueryRow(`SELECT username, email, tier FROM users WHERE id = ?`, c.UserID).Scan(&username, &email, &tier); err != nil {
 			log.Printf("query 2fa user: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if _, err := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'owner', 'admin_login', ?)`,
@@ -434,12 +434,12 @@ func handleMe(db *sql.DB) http.HandlerFunc {
 		err := db.QueryRow(`SELECT username, email, tier, role, disabled FROM users WHERE id = ?`, uid).
 			Scan(&username, &email, &tier, &role, &disabled)
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusUnauthorized, "user no longer exists")
+			writeError(w, http.StatusUnauthorized, "用户已不存在")
 			return
 		}
 		if err != nil {
 			log.Printf("query me: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{

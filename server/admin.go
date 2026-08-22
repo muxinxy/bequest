@@ -23,7 +23,7 @@ var adminFS embed.FS
 func serveClaimPage(w http.ResponseWriter, r *http.Request) {
 	page, err := adminFS.ReadFile("claim.html")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "claim page missing")
+		writeError(w, http.StatusInternalServerError, "领取页面缺失")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -82,26 +82,26 @@ func requireAdmin(db *sql.DB, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") {
-			writeError(w, http.StatusUnauthorized, "missing bearer token")
+			writeError(w, http.StatusUnauthorized, "缺少 Bearer 令牌")
 			return
 		}
 		c, err := verifyToken(strings.TrimPrefix(auth, "Bearer "))
 		if err != nil || c.Pending2FA {
-			writeError(w, http.StatusUnauthorized, "invalid or expired token")
+			writeError(w, http.StatusUnauthorized, "无效或已过期的令牌")
 			return
 		}
 		var role string
 		var disabled, tokenVersion int
 		if err := db.QueryRow(`SELECT role, disabled, token_version FROM users WHERE id = ?`, c.UserID).Scan(&role, &disabled, &tokenVersion); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				writeError(w, http.StatusUnauthorized, "user no longer exists")
+				writeError(w, http.StatusUnauthorized, "用户已不存在")
 				return
 			}
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if c.TokenVersion != tokenVersion {
-			writeError(w, http.StatusUnauthorized, "invalid or expired token")
+			writeError(w, http.StatusUnauthorized, "无效或已过期的令牌")
 			return
 		}
 		if disabled == 1 {
@@ -109,7 +109,7 @@ func requireAdmin(db *sql.DB, next http.Handler) http.Handler {
 			return
 		}
 		if role != "admin" {
-			writeError(w, http.StatusForbidden, "admin required")
+			writeError(w, http.StatusForbidden, "需要管理员权限")
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxUserIDKey, c.UserID)))
@@ -208,7 +208,7 @@ func handleAdminListUsers(db *sql.DB) http.HandlerFunc {
 		var total int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE `+cond, args...).Scan(&total); err != nil {
 			log.Printf("admin count users: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		args = append(args, pageSize, (page-1)*pageSize)
@@ -219,7 +219,7 @@ func handleAdminListUsers(db *sql.DB) http.HandlerFunc {
 			FROM users u WHERE `+cond+` ORDER BY u.id DESC LIMIT ? OFFSET ?`, args...)
 		if err != nil {
 			log.Printf("admin list users: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -231,7 +231,7 @@ func handleAdminListUsers(db *sql.DB) http.HandlerFunc {
 			if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.Tier, &u.Role, &disabled,
 				&u.InheritStage, &lastLogin, &u.CreatedAt, &u.AssetCount, &u.InheritorCount); err != nil {
 				log.Printf("admin scan user: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			u.Disabled = disabled == 1
@@ -249,7 +249,7 @@ func handleAdminGetUser(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := pathID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid user id")
+			writeError(w, http.StatusBadRequest, "无效的用户 ID")
 			return
 		}
 		var u adminUser
@@ -263,12 +263,12 @@ func handleAdminGetUser(db *sql.DB) http.HandlerFunc {
 			Scan(&u.ID, &u.Username, &u.Email, &u.Tier, &u.Role, &disabled,
 				&u.InheritStage, &lastLogin, &u.CreatedAt, &u.AssetCount, &u.InheritorCount)
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "user not found")
+			writeError(w, http.StatusNotFound, "用户不存在")
 			return
 		}
 		if err != nil {
 			log.Printf("admin get user: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		u.Disabled = disabled == 1
@@ -288,19 +288,19 @@ func handleAdminUpdateUser(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := pathID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid user id")
+			writeError(w, http.StatusBadRequest, "无效的用户 ID")
 			return
 		}
 		actor := r.Context().Value(ctxUserIDKey).(int64)
 		var req adminUserUpdate
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		// An admin must never lock themselves out: no self-demotion/disable.
 		if id == actor {
 			if (req.Role != nil && *req.Role != "admin") || (req.Disabled != nil && *req.Disabled) {
-				writeError(w, http.StatusBadRequest, "cannot demote or disable yourself")
+				writeError(w, http.StatusBadRequest, "不能降级或禁用自己")
 				return
 			}
 		}
@@ -308,7 +308,7 @@ func handleAdminUpdateUser(db *sql.DB) http.HandlerFunc {
 		args := []any{}
 		if req.Role != nil {
 			if *req.Role != "user" && *req.Role != "admin" {
-				writeError(w, http.StatusBadRequest, "role must be user or admin")
+				writeError(w, http.StatusBadRequest, "角色必须为 user 或 admin")
 				return
 			}
 			sets = append(sets, "role = ?")
@@ -316,7 +316,7 @@ func handleAdminUpdateUser(db *sql.DB) http.HandlerFunc {
 		}
 		if req.Tier != nil {
 			if *req.Tier != "free" && *req.Tier != "member" {
-				writeError(w, http.StatusBadRequest, "tier must be free or member")
+				writeError(w, http.StatusBadRequest, "会员等级必须为 free 或 member")
 				return
 			}
 			sets = append(sets, "tier = ?")
@@ -331,7 +331,7 @@ func handleAdminUpdateUser(db *sql.DB) http.HandlerFunc {
 			args = append(args, d)
 		}
 		if len(sets) == 0 {
-			writeError(w, http.StatusBadRequest, "nothing to update")
+			writeError(w, http.StatusBadRequest, "没有需要更新的内容")
 			return
 		}
 		sets = append(sets, "updated_at = datetime('now')")
@@ -339,11 +339,11 @@ func handleAdminUpdateUser(db *sql.DB) http.HandlerFunc {
 		res, err := db.Exec(`UPDATE users SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...)
 		if err != nil {
 			log.Printf("admin update user: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "user not found")
+			writeError(w, http.StatusNotFound, "用户不存在")
 			return
 		}
 		auditAdmin(db, actor, "admin_user_update", fmt.Sprintf("user_id:%d", id))
@@ -356,22 +356,22 @@ func handleAdminDeleteUser(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := pathID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid user id")
+			writeError(w, http.StatusBadRequest, "无效的用户 ID")
 			return
 		}
 		actor := r.Context().Value(ctxUserIDKey).(int64)
 		if id == actor {
-			writeError(w, http.StatusBadRequest, "cannot delete yourself")
+			writeError(w, http.StatusBadRequest, "不能删除自己")
 			return
 		}
 		res, err := db.Exec(`DELETE FROM users WHERE id = ?`, id)
 		if err != nil {
 			log.Printf("admin delete user: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "user not found")
+			writeError(w, http.StatusNotFound, "用户不存在")
 			return
 		}
 		auditAdmin(db, actor, "admin_user_delete", fmt.Sprintf("user_id:%d", id))
@@ -398,7 +398,7 @@ func handleAdminAuditLog(db *sql.DB) http.HandlerFunc {
 		var total int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE `+cond, args...).Scan(&total); err != nil {
 			log.Printf("admin count audit: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		args = append(args, pageSize, (page-1)*pageSize)
@@ -406,7 +406,7 @@ func handleAdminAuditLog(db *sql.DB) http.HandlerFunc {
 			FROM audit_logs WHERE `+cond+` ORDER BY id DESC LIMIT ? OFFSET ?`, args...)
 		if err != nil {
 			log.Printf("admin list audit: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -423,7 +423,7 @@ func handleAdminAuditLog(db *sql.DB) http.HandlerFunc {
 			var e entry
 			if err := rows.Scan(&e.ID, &e.UserID, &e.Actor, &e.Action, &e.Detail, &e.CreatedAt); err != nil {
 				log.Printf("admin scan audit: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			entries = append(entries, e)
@@ -458,7 +458,7 @@ func handleAdmin2FASetup(db *sql.DB) http.HandlerFunc {
 		secret, err := generateTOTPSecret()
 		if err != nil {
 			log.Printf("gen totp secret: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		uri := fmt.Sprintf("otpauth://totp/bequest:%s?secret=%s&issuer=bequest&digits=6&period=30", username, secret)
@@ -475,7 +475,7 @@ func handleAdmin2FAConfirm(db *sql.DB) http.HandlerFunc {
 			Code   string `json:"code"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if !verifyTOTP(req.Secret, strings.TrimSpace(req.Code), time.Now()) {
@@ -485,7 +485,7 @@ func handleAdmin2FAConfirm(db *sql.DB) http.HandlerFunc {
 		if _, err := db.Exec(`UPDATE users SET totp_secret = ?, updated_at = datetime('now') WHERE id = ?`,
 			req.Secret, uid); err != nil {
 			log.Printf("enable 2fa: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		auditAdmin(db, uid, "admin_2fa_enabled", "")
@@ -501,7 +501,7 @@ func handleAdmin2FADisable(db *sql.DB) http.HandlerFunc {
 			Code string `json:"code"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		var secret string
@@ -515,7 +515,7 @@ func handleAdmin2FADisable(db *sql.DB) http.HandlerFunc {
 		}
 		if _, err := db.Exec(`UPDATE users SET totp_secret = NULL, updated_at = datetime('now') WHERE id = ?`, uid); err != nil {
 			log.Printf("disable 2fa: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		auditAdmin(db, uid, "admin_2fa_disabled", "")
@@ -531,12 +531,12 @@ func handleAdminListUserAssets(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := pathID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid user id")
+			writeError(w, http.StatusBadRequest, "无效的用户 ID")
 			return
 		}
 		var n int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE id = ?`, id).Scan(&n); err != nil || n == 0 {
-			writeError(w, http.StatusNotFound, "user not found")
+			writeError(w, http.StatusNotFound, "用户不存在")
 			return
 		}
 		rows, err := db.Query(`SELECT a.id, a.name, a.asset_type, a.expiry_date, a.created_at, a.updated_at, COALESCE(c.name, '')
@@ -544,7 +544,7 @@ func handleAdminListUserAssets(db *sql.DB) http.HandlerFunc {
 			WHERE a.user_id = ? ORDER BY a.id DESC`, id)
 		if err != nil {
 			log.Printf("admin list user assets: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -564,7 +564,7 @@ func handleAdminListUserAssets(db *sql.DB) http.HandlerFunc {
 			var expiry sql.NullString
 			if err := rows.Scan(&a.ID, &a.Name, &a.AssetType, &expiry, &a.CreatedAt, &a.UpdatedAt, &cat); err != nil {
 				log.Printf("admin scan user asset: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			a.Category = cat.String
@@ -596,7 +596,7 @@ func handleAdminAuditExport(db *sql.DB) http.HandlerFunc {
 			WHERE `+cond+` ORDER BY id DESC LIMIT ?`, append(args, limit)...)
 		if err != nil {
 			log.Printf("admin export audit: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -710,7 +710,7 @@ func handleAdminPutConfig(db *sql.DB) http.HandlerFunc {
 		actor := r.Context().Value(ctxUserIDKey).(int64)
 		var req adminConfigInput
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		cfg := readConfigFile()
@@ -721,7 +721,7 @@ func handleAdminPutConfig(db *sql.DB) http.HandlerFunc {
 		servers := make([]smtpServer, 0, len(req.SMTPServers))
 		for _, in := range req.SMTPServers {
 			if strings.TrimSpace(in.Host) == "" || in.Port <= 0 {
-				writeError(w, http.StatusBadRequest, "smtp host and port required")
+				writeError(w, http.StatusBadRequest, "SMTP 主机和端口必填")
 				return
 			}
 			pass := in.Password
@@ -738,7 +738,7 @@ func handleAdminPutConfig(db *sql.DB) http.HandlerFunc {
 		}
 		if err := writeConfigFile(cfg); err != nil {
 			log.Printf("admin write config: %v", err)
-			writeError(w, http.StatusInternalServerError, "cannot write config.json")
+			writeError(w, http.StatusInternalServerError, "无法写入 config.json")
 			return
 		}
 		loadConfig() // reload systemServers/freeAssetQuota/providers in memory
@@ -752,7 +752,7 @@ func handleAdminPutConfig(db *sql.DB) http.HandlerFunc {
 func serveAdminPage(w http.ResponseWriter, r *http.Request) {
 	page, err := adminFS.ReadFile("admin.html")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "admin page missing")
+		writeError(w, http.StatusInternalServerError, "管理后台页面缺失")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

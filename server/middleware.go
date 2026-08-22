@@ -19,26 +19,26 @@ func requireAuth(db *sql.DB, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") {
-			writeError(w, http.StatusUnauthorized, "missing bearer token")
+			writeError(w, http.StatusUnauthorized, "缺少 Bearer 令牌")
 			return
 		}
 		c, err := verifyToken(strings.TrimPrefix(auth, "Bearer "))
 		if err != nil || c.Pending2FA {
-			writeError(w, http.StatusUnauthorized, "invalid or expired token")
+			writeError(w, http.StatusUnauthorized, "无效或已过期的令牌")
 			return
 		}
 		var disabled, tokenVersion int
 		if err := db.QueryRow(`SELECT disabled, token_version FROM users WHERE id = ?`, c.UserID).Scan(&disabled, &tokenVersion); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				writeError(w, http.StatusUnauthorized, "user no longer exists")
+				writeError(w, http.StatusUnauthorized, "用户已不存在")
 				return
 			}
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if c.TokenVersion != tokenVersion {
 			// 改密后旧 token 失效。
-			writeError(w, http.StatusUnauthorized, "invalid or expired token")
+			writeError(w, http.StatusUnauthorized, "无效或已过期的令牌")
 			return
 		}
 		if disabled == 1 {

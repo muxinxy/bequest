@@ -28,7 +28,7 @@ type templateRequest struct {
 
 func validateTemplate(req templateRequest) string {
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.TitleTemplate) == "" || strings.TrimSpace(req.BodyTemplate) == "" {
-		return "name, title_template and body_template are required"
+		return "名称、标题模板和正文模板均必填"
 	}
 	return ""
 }
@@ -40,7 +40,7 @@ func handleListTemplates(db *sql.DB) http.HandlerFunc {
 			FROM reminder_templates WHERE user_id IS NULL OR user_id = ? ORDER BY id`, userID(r))
 		if err != nil {
 			log.Printf("list templates: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -49,7 +49,7 @@ func handleListTemplates(db *sql.DB) http.HandlerFunc {
 			var t templateJSON
 			if err := rows.Scan(&t.ID, &t.Name, &t.TitleTemplate, &t.BodyTemplate, &t.IsPreset, &t.CreatedAt); err != nil {
 				log.Printf("scan template: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			list = append(list, t)
@@ -63,7 +63,7 @@ func handleCreateTemplate(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req templateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if msg := validateTemplate(req); msg != "" {
@@ -74,7 +74,7 @@ func handleCreateTemplate(db *sql.DB) http.HandlerFunc {
 			userID(r), strings.TrimSpace(req.Name), strings.TrimSpace(req.TitleTemplate), strings.TrimSpace(req.BodyTemplate))
 		if err != nil {
 			log.Printf("insert template: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		id, _ := res.LastInsertId()
@@ -83,7 +83,7 @@ func handleCreateTemplate(db *sql.DB) http.HandlerFunc {
 			FROM reminder_templates WHERE id = ?`, id).
 			Scan(&t.ID, &t.Name, &t.TitleTemplate, &t.BodyTemplate, &t.IsPreset, &t.CreatedAt); err != nil {
 			log.Printf("fetch created template: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusCreated, t)
@@ -98,7 +98,7 @@ func handleUpdateTemplate(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		uid := userID(r)
@@ -107,25 +107,25 @@ func handleUpdateTemplate(db *sql.DB) http.HandlerFunc {
 		err = db.QueryRow(`SELECT user_id, is_preset FROM reminder_templates WHERE id = ?`, id).
 			Scan(&owner, &isPreset)
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "template not found")
+			writeError(w, http.StatusNotFound, "提醒模板不存在")
 			return
 		}
 		if err != nil {
 			log.Printf("query template: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if !owner.Valid || owner.Int64 != uid {
-			writeError(w, http.StatusNotFound, "template not found")
+			writeError(w, http.StatusNotFound, "提醒模板不存在")
 			return
 		}
 		if isPreset == 1 {
-			writeError(w, http.StatusBadRequest, "preset template is not editable")
+			writeError(w, http.StatusBadRequest, "预设模板不可编辑")
 			return
 		}
 		var req templateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if msg := validateTemplate(req); msg != "" {
@@ -135,7 +135,7 @@ func handleUpdateTemplate(db *sql.DB) http.HandlerFunc {
 		if _, err := db.Exec(`UPDATE reminder_templates SET name = ?, title_template = ?, body_template = ? WHERE id = ? AND user_id = ?`,
 			strings.TrimSpace(req.Name), strings.TrimSpace(req.TitleTemplate), strings.TrimSpace(req.BodyTemplate), id, uid); err != nil {
 			log.Printf("update template: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		var t templateJSON
@@ -143,7 +143,7 @@ func handleUpdateTemplate(db *sql.DB) http.HandlerFunc {
 			FROM reminder_templates WHERE id = ?`, id).
 			Scan(&t.ID, &t.Name, &t.TitleTemplate, &t.BodyTemplate, &t.IsPreset, &t.CreatedAt); err != nil {
 			log.Printf("fetch updated template: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusOK, t)
@@ -156,17 +156,17 @@ func handleDeleteTemplate(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		res, err := db.Exec(`DELETE FROM reminder_templates WHERE id = ? AND user_id = ?`, id, userID(r))
 		if err != nil {
 			log.Printf("delete template: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "template not found")
+			writeError(w, http.StatusNotFound, "提醒模板不存在")
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -191,7 +191,7 @@ func handleListReminders(db *sql.DB) http.HandlerFunc {
 			FROM reminders WHERE user_id = ? ORDER BY id DESC LIMIT 100`, userID(r))
 		if err != nil {
 			log.Printf("list reminders: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -200,7 +200,7 @@ func handleListReminders(db *sql.DB) http.HandlerFunc {
 			var rem reminderJSON
 			if err := rows.Scan(&rem.ID, &rem.Type, &rem.Title, &rem.Body, &rem.Status, &rem.CreatedAt); err != nil {
 				log.Printf("scan reminder: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			list = append(list, rem)
@@ -214,17 +214,17 @@ func handleMarkReminderRead(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		res, err := db.Exec(`UPDATE reminders SET status = 'read' WHERE id = ? AND user_id = ?`, id, userID(r))
 		if err != nil {
 			log.Printf("mark reminder read: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "reminder not found")
+			writeError(w, http.StatusNotFound, "提醒不存在")
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -248,7 +248,7 @@ func handleAuditLog(db *sql.DB) http.HandlerFunc {
 			FROM audit_logs WHERE user_id = ? ORDER BY id DESC LIMIT 200`, userID(r))
 		if err != nil {
 			log.Printf("list audit: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -258,7 +258,7 @@ func handleAuditLog(db *sql.DB) http.HandlerFunc {
 			var detail sql.NullString
 			if err := rows.Scan(&a.ID, &a.Actor, &a.Action, &detail, &a.CreatedAt); err != nil {
 				log.Printf("scan audit: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if detail.Valid {

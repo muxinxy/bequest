@@ -65,7 +65,7 @@ func fetchInheritor(db *sql.DB, id, uid int64) (*inheritorJSON, error) {
 
 func validateInheritor(req inheritorRequest) string {
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.AccessCode) == "" {
-		return "name, email and access_code are required"
+		return "名称、邮箱和访问码均必填"
 	}
 	return ""
 }
@@ -80,7 +80,7 @@ func handleListInheritors(db *sql.DB) http.HandlerFunc {
 			FROM inheritors i WHERE i.user_id = ? ORDER BY i.priority, i.id`, userID(r))
 		if err != nil {
 			log.Printf("list inheritors: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -89,7 +89,7 @@ func handleListInheritors(db *sql.DB) http.HandlerFunc {
 			var in inheritorJSON
 			if err := rows.Scan(&in.ID, &in.Name, &in.Email, &in.Priority, &in.CreatedAt, &in.AssetCount, &in.CategoryCount, &in.AccessCode); err != nil {
 				log.Printf("scan inheritor: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			list = append(list, in)
@@ -103,7 +103,7 @@ func handleCreateInheritor(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req inheritorRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if msg := validateInheritor(req); msg != "" {
@@ -114,17 +114,17 @@ func handleCreateInheritor(db *sql.DB) http.HandlerFunc {
 			userID(r), strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), hashAccessCode(req.AccessCode), strings.TrimSpace(req.AccessCode))
 		if err != nil {
 			log.Printf("insert inheritor: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		id, _ := res.LastInsertId()
 		in, err := fetchInheritor(db, id, userID(r))
 		if err != nil {
 			log.Printf("fetch created inheritor: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		logAudit(db, userID(r), "新增继承人", map[string]any{"id": id, "name": in.Name})
+		logAudit(db, userID(r), fmt.Sprintf("新增继承人「%s」", in.Name), map[string]any{"id": id})
 		writeJSON(w, http.StatusCreated, in)
 	}
 }
@@ -135,17 +135,17 @@ func handleUpdateInheritor(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		uid := userID(r)
 		var req inheritorRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Email) == "" {
-			writeError(w, http.StatusBadRequest, "name and email are required")
+			writeError(w, http.StatusBadRequest, "名称和邮箱必填")
 			return
 		}
 		// only re-hash when a new access code is supplied
@@ -154,11 +154,11 @@ func handleUpdateInheritor(db *sql.DB) http.HandlerFunc {
 				strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), hashAccessCode(req.AccessCode), strings.TrimSpace(req.AccessCode), id, uid)
 			if err != nil {
 				log.Printf("update inheritor: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if n, _ := res.RowsAffected(); n == 0 {
-				writeError(w, http.StatusNotFound, "inheritor not found")
+				writeError(w, http.StatusNotFound, "继承人不存在")
 				return
 			}
 		} else {
@@ -166,21 +166,21 @@ func handleUpdateInheritor(db *sql.DB) http.HandlerFunc {
 				strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), id, uid)
 			if err != nil {
 				log.Printf("update inheritor: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if n, _ := res.RowsAffected(); n == 0 {
-				writeError(w, http.StatusNotFound, "inheritor not found")
+				writeError(w, http.StatusNotFound, "继承人不存在")
 				return
 			}
 		}
 		in, err := fetchInheritor(db, id, uid)
 		if err != nil {
 			log.Printf("fetch updated inheritor: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		logAudit(db, uid, "修改继承人", map[string]any{"id": id, "name": in.Name})
+		logAudit(db, uid, fmt.Sprintf("修改继承人信息「%s」", in.Name), map[string]any{"id": id})
 		writeJSON(w, http.StatusOK, in)
 	}
 }
@@ -190,20 +190,31 @@ func handleDeleteInheritor(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
-		res, err := db.Exec(`DELETE FROM inheritors WHERE id = ? AND user_id = ?`, id, userID(r))
+		uid := userID(r)
+		var name string
+		if err := db.QueryRow(`SELECT name FROM inheritors WHERE id = ? AND user_id = ?`, id, uid).Scan(&name); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "继承人不存在")
+				return
+			}
+			log.Printf("query inheritor name: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		res, err := db.Exec(`DELETE FROM inheritors WHERE id = ? AND user_id = ?`, id, uid)
 		if err != nil {
 			log.Printf("delete inheritor: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "inheritor not found")
+			writeError(w, http.StatusNotFound, "继承人不存在")
 			return
 		}
-		logAudit(db, userID(r), "删除继承人", map[string]any{"id": id})
+		logAudit(db, uid, fmt.Sprintf("删除继承人「%s」", name), map[string]any{"id": id})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -222,7 +233,7 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req claimRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		var eventID int64
@@ -239,12 +250,12 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 				"unknown event_key"); aerr != nil {
 				log.Printf("audit claim fail: %v", aerr)
 			}
-			writeError(w, http.StatusUnauthorized, "invalid event_key or access_code")
+			writeError(w, http.StatusUnauthorized, "无效的 event_key 或访问码")
 			return
 		}
 		if err != nil {
 			log.Printf("query claim event: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if !accessCodeMatches(codeHash, req.AccessCode) {
@@ -252,11 +263,11 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 				ownerID, "wrong access_code"); aerr != nil {
 				log.Printf("audit claim fail: %v", aerr)
 			}
-			writeError(w, http.StatusUnauthorized, "invalid event_key or access_code")
+			writeError(w, http.StatusUnauthorized, "无效的 event_key 或访问码")
 			return
 		}
 		if status != "pending" {
-			writeError(w, http.StatusConflict, "event already claimed or reversed")
+			writeError(w, http.StatusConflict, "交接事件已被领取或已撤销")
 			return
 		}
 		res, err := db.Exec(`UPDATE inheritance_events SET status = 'claimed', claimed_at = datetime('now'),
@@ -264,11 +275,11 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 			WHERE id = ? AND status = 'pending'`, eventID)
 		if err != nil {
 			log.Printf("claim event: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusConflict, "event already claimed or reversed")
+			writeError(w, http.StatusConflict, "交接事件已被领取或已撤销")
 			return
 		}
 		if _, err := db.Exec(`UPDATE users SET inherit_stage = 'claimed' WHERE id = ?`, ownerID); err != nil {
@@ -285,7 +296,7 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 			var wk string
 			if err := db.QueryRow(`SELECT asset_key_wrapped_wk FROM assets WHERE id = ?`, assetID.Int64).Scan(&wk); err != nil || wk == "" {
 				log.Printf("claim asset key: asset=%d err=%v", assetID.Int64, err)
-				writeError(w, http.StatusInternalServerError, "asset key missing")
+				writeError(w, http.StatusInternalServerError, "资产密钥缺失")
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
@@ -326,7 +337,7 @@ func handleInheritanceStatus(db *sql.DB) http.HandlerFunc {
 		if err := db.QueryRow(`SELECT inherit_stage, escalation_level, last_login_at FROM users WHERE id = ?`, uid).
 			Scan(&stage, &escLevel, &lastLogin); err != nil {
 			log.Printf("query status: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		var ll *string
@@ -339,7 +350,7 @@ func handleInheritanceStatus(db *sql.DB) http.HandlerFunc {
 			WHERE e.user_id = ? ORDER BY e.id DESC`, uid)
 		if err != nil {
 			log.Printf("list events: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -351,7 +362,7 @@ func handleInheritanceStatus(db *sql.DB) http.HandlerFunc {
 			var assetName sql.NullString
 			if err := rows.Scan(&e.ID, &e.Status, &e.CreatedAt, &claimed, &reversed, &revUntil, &assetID, &assetName); err != nil {
 				log.Printf("scan event: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if claimed.Valid {

@@ -99,7 +99,7 @@ func scanSMTPSettings(w http.ResponseWriter, uid int64, db *sql.DB) (smtpSetting
 	}
 	if err != nil {
 		log.Printf("get smtp settings: %v", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeError(w, http.StatusInternalServerError, "服务器内部错误")
 		return smtpSettingsJSON{}, false
 	}
 	s.Configured = true
@@ -124,7 +124,7 @@ func handleGetInheritanceToggle(db *sql.DB) http.HandlerFunc {
 		var enabled int
 		if err := db.QueryRow(`SELECT inheritance_enabled FROM users WHERE id = ?`, userID(r)).Scan(&enabled); err != nil {
 			log.Printf("query inheritance toggle: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"enabled": enabled != 0})
@@ -138,7 +138,7 @@ func handlePutInheritanceToggle(db *sql.DB) http.HandlerFunc {
 			Enabled bool `json:"enabled"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		v := 0
@@ -147,7 +147,7 @@ func handlePutInheritanceToggle(db *sql.DB) http.HandlerFunc {
 		}
 		if _, err := db.Exec(`UPDATE users SET inheritance_enabled = ? WHERE id = ?`, v, userID(r)); err != nil {
 			log.Printf("update inheritance toggle: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"enabled": req.Enabled})
@@ -170,16 +170,16 @@ func handlePutSMTP(db *sql.DB) http.HandlerFunc {
 		uid := userID(r)
 		var req smtpPutRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		req.Host = strings.TrimSpace(req.Host)
 		if req.Host == "" {
-			writeError(w, http.StatusBadRequest, "host is required")
+			writeError(w, http.StatusBadRequest, "主机必填")
 			return
 		}
 		if req.Port < 1 || req.Port > 65535 {
-			writeError(w, http.StatusBadRequest, "port must be 1-65535")
+			writeError(w, http.StatusBadRequest, "端口必须在 1-65535 之间")
 			return
 		}
 		var enc []byte
@@ -187,19 +187,19 @@ func handlePutSMTP(db *sql.DB) http.HandlerFunc {
 			e, err := encryptSecret(req.Password)
 			if err != nil {
 				log.Printf("encrypt smtp password: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			enc = e
 		} else {
 			err := db.QueryRow(`SELECT password_enc FROM user_smtp WHERE user_id = ?`, uid).Scan(&enc)
 			if errors.Is(err, sql.ErrNoRows) {
-				writeError(w, http.StatusBadRequest, "password is required for first-time setup")
+				writeError(w, http.StatusBadRequest, "首次配置必须提供密码")
 				return
 			}
 			if err != nil {
 				log.Printf("query smtp password: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 		}
@@ -215,7 +215,7 @@ func handlePutSMTP(db *sql.DB) http.HandlerFunc {
 				enabled = excluded.enabled, updated_at = datetime('now')`,
 			uid, req.Host, req.Port, req.User, enc, req.FromAddr, enabled); err != nil {
 			log.Printf("upsert smtp settings: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusOK, smtpSettingsJSON{
@@ -234,7 +234,7 @@ func handleDeleteSMTP(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, err := db.Exec(`DELETE FROM user_smtp WHERE user_id = ?`, userID(r)); err != nil {
 			log.Printf("delete smtp settings: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusOK, smtpSettingsJSON{Configured: false})
@@ -258,17 +258,17 @@ func handlePutMasterSalt(db *sql.DB) http.HandlerFunc {
 			MasterSalt string `json:"master_salt"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if strings.TrimSpace(req.MasterSalt) == "" {
-			writeError(w, http.StatusBadRequest, "master_salt required")
+			writeError(w, http.StatusBadRequest, "master_salt 必填")
 			return
 		}
 		if _, err := db.Exec(`UPDATE users SET master_salt = ?, updated_at = datetime('now') WHERE id = ?`,
 			req.MasterSalt, uid); err != nil {
 			log.Printf("update master salt: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -290,28 +290,28 @@ func handlePutMasterKey(db *sql.DB) http.HandlerFunc {
 		uid := userID(r)
 		var req masterKeyPutRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		var hash string
 		if err := db.QueryRow(`SELECT password_hash FROM users WHERE id = ?`, uid).Scan(&hash); err != nil {
 			log.Printf("query user password hash: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		ok, err := verifyPassword(hash, req.Password)
 		if err != nil || !ok {
-			writeError(w, http.StatusUnauthorized, "invalid password")
+			writeError(w, http.StatusUnauthorized, "密码错误")
 			return
 		}
 		decoded, err := base64.StdEncoding.DecodeString(req.MasterKeyWrapped)
 		if err != nil || len(decoded) == 0 {
-			writeError(w, http.StatusBadRequest, "master_key_wrapped must be base64")
+			writeError(w, http.StatusBadRequest, "master_key_wrapped 必须为 base64 编码")
 			return
 		}
 		if _, err := db.Exec(`UPDATE users SET master_key_wrapped = ?, updated_at = datetime('now') WHERE id = ?`, decoded, uid); err != nil {
 			log.Printf("update master key: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if _, err := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'owner', 'master_key_updated', ?)`,

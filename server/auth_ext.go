@@ -21,13 +21,13 @@ func handleCheckUsername(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimSpace(r.URL.Query().Get("username"))
 		if name == "" {
-			writeError(w, http.StatusBadRequest, "username required")
+			writeError(w, http.StatusBadRequest, "用户名必填")
 			return
 		}
 		var n int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE username = ?`, name).Scan(&n); err != nil {
 			log.Printf("check username: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"available": n == 0})
@@ -39,13 +39,13 @@ func handleCheckEmail(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		email := strings.TrimSpace(r.URL.Query().Get("email"))
 		if email == "" {
-			writeError(w, http.StatusBadRequest, "email required")
+			writeError(w, http.StatusBadRequest, "邮箱必填")
 			return
 		}
 		var n int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE email = ?`, email).Scan(&n); err != nil {
 			log.Printf("check email: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"available": n == 0})
@@ -66,7 +66,7 @@ func handleUpdateProfile(db *sql.DB) http.HandlerFunc {
 		uid := userID(r)
 		var req updateProfileRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		updates := []string{}
@@ -74,7 +74,7 @@ func handleUpdateProfile(db *sql.DB) http.HandlerFunc {
 		if req.Username != nil {
 			name := strings.TrimSpace(*req.Username)
 			if name == "" {
-				writeError(w, http.StatusBadRequest, "username required")
+				writeError(w, http.StatusBadRequest, "用户名必填")
 				return
 			}
 			updates = append(updates, "username = ?")
@@ -83,14 +83,14 @@ func handleUpdateProfile(db *sql.DB) http.HandlerFunc {
 		if req.Email != nil {
 			email := strings.TrimSpace(*req.Email)
 			if email == "" || !strings.Contains(email, "@") {
-				writeError(w, http.StatusBadRequest, "invalid email")
+				writeError(w, http.StatusBadRequest, "无效的邮箱")
 				return
 			}
 			updates = append(updates, "email = ?")
 			args = append(args, email)
 		}
 		if len(updates) == 0 {
-			writeError(w, http.StatusBadRequest, "nothing to update")
+			writeError(w, http.StatusBadRequest, "没有需要更新的内容")
 			return
 		}
 		args = append(args, uid)
@@ -98,22 +98,22 @@ func handleUpdateProfile(db *sql.DB) http.HandlerFunc {
 			strings.Join(updates, ", ")), args...)
 		if err != nil {
 			if isUniqueViolation(err) {
-				writeError(w, http.StatusConflict, "username or email already taken")
+				writeError(w, http.StatusConflict, "用户名或邮箱已被占用")
 				return
 			}
 			log.Printf("update profile: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "user not found")
+			writeError(w, http.StatusNotFound, "用户不存在")
 			return
 		}
 		var username, email, tier string
 		if err := db.QueryRow(`SELECT username, email, tier FROM users WHERE id = ?`, uid).
 			Scan(&username, &email, &tier); err != nil {
 			log.Printf("query updated user: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -134,7 +134,7 @@ func handleChangePassword(db *sql.DB) http.HandlerFunc {
 			NewPassword string `json:"new_password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if msg := validateCredentials("change-password", "pw@"+req.Password, req.NewPassword); msg != "" {
@@ -143,7 +143,7 @@ func handleChangePassword(db *sql.DB) http.HandlerFunc {
 		}
 		var hash string
 		if err := db.QueryRow(`SELECT password_hash FROM users WHERE id = ?`, uid).Scan(&hash); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		ok, err := verifyPassword(hash, req.Password)
@@ -154,13 +154,13 @@ func handleChangePassword(db *sql.DB) http.HandlerFunc {
 		newHash, err := hashPassword(req.NewPassword)
 		if err != nil {
 			log.Printf("hash new password: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if _, err := db.Exec(`UPDATE users SET password_hash = ?, token_version = token_version + 1, updated_at = datetime('now') WHERE id = ?`,
 			newHash, uid); err != nil {
 			log.Printf("change password: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if _, err := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'owner', 'password_changed', ?)`,
@@ -181,7 +181,7 @@ func handleRequestPasswordReset(db *sql.DB) http.HandlerFunc {
 			Email string `json:"email"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		email := strings.TrimSpace(req.Email)
@@ -194,7 +194,7 @@ func handleRequestPasswordReset(db *sql.DB) http.HandlerFunc {
 		}
 		if err != nil {
 			log.Printf("query reset user: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		// 6 位数字验证码。
@@ -204,7 +204,7 @@ func handleRequestPasswordReset(db *sql.DB) http.HandlerFunc {
 		if _, err := db.Exec(`INSERT INTO password_resets (user_id, code_hash, expires_at) VALUES (?, ?, ?)`,
 			uid, hex.EncodeToString(hash[:]), expires); err != nil {
 			log.Printf("insert reset code: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		// 邮件发送:优先用户自配 SMTP,失败回退系统 SMTP(与提醒邮件同策略)。
@@ -228,7 +228,7 @@ func handleResetPassword(db *sql.DB) http.HandlerFunc {
 			NewPassword string `json:"new_password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		email := strings.TrimSpace(req.Email)
@@ -247,12 +247,12 @@ func handleResetPassword(db *sql.DB) http.HandlerFunc {
 			WHERE u.email = ? AND pr.used = 0 AND pr.expires_at > datetime('now')
 			ORDER BY pr.id DESC LIMIT 1`, email).Scan(&uid, &resetID, &attempts, &storedHash)
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusUnauthorized, "invalid or expired code")
+			writeError(w, http.StatusUnauthorized, "无效或已过期的验证码")
 			return
 		}
 		if err != nil {
 			log.Printf("query reset code: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if attempts >= 5 {
@@ -271,37 +271,37 @@ func handleResetPassword(db *sql.DB) http.HandlerFunc {
 			if _, err := db.Exec(`UPDATE password_resets SET attempts = ?, used = ? WHERE id = ?`, attempts, used, resetID); err != nil {
 				log.Printf("count reset attempt: %v", err)
 			}
-			writeError(w, http.StatusUnauthorized, "invalid or expired code")
+			writeError(w, http.StatusUnauthorized, "无效或已过期的验证码")
 			return
 		}
 		hash, err := hashPassword(req.NewPassword)
 		if err != nil {
 			log.Printf("hash new password: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		tx, err := db.Begin()
 		if err != nil {
 			log.Printf("begin reset: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if _, err := tx.Exec(`UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?`,
 			hash, uid); err != nil {
 			tx.Rollback()
 			log.Printf("update password: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if _, err := tx.Exec(`UPDATE password_resets SET used = 1 WHERE id = ?`, resetID); err != nil {
 			tx.Rollback()
 			log.Printf("mark reset used: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if err := tx.Commit(); err != nil {
 			log.Printf("commit reset: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if _, err := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'owner', 'password_reset', 'via email code')`,

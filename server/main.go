@@ -60,7 +60,7 @@ func newMux(db *sql.DB) *http.ServeMux {
 	// 探活:查 DB 可达性(容器探活据此判断健康,而非只看进程在)。
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := db.PingContext(r.Context()); err != nil {
-			writeError(w, http.StatusServiceUnavailable, "db unavailable")
+			writeError(w, http.StatusServiceUnavailable, "数据库不可用")
 			return
 		}
 		w.Write([]byte("ok"))

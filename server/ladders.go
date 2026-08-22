@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -68,11 +69,11 @@ func ladderOwnedBy(db *sql.DB, ladderID, uid int64) bool {
 // validateLadderDays:days 至少 1 个正整数,≤10 个。
 func validateLadderDays(days []int) string {
 	if len(days) < 1 || len(days) > 10 {
-		return "days must contain 1 to 10 entries"
+		return "触发天数需包含 1 到 10 个值"
 	}
 	for _, d := range days {
 		if d <= 0 {
-			return "days must be positive integers"
+			return "触发天数必须为正整数"
 		}
 	}
 	return ""
@@ -101,7 +102,7 @@ func handleListTriggerLadders(db *sql.DB) http.HandlerFunc {
 			FROM trigger_ladders WHERE user_id = ? ORDER BY is_global DESC, id`, uid)
 		if err != nil {
 			log.Printf("list ladders: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -111,7 +112,7 @@ func handleListTriggerLadders(db *sql.DB) http.HandlerFunc {
 			var days string
 			if err := rows.Scan(&l.ID, &l.Name, &l.IsGlobal, &days, &l.CreatedAt); err != nil {
 				log.Printf("scan ladder: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if err := json.Unmarshal([]byte(days), &l.Days); err != nil {
@@ -129,11 +130,11 @@ func handleCreateTriggerLadder(db *sql.DB) http.HandlerFunc {
 		uid := userID(r)
 		var req ladderRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if strings.TrimSpace(req.Name) == "" {
-			writeError(w, http.StatusBadRequest, "name is required")
+			writeError(w, http.StatusBadRequest, "名称必填")
 			return
 		}
 		if msg := validateLadderDays(req.Days); msg != "" {
@@ -145,15 +146,15 @@ func handleCreateTriggerLadder(db *sql.DB) http.HandlerFunc {
 			uid, strings.TrimSpace(req.Name), string(days))
 		if err != nil {
 			log.Printf("insert ladder: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		id, _ := res.LastInsertId()
-		logAudit(db, uid, "新增触发阶梯", map[string]any{"id": id, "name": req.Name, "days": req.Days})
+		logAudit(db, uid, fmt.Sprintf("新增触发阶梯「%s」", strings.TrimSpace(req.Name)), map[string]any{"id": id, "days": req.Days})
 		l, err := scanLadder(db.QueryRow(`SELECT id, name, is_global, days, created_at FROM trigger_ladders WHERE id = ?`, id))
 		if err != nil {
 			log.Printf("fetch ladder: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusCreated, l)
@@ -167,16 +168,16 @@ func handleUpdateTriggerLadder(db *sql.DB) http.HandlerFunc {
 		uid := userID(r)
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		var req ladderRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if strings.TrimSpace(req.Name) == "" {
-			writeError(w, http.StatusBadRequest, "name is required")
+			writeError(w, http.StatusBadRequest, "名称必填")
 			return
 		}
 		if msg := validateLadderDays(req.Days); msg != "" {
@@ -188,18 +189,18 @@ func handleUpdateTriggerLadder(db *sql.DB) http.HandlerFunc {
 			strings.TrimSpace(req.Name), string(days), id, uid)
 		if err != nil {
 			log.Printf("update ladder: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "ladder not found")
+			writeError(w, http.StatusNotFound, "触发阶梯不存在")
 			return
 		}
-		logAudit(db, uid, "修改触发阶梯", map[string]any{"id": id, "name": req.Name, "days": req.Days})
+		logAudit(db, uid, fmt.Sprintf("修改触发阶梯「%s」", strings.TrimSpace(req.Name)), map[string]any{"id": id, "days": req.Days})
 		l, err := scanLadder(db.QueryRow(`SELECT id, name, is_global, days, created_at FROM trigger_ladders WHERE id = ?`, id))
 		if err != nil {
 			log.Printf("fetch ladder: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		writeJSON(w, http.StatusOK, l)
@@ -215,11 +216,11 @@ func handleDeleteTriggerLadders(db *sql.DB) http.HandlerFunc {
 			IDs []int64 `json:"ids"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if len(req.IDs) == 0 {
-			writeError(w, http.StatusBadRequest, "ids required")
+			writeError(w, http.StatusBadRequest, "请提供 ID 列表")
 			return
 		}
 		deleted, skipped := 0, 0
@@ -255,7 +256,7 @@ func handleDeleteTriggerLadders(db *sql.DB) http.HandlerFunc {
 				log.Printf("unlink category bindings: %v", err)
 			}
 		}
-		logAudit(db, uid, "删除触发阶梯", map[string]any{"deleted": deleted, "skipped": skipped})
+		logAudit(db, uid, fmt.Sprintf("删除触发阶梯(共 %d 个)", deleted), map[string]any{"deleted": deleted, "skipped": skipped})
 		writeJSON(w, http.StatusOK, map[string]int{"deleted": deleted, "skipped": skipped})
 	}
 }

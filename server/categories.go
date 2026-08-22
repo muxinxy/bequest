@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -66,7 +67,7 @@ func handleListCategories(db *sql.DB) http.HandlerFunc {
 			FROM categories c WHERE c.user_id = ? AND c.deleted_at IS NULL ORDER BY c.sort_order, c.id`, userID(r))
 		if err != nil {
 			log.Printf("list categories: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer rows.Close()
@@ -77,7 +78,7 @@ func handleListCategories(db *sql.DB) http.HandlerFunc {
 			if err := rows.Scan(&c.ID, &c.Name, &c.AssetType, &c.IsPreset, &c.CreatedAt, &c.SortOrder,
 				&c.AssetCount, &remark, &names); err != nil {
 				log.Printf("scan category: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if remark.Valid {
@@ -101,12 +102,12 @@ func handleCreateCategory(db *sql.DB) http.HandlerFunc {
 			AssetType string `json:"asset_type"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		name := strings.TrimSpace(req.Name)
 		if name == "" {
-			writeError(w, http.StatusBadRequest, "name is required")
+			writeError(w, http.StatusBadRequest, "名称必填")
 			return
 		}
 		assetType := req.AssetType
@@ -114,17 +115,17 @@ func handleCreateCategory(db *sql.DB) http.HandlerFunc {
 			assetType = "physical"
 		}
 		if !validAssetType(assetType) {
-			writeError(w, http.StatusBadRequest, "asset_type must be physical or virtual")
+			writeError(w, http.StatusBadRequest, "资产类型必须为 physical 或 virtual")
 			return
 		}
 		res, err := db.Exec(`INSERT INTO categories (user_id, name, asset_type, is_preset) VALUES (?, ?, ?, 0)`, userID(r), name, assetType)
 		if err != nil {
 			if isUniqueViolation(err) {
-				writeError(w, http.StatusConflict, "category already exists")
+				writeError(w, http.StatusConflict, "分组已存在")
 				return
 			}
 			log.Printf("insert category: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		id, _ := res.LastInsertId()
@@ -135,10 +136,10 @@ func handleCreateCategory(db *sql.DB) http.HandlerFunc {
 			remark FROM categories WHERE id = ?`, id))
 		if err != nil {
 			log.Printf("fetch created category: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		logAudit(db, userID(r), "新建分组", map[string]any{"id": id, "name": c.Name})
+		logAudit(db, userID(r), fmt.Sprintf("新建分组「%s」", c.Name), map[string]any{"id": id})
 		writeJSON(w, http.StatusCreated, c)
 	}
 }
@@ -150,7 +151,7 @@ func handleUpdateCategory(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		var req struct {
@@ -159,7 +160,7 @@ func handleUpdateCategory(db *sql.DB) http.HandlerFunc {
 			Remark    string `json:"remark"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		nameRaw := req.Name
@@ -169,14 +170,14 @@ func handleUpdateCategory(db *sql.DB) http.HandlerFunc {
 			assetType = "physical"
 		}
 		if !validAssetType(assetType) {
-			writeError(w, http.StatusBadRequest, "asset_type must be physical or virtual")
+			writeError(w, http.StatusBadRequest, "资产类型必须为 physical 或 virtual")
 			return
 		}
 		// name 可省略(仅更新备注/asset_type 时):JSON 缺省为 ""。
 		// 一旦显式传入 name,则必须是非空名称(纯空格 → 400),并检查重复。
 		if nameRaw != "" {
 			if name == "" {
-				writeError(w, http.StatusBadRequest, "name is required")
+				writeError(w, http.StatusBadRequest, "名称必填")
 				return
 			}
 			var dup int
@@ -184,11 +185,11 @@ func handleUpdateCategory(db *sql.DB) http.HandlerFunc {
 				WHERE user_id = ? AND name = ? AND id != ? AND deleted_at IS NULL`,
 				userID(r), name, id).Scan(&dup); err != nil {
 				log.Printf("check category name: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if dup > 0 {
-				writeError(w, http.StatusConflict, "category already exists")
+				writeError(w, http.StatusConflict, "分组已存在")
 				return
 			}
 		}
@@ -207,15 +208,15 @@ func handleUpdateCategory(db *sql.DB) http.HandlerFunc {
 		}
 		if err != nil {
 			if isUniqueViolation(err) {
-				writeError(w, http.StatusConflict, "category already exists")
+				writeError(w, http.StatusConflict, "分组已存在")
 				return
 			}
 			log.Printf("update category: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			writeError(w, http.StatusNotFound, "category not found")
+			writeError(w, http.StatusNotFound, "分组不存在")
 			return
 		}
 		c, err := scanCategory(db.QueryRow(`SELECT id, name, asset_type, is_preset, created_at, sort_order,
@@ -223,10 +224,10 @@ func handleUpdateCategory(db *sql.DB) http.HandlerFunc {
 			remark FROM categories WHERE id = ?`, id))
 		if err != nil {
 			log.Printf("fetch updated category: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		logAudit(db, userID(r), "修改分组", map[string]any{"id": id, "name": c.Name})
+		logAudit(db, userID(r), fmt.Sprintf("修改分组「%s」", c.Name), map[string]any{"id": id})
 		writeJSON(w, http.StatusOK, c)
 	}
 }
@@ -240,16 +241,16 @@ func handleReorderCategories(db *sql.DB) http.HandlerFunc {
 			IDs []int64 `json:"ids"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
 		if len(req.IDs) == 0 {
-			writeError(w, http.StatusBadRequest, "ids required")
+			writeError(w, http.StatusBadRequest, "请提供 ID 列表")
 			return
 		}
 		tx, err := db.Begin()
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		defer tx.Rollback()
@@ -257,16 +258,16 @@ func handleReorderCategories(db *sql.DB) http.HandlerFunc {
 			res, err := tx.Exec(`UPDATE categories SET sort_order = ? WHERE id = ? AND user_id = ?`, i, id, uid)
 			if err != nil {
 				log.Printf("reorder categories: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			if n, _ := res.RowsAffected(); n == 0 {
-				writeError(w, http.StatusNotFound, "category not found")
+				writeError(w, http.StatusNotFound, "分组不存在")
 				return
 			}
 		}
 		if err := tx.Commit(); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
 		logApp(db, uid, "调整分组排序", map[string]any{"ids": req.IDs})
@@ -282,42 +283,42 @@ func handleDeleteCategory(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid id")
+			writeError(w, http.StatusBadRequest, "无效的 ID")
 			return
 		}
 		uid := userID(r)
-		// 确认分组存在且属于当前用户
-		var n int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, id, uid).Scan(&n); err != nil || n == 0 {
-			writeError(w, http.StatusNotFound, "category not found")
+		// 确认分组存在且属于当前用户,并取名称用于审计日志。
+		var name string
+		if err := db.QueryRow(`SELECT name FROM categories WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, id, uid).Scan(&name); err != nil {
+			writeError(w, http.StatusNotFound, "分组不存在")
 			return
 		}
 		moved := int64(0)
 		if moveTo := strings.TrimSpace(r.URL.Query().Get("move_to")); moveTo != "" {
 			target, err := strconv.ParseInt(moveTo, 10, 64)
 			if err != nil || target == id {
-				writeError(w, http.StatusBadRequest, "invalid move_to")
+				writeError(w, http.StatusBadRequest, "无效的 move_to 参数")
 				return
 			}
 			var m int
 			if err := db.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND user_id = ?`, target, uid).Scan(&m); err != nil || m == 0 {
-				writeError(w, http.StatusNotFound, "target category not found")
+				writeError(w, http.StatusNotFound, "目标分组不存在")
 				return
 			}
 			res, err := db.Exec(`UPDATE assets SET category_id = ? WHERE category_id = ? AND user_id = ?`, target, id, uid)
 			if err != nil {
 				log.Printf("move assets before delete: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
 			moved, _ = res.RowsAffected()
 		}
 		if _, err := db.Exec(`UPDATE categories SET deleted_at = datetime('now') WHERE id = ? AND user_id = ?`, id, uid); err != nil {
 			log.Printf("soft delete category: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		logAudit(db, uid, "删除分组", map[string]any{"id": id, "moved_assets": moved})
+		logAudit(db, uid, fmt.Sprintf("删除分组「%s」", name), map[string]any{"id": id, "moved_assets": moved})
 		if moved > 0 {
 			writeJSON(w, http.StatusOK, map[string]int64{"moved": moved})
 			return
