@@ -398,9 +398,9 @@ func handleCopyAsset(db *sql.DB) http.HandlerFunc {
 		var data []byte
 		var wkMk, wkWk sql.NullString
 		if err := db.QueryRow(`SELECT id, name, asset_type, category_id, encrypted_data,
-			expiry_date, asset_key_wrapped_mk, asset_key_wrapped_wk
+			expiry_date, status, asset_key_wrapped_mk, asset_key_wrapped_wk
 			FROM assets WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, id, uid).
-			Scan(&src.ID, &src.Name, &src.AssetType, &catID, &data, &exp, &wkMk, &wkWk); err != nil {
+			Scan(&src.ID, &src.Name, &src.AssetType, &catID, &data, &exp, &src.Status, &wkMk, &wkWk); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				writeError(w, http.StatusNotFound, "asset not found")
 				return
@@ -409,13 +409,16 @@ func handleCopyAsset(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+		if src.Status == "" {
+			src.Status = "active"
+		}
 		// 名称加"副本"后缀。
 		newName := src.Name + " 副本"
 		res, err := db.Exec(`INSERT INTO assets (user_id, category_id, asset_type, name, encrypted_data, expiry_date,
 				status, asset_key_wrapped_mk, asset_key_wrapped_wk)
-			VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			uid, nullableInt64(catID), src.AssetType, newName, data, nullableStr(exp),
-			nullable(wkMk.String), nullable(wkWk.String))
+			src.Status, nullable(wkMk.String), nullable(wkWk.String))
 		if err != nil {
 			log.Printf("copy asset insert: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")

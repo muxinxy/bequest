@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import '../api/api_config.dart';
 import '../models/asset.dart';
 import '../models/category.dart';
+import '../models/trigger_ladder.dart';
 import '../repository/asset_repository.dart';
 import '../repository/local_asset_repository.dart';
 import '../repository/offline_asset_repository.dart';
 import '../storage/secure_store.dart';
 import '../utils/time_format.dart';
+import '../widgets/ladder_dropdown.dart';
 import 'asset_edit_page.dart';
 import 'category_inheritors_page.dart';
 
@@ -280,7 +282,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     }
   }
 
-  /// 设置继承人:选择一名继承人绑定到所有所选资产(仅云端)。
+  /// 设置继承人:多选继承人 + 选择触发阶梯,批量绑定到所有所选资产(仅云端)。
   Future<void> _setInheritors() async {
     final jwt = await SecureStore().readJwt();
     if (jwt == null || jwt.isEmpty) {
@@ -288,8 +290,11 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       return;
     }
     List<Map<String, dynamic>> inheritors;
+    List<TriggerLadder> ladders;
     try {
-      inheritors = await (await ApiConfig.client()).listInheritors(jwt);
+      final api = await ApiConfig.client();
+      inheritors = await api.listInheritors(jwt);
+      ladders = await loadTriggerLadders(api, jwt);
     } catch (_) {
       _showError('加载继承人失败,请检查网络后重试');
       return;
@@ -298,27 +303,50 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       _showError('暂无继承人,请先在设置中创建');
       return;
     }
-    var selected = '${inheritors.first['id']}';
+    final selected = <String>{};
+    int? ladderId; // null = 全局阶梯
     if (!mounted) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('设置继承人'),
-          content: DropdownButtonFormField<String>(
-            initialValue: selected,
-            decoration: const InputDecoration(labelText: '继承人'),
-            items: [
-              for (final i in inheritors)
-                DropdownMenuItem(
-                  value: '${i['id']}',
-                  child: Text(
-                    '${i['name']}${i['email'] == null ? '' : ' (${i['email']})'}',
-                    overflow: TextOverflow.ellipsis,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final i in inheritors)
+                        CheckboxListTile(
+                          value: selected.contains('${i['id']}'),
+                          onChanged: (v) => setDialogState(() {
+                            if (v == true) {
+                              selected.add('${i['id']}');
+                            } else {
+                              selected.remove('${i['id']}');
+                            }
+                          }),
+                          title: Text('${i['name']}'),
+                          subtitle: Text(
+                            '${i['email'] == null || (i['email'] as String).isEmpty ? '' : '${i['email']} · '}'
+                            '${i['category_count'] ?? 0} 个分组 · ${i['asset_count'] ?? 0} 个资产',
+                          ),
+                        ),
+                    ],
                   ),
                 ),
+              ),
+              const SizedBox(height: 8),
+              LadderDropdown(
+                ladders: ladders,
+                value: ladderId,
+                onChanged: (v) => setDialogState(() => ladderId = v),
+              ),
             ],
-            onChanged: (v) => setDialogState(() => selected = v ?? selected),
           ),
           actions: [
             TextButton(
@@ -334,13 +362,20 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       ),
     );
     if (ok != true || !mounted) return;
+    if (selected.isEmpty) {
+      _showError('请至少选择一名继承人');
+      return;
+    }
     try {
+      // 每个选中资产 × 每个选中继承人批量绑定,统一应用所选阶梯。
       for (final id in _selectedIds) {
-        await widget.repository.createAssetInheritor(id, {
-          'inheritor_id': int.tryParse(selected),
-          'priority': 1,
-          'trigger_days': null,
-        });
+        for (final iid in selected) {
+          await widget.repository.createAssetInheritor(id, {
+            'inheritor_id': int.tryParse(iid),
+            'priority': 1,
+            'ladder_id': ladderId,
+          });
+        }
       }
       _exitMultiSelect();
       await _load();

@@ -90,12 +90,18 @@ class OfflineAssetRepository implements AssetRepository {
   Future<void> deleteAssetInheritor(String assetId, String iid) =>
       Future.error(UnsupportedError('离线模式不可修改'));
   @override
+  Future<void> updateAssetInheritorLadder(String assetId, String iid, int? ladderId) =>
+      Future.error(UnsupportedError('离线模式不可修改'));
+  @override
   Future<List<Map<String, dynamic>>> listCategoryInheritors(String categoryId) async => const [];
   @override
   Future<Map<String, dynamic>> createCategoryInheritor(String categoryId, Map<String, dynamic> body) =>
       Future.error(UnsupportedError('离线模式不可修改'));
   @override
   Future<void> deleteCategoryInheritor(String categoryId, String iid) =>
+      Future.error(UnsupportedError('离线模式不可修改'));
+  @override
+  Future<void> updateCategoryInheritorLadder(String categoryId, String iid, int? ladderId) =>
       Future.error(UnsupportedError('离线模式不可修改'));
   @override
   Future<List<Map<String, dynamic>>> listInheritorAssets(String inheritorId) async => const [];

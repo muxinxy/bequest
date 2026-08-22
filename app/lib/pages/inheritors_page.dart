@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
@@ -177,6 +178,87 @@ class _InheritorsPageState extends State<InheritorsPage> {
     }
   }
 
+  /// 编辑继承人:改名称/邮箱(访问码留空则服务端不改)。
+  Future<void> _editInheritor(Inheritor inheritor) async {
+    final nameController = TextEditingController(text: inheritor.name);
+    final emailController = TextEditingController(text: inheritor.email);
+    final result = await showDialog<_InheritorDraft>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('编辑继承人'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '姓名 *',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: emailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: '邮箱 *',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final name = nameController.text.trim();
+              final email = emailController.text.trim();
+              if (name.isEmpty || email.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('姓名与邮箱不能为空')),
+                );
+                return;
+              }
+              Navigator.of(context).pop(
+                _InheritorDraft(name: name, email: email, accessCode: ''),
+              );
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    nameController.dispose();
+    emailController.dispose();
+    if (result == null) return;
+    try {
+      final jwt = await _store.readJwt();
+      if (jwt == null) throw ApiException('未登录');
+      await (await _api).updateInheritor(jwt, inheritor.id, {
+        'name': result.name,
+        'email': result.email,
+      });
+      await _load();
+    } on ApiException catch (e) {
+      _showError(e.message);
+    } catch (_) {
+      _showError('保存失败,请检查网络后重试');
+    }
+  }
+
+  /// 复制继承码到剪贴板。
+  Future<void> _copyAccessCode(Inheritor inheritor) async {
+    await Clipboard.setData(ClipboardData(text: inheritor.accessCode));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('继承码已复制')),
+    );
+  }
+
   Future<void> _deleteInheritor(Inheritor inheritor) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -246,15 +328,56 @@ class _InheritorsPageState extends State<InheritorsPage> {
                           return ListTile(
                             leading: const Icon(Icons.person_outline),
                             title: Text(inheritor.name),
-                            subtitle: Text(
-                              '${inheritor.email.isEmpty ? '未填写邮箱' : inheritor.email}'
-                              '${inheritor.priority == null ? '' : ' · 优先级 ${inheritor.priority}'}'
-                              ' · ${inheritor.categoryCount} 个分组 · ${inheritor.assetCount} 个资产',
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${inheritor.email.isEmpty ? '未填写邮箱' : inheritor.email}'
+                                  '${inheritor.priority == null ? '' : ' · 优先级 ${inheritor.priority}'}'
+                                  ' · ${inheritor.categoryCount} 个分组 · ${inheritor.assetCount} 个资产',
+                                ),
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        '继承码:${inheritor.accessCode.isEmpty ? '未设置' : inheritor.accessCode}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey,
+                                          fontFamily: 'monospace',
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (inheritor.accessCode.isNotEmpty)
+                                      IconButton(
+                                        tooltip: '复制继承码',
+                                        visualDensity: VisualDensity.compact,
+                                        icon: const Icon(
+                                          Icons.copy_outlined,
+                                          size: 16,
+                                        ),
+                                        onPressed: () =>
+                                            _copyAccessCode(inheritor),
+                                      ),
+                                  ],
+                                ),
+                              ],
                             ),
-                            trailing: IconButton(
-                              tooltip: '删除',
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () => _deleteInheritor(inheritor),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  tooltip: '编辑',
+                                  icon: const Icon(Icons.edit_outlined),
+                                  onPressed: () => _editInheritor(inheritor),
+                                ),
+                                IconButton(
+                                  tooltip: '删除',
+                                  icon: const Icon(Icons.delete_outline),
+                                  onPressed: () => _deleteInheritor(inheritor),
+                                ),
+                              ],
                             ),
                           );
                         },

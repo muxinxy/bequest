@@ -238,6 +238,14 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		id, _ := res.LastInsertId()
+		// 每用户一条全局触发阶梯(免费档默认天数;会员开通后由 handleListTriggerLadders 补建)。
+		if _, err := tx.Exec(`INSERT INTO trigger_ladders (user_id, name, is_global, days) VALUES (?, '全局', 1, ?)`,
+			id, defaultLadderDays("free")); err != nil {
+			tx.Rollback()
+			log.Printf("seed global ladder: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
 		// Seed per-user preset categories (editable/deletable). Names are
 		// distinct across types to satisfy UNIQUE(user_id, name).
 		if _, err := tx.Exec(`INSERT INTO categories (user_id, name, asset_type, is_preset) VALUES

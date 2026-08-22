@@ -93,6 +93,11 @@ class CloudAssetRepository implements AssetRepository {
       _api.deleteAssetInheritor(jwt, assetId, iid);
 
   @override
+  Future<void> updateAssetInheritorLadder(
+          String assetId, String iid, int? ladderId) =>
+      _api.updateAssetInheritorLadder(jwt, assetId, iid, ladderId);
+
+  @override
   Future<List<Map<String, dynamic>>> listCategoryInheritors(String categoryId) =>
       _api.listCategoryInheritors(jwt, categoryId);
 
@@ -104,6 +109,11 @@ class CloudAssetRepository implements AssetRepository {
   @override
   Future<void> deleteCategoryInheritor(String categoryId, String iid) =>
       _api.deleteCategoryInheritor(jwt, categoryId, iid);
+
+  @override
+  Future<void> updateCategoryInheritorLadder(
+          String categoryId, String iid, int? ladderId) =>
+      _api.updateCategoryInheritorLadder(jwt, categoryId, iid, ladderId);
 
   @override
   Future<List<Map<String, dynamic>>> listInheritorAssets(String inheritorId) =>

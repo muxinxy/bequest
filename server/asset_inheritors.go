@@ -10,18 +10,21 @@ import (
 
 // assetInheritorJSON is one asset↔inheritor binding with trigger rule.
 type assetInheritorJSON struct {
-	ID          int64  `json:"id"`
-	AssetID     int64  `json:"asset_id"`
-	InheritorID int64  `json:"inheritor_id"`
+	ID            int64  `json:"id"`
+	AssetID       int64  `json:"asset_id"`
+	InheritorID   int64  `json:"inheritor_id"`
 	InheritorName string `json:"inheritor_name"`
-	Priority    int    `json:"priority"`
-	TriggerDays *int   `json:"trigger_days"`
+	Priority      int    `json:"priority"`
+	TriggerDays   *int   `json:"trigger_days"`
+	LadderID      *int64 `json:"ladder_id"`   // NULL=全局阶梯
+	LadderName    string `json:"ladder_name"` // 空=全局阶梯
 }
 
 type assetInheritorRequest struct {
-	InheritorID int64 `json:"inheritor_id"`
-	Priority    int   `json:"priority"`
-	TriggerDays *int  `json:"trigger_days"`
+	InheritorID int64  `json:"inheritor_id"`
+	Priority    int    `json:"priority"`
+	TriggerDays *int   `json:"trigger_days"`
+	LadderID    *int64 `json:"ladder_id"`
 }
 
 // handleListAssetInheritors: GET /api/v1/assets/{id}/inheritors
@@ -38,8 +41,9 @@ func handleListAssetInheritors(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		rows, err := db.Query(`SELECT ai.id, ai.asset_id, ai.inheritor_id, i.name,
-				ai.priority, ai.trigger_days
+				ai.priority, ai.trigger_days, ai.ladder_id, COALESCE(tl.name, '')
 			FROM asset_inheritors ai JOIN inheritors i ON i.id = ai.inheritor_id
+			LEFT JOIN trigger_ladders tl ON tl.id = ai.ladder_id
 			WHERE ai.asset_id = ? ORDER BY ai.priority, ai.id`, assetID)
 		if err != nil {
 			log.Printf("list asset inheritors: %v", err)
@@ -51,7 +55,8 @@ func handleListAssetInheritors(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var a assetInheritorJSON
 			var td sql.NullInt64
-			if err := rows.Scan(&a.ID, &a.AssetID, &a.InheritorID, &a.InheritorName, &a.Priority, &td); err != nil {
+			var lid sql.NullInt64
+			if err := rows.Scan(&a.ID, &a.AssetID, &a.InheritorID, &a.InheritorName, &a.Priority, &td, &lid, &a.LadderName); err != nil {
 				log.Printf("scan asset inheritor: %v", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
@@ -59,6 +64,10 @@ func handleListAssetInheritors(db *sql.DB) http.HandlerFunc {
 			if td.Valid {
 				n := int(td.Int64)
 				a.TriggerDays = &n
+			}
+			if lid.Valid {
+				n := lid.Int64
+				a.LadderID = &n
 			}
 			list = append(list, a)
 		}
@@ -91,13 +100,17 @@ func handleCreateAssetInheritor(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid inheritor")
 			return
 		}
+		if req.LadderID != nil && !ladderOwnedBy(db, *req.LadderID, uid) {
+			writeError(w, http.StatusBadRequest, "invalid ladder")
+			return
+		}
 		priority := req.Priority
 		if priority < 1 {
 			priority = 1
 		}
-		res, err := db.Exec(`INSERT INTO asset_inheritors (asset_id, inheritor_id, priority, trigger_days)
-			VALUES (?, ?, ?, ?)`,
-			assetID, req.InheritorID, priority, nullableInt(req.TriggerDays))
+		res, err := db.Exec(`INSERT INTO asset_inheritors (asset_id, inheritor_id, priority, trigger_days, ladder_id)
+			VALUES (?, ?, ?, ?, ?)`,
+			assetID, req.InheritorID, priority, nullableInt(req.TriggerDays), nullableLadderID(req.LadderID))
 		if err != nil {
 			// UNIQUE(asset_id, inheritor_id) 冲突 = 已绑定。
 			log.Printf("insert asset inheritor: %v", err)
@@ -144,6 +157,52 @@ func handleDeleteAssetInheritor(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// handleUpdateAssetInheritorLadder: PUT /api/v1/assets/{id}/inheritors/{iid} {ladder_id}
+// -> 200 修改绑定的触发阶梯(ladder_id 为 null 时回退全局)。
+func handleUpdateAssetInheritorLadder(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		assetID, err := parseID(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid id")
+			return
+		}
+		uid := userID(r)
+		if !assetOwnedBy(db, assetID, uid) {
+			writeError(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		iid, err := strconv.ParseInt(r.PathValue("iid"), 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid inheritor id")
+			return
+		}
+		var req struct {
+			LadderID *int64 `json:"ladder_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if req.LadderID != nil && !ladderOwnedBy(db, *req.LadderID, uid) {
+			writeError(w, http.StatusBadRequest, "invalid ladder")
+			return
+		}
+		res, err := db.Exec(`UPDATE asset_inheritors SET ladder_id = ? WHERE asset_id = ? AND id = ?`,
+			nullableLadderID(req.LadderID), assetID, iid)
+		if err != nil {
+			log.Printf("update asset inheritor ladder: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			writeError(w, http.StatusNotFound, "binding not found")
+			return
+		}
+		logAudit(db, uid, "修改资产继承人触发阶梯", map[string]any{"asset_id": assetID, "binding_id": iid, "ladder_id": req.LadderID})
+		writeJSON(w, http.StatusOK, map[string]any{"id": iid, "ladder_id": req.LadderID})
+	}
+}
+
 // assetOwnedBy reports whether the asset belongs to uid.
 func assetOwnedBy(db *sql.DB, assetID, uid int64) bool {
 	var n int
@@ -161,15 +220,25 @@ func nullableInt(p *int) any {
 	return *p
 }
 
+// nullableLadderID converts a *int64 ladder id to nil (NULL=全局阶梯)。
+func nullableLadderID(p *int64) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
 // ---------- category (group) inheritors ----------
 
 type categoryInheritorJSON struct {
-	ID             int64  `json:"id"`
-	CategoryID     int64  `json:"category_id"`
-	InheritorID    int64  `json:"inheritor_id"`
-	InheritorName  string `json:"inheritor_name"`
-	Priority       int    `json:"priority"`
-	TriggerDays    *int   `json:"trigger_days"`
+	ID            int64  `json:"id"`
+	CategoryID    int64  `json:"category_id"`
+	InheritorID   int64  `json:"inheritor_id"`
+	InheritorName string `json:"inheritor_name"`
+	Priority      int    `json:"priority"`
+	TriggerDays   *int   `json:"trigger_days"`
+	LadderID      *int64 `json:"ladder_id"`   // NULL=全局阶梯
+	LadderName    string `json:"ladder_name"` // 空=全局阶梯
 }
 
 // handleListCategoryInheritors: GET /api/v1/categories/{id}/inheritors
@@ -188,8 +257,9 @@ func handleListCategoryInheritors(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		rows, err := db.Query(`SELECT ci.id, ci.category_id, ci.inheritor_id, i.name,
-				ci.priority, ci.trigger_days
+				ci.priority, ci.trigger_days, ci.ladder_id, COALESCE(tl.name, '')
 			FROM category_inheritors ci JOIN inheritors i ON i.id = ci.inheritor_id
+			LEFT JOIN trigger_ladders tl ON tl.id = ci.ladder_id
 			WHERE ci.category_id = ? ORDER BY ci.priority, ci.id`, catID)
 		if err != nil {
 			log.Printf("list category inheritors: %v", err)
@@ -201,7 +271,8 @@ func handleListCategoryInheritors(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var a categoryInheritorJSON
 			var td sql.NullInt64
-			if err := rows.Scan(&a.ID, &a.CategoryID, &a.InheritorID, &a.InheritorName, &a.Priority, &td); err != nil {
+			var lid sql.NullInt64
+			if err := rows.Scan(&a.ID, &a.CategoryID, &a.InheritorID, &a.InheritorName, &a.Priority, &td, &lid, &a.LadderName); err != nil {
 				log.Printf("scan category inheritor: %v", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
@@ -209,6 +280,10 @@ func handleListCategoryInheritors(db *sql.DB) http.HandlerFunc {
 			if td.Valid {
 				n := int(td.Int64)
 				a.TriggerDays = &n
+			}
+			if lid.Valid {
+				n := lid.Int64
+				a.LadderID = &n
 			}
 			list = append(list, a)
 		}
@@ -241,13 +316,17 @@ func handleCreateCategoryInheritor(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid inheritor")
 			return
 		}
+		if req.LadderID != nil && !ladderOwnedBy(db, *req.LadderID, uid) {
+			writeError(w, http.StatusBadRequest, "invalid ladder")
+			return
+		}
 		priority := req.Priority
 		if priority < 1 {
 			priority = 1
 		}
-		res, err := db.Exec(`INSERT INTO category_inheritors (category_id, inheritor_id, priority, trigger_days)
-			VALUES (?, ?, ?, ?)`,
-			catID, req.InheritorID, priority, nullableInt(req.TriggerDays))
+		res, err := db.Exec(`INSERT INTO category_inheritors (category_id, inheritor_id, priority, trigger_days, ladder_id)
+			VALUES (?, ?, ?, ?, ?)`,
+			catID, req.InheritorID, priority, nullableInt(req.TriggerDays), nullableLadderID(req.LadderID))
 		if err != nil {
 			log.Printf("insert category inheritor: %v", err)
 			writeError(w, http.StatusBadRequest, "inheritor already bound to group")
@@ -292,6 +371,54 @@ func handleDeleteCategoryInheritor(db *sql.DB) http.HandlerFunc {
 		}
 		logAudit(db, userID(r), "解绑分组继承人", map[string]any{"category_id": catID, "binding_id": iid})
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// handleUpdateCategoryInheritorLadder: PUT /api/v1/categories/{id}/inheritors/{iid} {ladder_id}
+// -> 200 修改绑定的触发阶梯(ladder_id 为 null 时回退全局)。
+func handleUpdateCategoryInheritorLadder(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		catID, err := parseID(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid id")
+			return
+		}
+		uid := userID(r)
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND user_id = ?`,
+			catID, uid).Scan(&n); err != nil || n == 0 {
+			writeError(w, http.StatusNotFound, "category not found")
+			return
+		}
+		iid, err := strconv.ParseInt(r.PathValue("iid"), 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid inheritor id")
+			return
+		}
+		var req struct {
+			LadderID *int64 `json:"ladder_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if req.LadderID != nil && !ladderOwnedBy(db, *req.LadderID, uid) {
+			writeError(w, http.StatusBadRequest, "invalid ladder")
+			return
+		}
+		res, err := db.Exec(`UPDATE category_inheritors SET ladder_id = ? WHERE category_id = ? AND id = ?`,
+			nullableLadderID(req.LadderID), catID, iid)
+		if err != nil {
+			log.Printf("update category inheritor ladder: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			writeError(w, http.StatusNotFound, "binding not found")
+			return
+		}
+		logAudit(db, uid, "修改分组继承人触发阶梯", map[string]any{"category_id": catID, "binding_id": iid, "ladder_id": req.LadderID})
+		writeJSON(w, http.StatusOK, map[string]any{"id": iid, "ladder_id": req.LadderID})
 	}
 }
 

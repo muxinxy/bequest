@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -90,6 +91,22 @@ var escalationTiers = map[string][]int{
 	"member": {7, 14, 30, 60},
 }
 
+// userLadderDays 返回该用户全局触发阶梯的 days(JSON 解析);
+// 无全局阶梯时回退 escalationTiers[tier]。
+func userLadderDays(db *sql.DB, uid int64, tier string) []int {
+	var days string
+	if err := db.QueryRow(`SELECT days FROM trigger_ladders WHERE user_id = ? AND is_global = 1`, uid).Scan(&days); err == nil {
+		var d []int
+		if json.Unmarshal([]byte(days), &d) == nil && len(d) > 0 {
+			return d
+		}
+	}
+	if th, ok := escalationTiers[tier]; ok {
+		return th
+	}
+	return escalationTiers["free"]
+}
+
 // processEscalation walks inactive users; the reported level is 1-based
 // (number of tiers crossed), capped at len(thresholds)-1 because crossing the
 // final tier is the inheritance trigger, not a distinct level.
@@ -121,10 +138,7 @@ func processEscalation(db *sql.DB, now time.Time) {
 	rows.Close()
 
 	for _, u := range users {
-		thresholds, ok := escalationTiers[u.tier]
-		if !ok {
-			thresholds = escalationTiers["free"]
-		}
+		thresholds := userLadderDays(db, u.id, u.tier)
 		lt, err := time.Parse("2006-01-02 15:04:05", u.lastLogin)
 		if err != nil {
 			continue

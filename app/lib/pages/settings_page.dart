@@ -25,6 +25,7 @@ import 'reset_master_password_page.dart';
 import 'server_settings_page.dart';
 import 'smtp_settings_page.dart';
 import 'sync_settings_page.dart';
+import 'trigger_ladders_page.dart';
 
 /// 设置:二级聚合页,收纳主页 AppBar 中拥挤的菜单项。
 /// 各项只做跳转或小交互,页面逻辑复用现有页面,不复制实现。
@@ -263,6 +264,12 @@ class _SettingsPageState extends State<SettingsPage> {
             Icons.people_outline,
             '继承人',
             () => _push(context, const InheritorsPage()),
+            enabled: !_isLocal,
+          ),
+          _entry(
+            Icons.format_list_numbered_outlined,
+            '触发阶梯',
+            () => _push(context, const TriggerLaddersPage()),
             enabled: !_isLocal,
           ),
           _entry(

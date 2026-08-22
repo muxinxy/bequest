@@ -193,12 +193,13 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
                       for (final i in _inheritors)
                         DropdownMenuItem(
                           value: '${i['id']}',
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
                             children: [
-                              Text(
-                                '${i['name']}${i['email'] == null || (i['email'] as String).isEmpty ? '' : ' (${i['email']})'}',
-                                overflow: TextOverflow.ellipsis,
+                              Expanded(
+                                child: Text(
+                                  '${i['name']}${i['email'] == null || (i['email'] as String).isEmpty ? '' : ' (${i['email']})'}',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                               Text(
                                 '${i['category_count'] ?? 0} 个分组 · ${i['asset_count'] ?? 0} 个资产',

@@ -8,6 +8,7 @@ class Inheritor {
     this.createdAt,
     this.assetCount = 0,
     this.categoryCount = 0,
+    this.accessCode = '',
   });
 
   factory Inheritor.fromJson(Map<String, dynamic> json) => Inheritor(
@@ -18,6 +19,7 @@ class Inheritor {
         createdAt: json['created_at']?.toString(),
         assetCount: (json['asset_count'] as num?)?.toInt() ?? 0,
         categoryCount: (json['category_count'] as num?)?.toInt() ?? 0,
+        accessCode: json['access_code']?.toString() ?? '',
       );
 
   final String id;
@@ -29,4 +31,7 @@ class Inheritor {
   /// 该继承人绑定的资产数、分组数(服务端统计)。
   final int assetCount;
   final int categoryCount;
+
+  /// 明文继承码(触发继承后凭此码领取密钥)。
+  final String accessCode;
 }

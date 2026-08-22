@@ -224,6 +224,11 @@ class LocalAssetRepository implements AssetRepository {
   }
 
   @override
+  Future<void> updateAssetInheritorLadder(String assetId, String iid, int? ladderId) {
+    throw UnsupportedError('本地模式不支持资产级继承人设置');
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> listCategoryInheritors(
       String categoryId) async => const [];
 
@@ -235,6 +240,11 @@ class LocalAssetRepository implements AssetRepository {
 
   @override
   Future<void> deleteCategoryInheritor(String categoryId, String iid) {
+    throw UnsupportedError('本地模式不支持分组级继承人设置');
+  }
+
+  @override
+  Future<void> updateCategoryInheritorLadder(String categoryId, String iid, int? ladderId) {
     throw UnsupportedError('本地模式不支持分组级继承人设置');
   }
 

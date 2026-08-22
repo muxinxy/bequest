@@ -8,12 +8,14 @@ import '../models/asset.dart';
 import '../models/category.dart';
 import '../models/entitlements.dart';
 import '../models/reminder.dart';
+import '../models/trigger_ladder.dart';
 import '../repository/asset_repository.dart';
 import '../repository/offline_asset_repository.dart';
 import '../repository/repository_factory.dart';
 import '../storage/secure_store.dart';
 import '../sync/backup.dart';
 import '../main.dart';
+import '../widgets/ladder_dropdown.dart';
 import 'asset_edit_page.dart';
 import 'group_detail_page.dart';
 import 'login_page.dart';
@@ -586,8 +588,11 @@ class _HomePageState extends State<HomePage> {
       return;
     }
     List<Map<String, dynamic>> inheritors;
+    List<TriggerLadder> ladders;
     try {
-      inheritors = await (await ApiConfig.client()).listInheritors(jwt);
+      final api = await ApiConfig.client();
+      inheritors = await api.listInheritors(jwt);
+      ladders = await loadTriggerLadders(api, jwt);
     } catch (_) {
       _showSnack('加载继承人失败,请检查网络后重试');
       return;
@@ -600,35 +605,49 @@ class _HomePageState extends State<HomePage> {
     final groupIds = _selectedGroupIds.where((id) => id.isNotEmpty).toList();
     if (groupIds.isEmpty) return;
     final selected = <String>{};
+    int? ladderId; // null = 全局阶梯
     if (!mounted) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('设置继承人'),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 360),
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                for (final i in inheritors)
-                  CheckboxListTile(
-                    value: selected.contains('${i['id']}'),
-                    onChanged: (v) => setDialogState(() {
-                      if (v == true) {
-                        selected.add('${i['id']}');
-                      } else {
-                        selected.remove('${i['id']}');
-                      }
-                    }),
-                    title: Text('${i['name']}'),
-                    subtitle: Text(
-                      '${i['email'] == null || (i['email'] as String).isEmpty ? '' : '${i['email']} · '}'
-                      '${i['category_count'] ?? 0} 个分组 · ${i['asset_count'] ?? 0} 个资产',
-                    ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final i in inheritors)
+                        CheckboxListTile(
+                          value: selected.contains('${i['id']}'),
+                          onChanged: (v) => setDialogState(() {
+                            if (v == true) {
+                              selected.add('${i['id']}');
+                            } else {
+                              selected.remove('${i['id']}');
+                            }
+                          }),
+                          title: Text('${i['name']}'),
+                          subtitle: Text(
+                            '${i['email'] == null || (i['email'] as String).isEmpty ? '' : '${i['email']} · '}'
+                            '${i['category_count'] ?? 0} 个分组 · ${i['asset_count'] ?? 0} 个资产',
+                          ),
+                        ),
+                    ],
                   ),
-              ],
-            ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              LadderDropdown(
+                ladders: ladders,
+                value: ladderId,
+                onChanged: (v) => setDialogState(() => ladderId = v),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -649,13 +668,13 @@ class _HomePageState extends State<HomePage> {
       return;
     }
     try {
-      // 每个选中分组 × 每个选中继承人批量绑定。
+      // 每个选中分组 × 每个选中继承人批量绑定,统一应用所选阶梯。
       for (final id in groupIds) {
         for (final iid in selected) {
           await repo.createCategoryInheritor(id, {
             'inheritor_id': int.tryParse(iid),
             'priority': 1,
-            'trigger_days': null,
+            'ladder_id': ladderId,
           });
         }
       }
@@ -668,6 +687,8 @@ class _HomePageState extends State<HomePage> {
       _multiSelect = false;
       _selectedGroupIds.clear();
     });
+    // 刷新分组列表,让继承人名字立即更新。
+    await _load();
     _showSnack('已为 ${groupIds.length} 个分组设置 ${selected.length} 名继承人');
   }
 

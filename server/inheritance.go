@@ -39,6 +39,7 @@ type inheritorJSON struct {
 	CreatedAt     string `json:"created_at"`
 	AssetCount    int    `json:"asset_count"`    // 绑定的资产数量
 	CategoryCount int    `json:"category_count"` // 绑定的分组数量
+	AccessCode    string `json:"access_code"`    // 明文(用户本人数据;claim 验证仍用 hash)
 }
 
 type inheritorRequest struct {
@@ -50,9 +51,9 @@ type inheritorRequest struct {
 // fetchInheritor loads one inheritor scoped to the owner; errNotFound if absent.
 func fetchInheritor(db *sql.DB, id, uid int64) (*inheritorJSON, error) {
 	var in inheritorJSON
-	err := db.QueryRow(`SELECT id, name, email, priority, created_at
+	err := db.QueryRow(`SELECT id, name, email, priority, created_at, COALESCE(access_code, '')
 		FROM inheritors WHERE id = ? AND user_id = ?`, id, uid).
-		Scan(&in.ID, &in.Name, &in.Email, &in.Priority, &in.CreatedAt)
+		Scan(&in.ID, &in.Name, &in.Email, &in.Priority, &in.CreatedAt, &in.AccessCode)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errNotFound
 	}
@@ -74,7 +75,8 @@ func handleListInheritors(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rows, err := db.Query(`SELECT i.id, i.name, i.email, i.priority, i.created_at,
 			(SELECT COUNT(*) FROM asset_inheritors ai WHERE ai.inheritor_id = i.id),
-			(SELECT COUNT(*) FROM category_inheritors ci WHERE ci.inheritor_id = i.id)
+			(SELECT COUNT(*) FROM category_inheritors ci WHERE ci.inheritor_id = i.id),
+			COALESCE(i.access_code, '')
 			FROM inheritors i WHERE i.user_id = ? ORDER BY i.priority, i.id`, userID(r))
 		if err != nil {
 			log.Printf("list inheritors: %v", err)
@@ -85,7 +87,7 @@ func handleListInheritors(db *sql.DB) http.HandlerFunc {
 		list := []inheritorJSON{}
 		for rows.Next() {
 			var in inheritorJSON
-			if err := rows.Scan(&in.ID, &in.Name, &in.Email, &in.Priority, &in.CreatedAt, &in.AssetCount, &in.CategoryCount); err != nil {
+			if err := rows.Scan(&in.ID, &in.Name, &in.Email, &in.Priority, &in.CreatedAt, &in.AssetCount, &in.CategoryCount, &in.AccessCode); err != nil {
 				log.Printf("scan inheritor: %v", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
@@ -108,8 +110,8 @@ func handleCreateInheritor(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, msg)
 			return
 		}
-		res, err := db.Exec(`INSERT INTO inheritors (user_id, name, email, access_code_hash) VALUES (?, ?, ?, ?)`,
-			userID(r), strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), hashAccessCode(req.AccessCode))
+		res, err := db.Exec(`INSERT INTO inheritors (user_id, name, email, access_code_hash, access_code) VALUES (?, ?, ?, ?, ?)`,
+			userID(r), strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), hashAccessCode(req.AccessCode), strings.TrimSpace(req.AccessCode))
 		if err != nil {
 			log.Printf("insert inheritor: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -148,8 +150,8 @@ func handleUpdateInheritor(db *sql.DB) http.HandlerFunc {
 		}
 		// only re-hash when a new access code is supplied
 		if req.AccessCode != "" {
-			res, err := db.Exec(`UPDATE inheritors SET name = ?, email = ?, access_code_hash = ? WHERE id = ? AND user_id = ?`,
-				strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), hashAccessCode(req.AccessCode), id, uid)
+			res, err := db.Exec(`UPDATE inheritors SET name = ?, email = ?, access_code_hash = ?, access_code = ? WHERE id = ? AND user_id = ?`,
+				strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), hashAccessCode(req.AccessCode), strings.TrimSpace(req.AccessCode), id, uid)
 			if err != nil {
 				log.Printf("update inheritor: %v", err)
 				writeError(w, http.StatusInternalServerError, "internal error")

@@ -21,10 +21,14 @@ abstract class AssetRepository {
   Future<List<Map<String, dynamic>>> listAssetInheritors(String assetId);
   Future<Map<String, dynamic>> createAssetInheritor(String assetId, Map<String, dynamic> body);
   Future<void> deleteAssetInheritor(String assetId, String iid);
+  // 修改资产绑定阶梯(ladderId null = 回退全局)。
+  Future<void> updateAssetInheritorLadder(String assetId, String iid, int? ladderId);
   // 分组(分类)级继承人绑定。
   Future<List<Map<String, dynamic>>> listCategoryInheritors(String categoryId);
   Future<Map<String, dynamic>> createCategoryInheritor(String categoryId, Map<String, dynamic> body);
   Future<void> deleteCategoryInheritor(String categoryId, String iid);
+  // 修改分组绑定阶梯(ladderId null = 回退全局)。
+  Future<void> updateCategoryInheritorLadder(String categoryId, String iid, int? ladderId);
   // 某继承人绑定的所有资产(直接 + 经分组)。
   Future<List<Map<String, dynamic>>> listInheritorAssets(String inheritorId);
   // 分组绑定继承预览:经该分组继承的具体资产列表(响应形状 {assets:[...]})。

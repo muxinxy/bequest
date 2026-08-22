@@ -298,6 +298,85 @@ class ApiClient {
     return _getList('/api/v1/inheritors', jwt);
   }
 
+  /// PUT /api/v1/inheritors/{id}:改名称/邮箱/访问码(access_code 留空则不改)。
+  Future<Map<String, dynamic>> updateInheritor(
+    String jwt,
+    String id,
+    Map<String, dynamic> body,
+  ) {
+    return _put('/api/v1/inheritors/$id', body, jwt);
+  }
+
+  /// GET /api/v1/trigger-ladders:触发阶梯列表(含全局,is_global=1)。
+  Future<List<Map<String, dynamic>>> listTriggerLadders(String jwt) {
+    return _getList('/api/v1/trigger-ladders', jwt);
+  }
+
+  /// POST /api/v1/trigger-ladders {name, days} -> 201
+  Future<Map<String, dynamic>> createTriggerLadder(
+    String jwt, {
+    required String name,
+    required List<int> days,
+  }) {
+    return _postAuth(
+      '/api/v1/trigger-ladders',
+      {'name': name, 'days': days},
+      jwt,
+    );
+  }
+
+  /// PUT /api/v1/trigger-ladders/{id} {name, days} -> 200(全局也可改)。
+  Future<Map<String, dynamic>> updateTriggerLadder(
+    String jwt,
+    String id, {
+    required String name,
+    required List<int> days,
+  }) {
+    return _put('/api/v1/trigger-ladders/$id', {'name': name, 'days': days}, jwt);
+  }
+
+  /// DELETE /api/v1/trigger-ladders {ids} -> {"deleted":n,"skipped":m}
+  /// 全局阶梯不可删;删除后引用它的继承自动回退全局。
+  Future<Map<String, dynamic>> deleteTriggerLadders(
+    String jwt,
+    List<int> ids,
+  ) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/api/v1/trigger-ladders'),
+      headers: {'Content-Type': 'application/json', ..._authHeaders(jwt)},
+      body: jsonEncode({'ids': ids}),
+    );
+    return _decode(response);
+  }
+
+  /// PUT /api/v1/assets/{id}/inheritors/{iid} {ladder_id}:修改绑定阶梯(null=全局)。
+  Future<Map<String, dynamic>> updateAssetInheritorLadder(
+    String jwt,
+    String assetId,
+    String iid,
+    int? ladderId,
+  ) {
+    return _put(
+      '/api/v1/assets/$assetId/inheritors/$iid',
+      {'ladder_id': ladderId},
+      jwt,
+    );
+  }
+
+  /// PUT /api/v1/categories/{id}/inheritors/{iid} {ladder_id}:修改绑定阶梯(null=全局)。
+  Future<Map<String, dynamic>> updateCategoryInheritorLadder(
+    String jwt,
+    String categoryId,
+    String iid,
+    int? ladderId,
+  ) {
+    return _put(
+      '/api/v1/categories/$categoryId/inheritors/$iid',
+      {'ladder_id': ladderId},
+      jwt,
+    );
+  }
+
   /// POST /api/v1/inheritors
   Future<Map<String, dynamic>> createInheritor(
     String jwt,
