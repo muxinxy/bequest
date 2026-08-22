@@ -5,8 +5,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../logger.dart';
 import '../platform/file_share.dart';
-import '../storage/secure_store.dart';
-import 'log_page.dart';
 
 /// 关于本应用:版本信息、简介、GitHub 链接、日志导出/清空。
 /// 所有插件调用都包 try/catch,插件缺失或失败时回退,不影响页面展示。
@@ -101,18 +99,6 @@ class _AboutPageState extends State<AboutPage> {
     }
   }
 
-  Future<void> _openDebugLog() async {
-    final jwt = await SecureStore().readJwt();
-    if (!mounted) return;
-    if (jwt == null || jwt.isEmpty) {
-      _snack('登录后可查看');
-      return;
-    }
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const LogPage(debug: true)),
-    );
-  }
-
   void _snack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(
@@ -172,15 +158,6 @@ class _AboutPageState extends State<AboutPage> {
             onTap: _openGitHub,
           ),
           const SizedBox(height: 24),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.bug_report_outlined),
-            title: const Text('调试日志'),
-            subtitle: const Text('查看全部日志与原始 JSON'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _openDebugLog,
-          ),
-          const SizedBox(height: 8),
           FilledButton.icon(
             icon: const Icon(Icons.file_upload_outlined),
             label: const Text('导出日志'),

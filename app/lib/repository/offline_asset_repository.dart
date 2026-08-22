@@ -3,7 +3,7 @@ import 'dart:convert';
 import '../sync/local_vault.dart';
 import 'asset_repository.dart';
 
-/// 离线只读仓储:从本地缓存快照(备份 JSON)读取资产/分类,
+/// 离线只读仓储:从本地缓存快照(备份 JSON)读取资产/分类/继承人/操作记录,
 /// 供服务器不可达时查看/导出。所有写操作抛 UnsupportedError。
 class OfflineAssetRepository implements AssetRepository {
   OfflineAssetRepository({required this.masterKeyB64, LocalVault? vault})
@@ -13,21 +13,21 @@ class OfflineAssetRepository implements AssetRepository {
   final LocalVault _vault;
 
   Map<String, dynamic>? _cache;
+  static Map<String, dynamic> _empty() => {
+        'assets': <Map<String, dynamic>>[],
+        'categories': <Map<String, dynamic>>[],
+        'inheritors': <Map<String, dynamic>>[],
+        'logs': <Map<String, dynamic>>[],
+      };
   Future<Map<String, dynamic>> _load() async {
     if (_cache != null) return _cache!;
     final raw = await _vault.loadVault(masterKeyB64);
     if (raw == null) {
-      _cache = {
-        'assets': <Map<String, dynamic>>[],
-        'categories': <Map<String, dynamic>>[],
-      };
+      _cache = _empty();
       return _cache!;
     }
     final decoded = jsonDecode(raw);
-    _cache = decoded is Map<String, dynamic> ? decoded : {
-      'assets': <Map<String, dynamic>>[],
-      'categories': <Map<String, dynamic>>[],
-    };
+    _cache = decoded is Map<String, dynamic> ? decoded : _empty();
     return _cache!;
   }
 
@@ -41,6 +41,28 @@ class OfflineAssetRepository implements AssetRepository {
       ((await _load())['assets'] as List? ?? const [])
           .whereType<Map<String, dynamic>>()
           .toList();
+
+  /// 缓存的继承人列表(含 access_code/计数),断网可查看。
+  Future<List<Map<String, dynamic>>> listInheritors() async =>
+      ((await _load())['inheritors'] as List? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+
+  /// 缓存的操作记录(最近 200 条,全部类型)。
+  Future<List<Map<String, dynamic>>> listLogs() async =>
+      ((await _load())['logs'] as List? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+
+  /// 统一入口:读缓存操作记录(供操作记录页离线显示)。
+  Future<List<Map<String, dynamic>>> readLogsFromCache() => listLogs();
+
+  /// 统一入口:更新缓存操作记录(云端加载成功后写入)。
+  Future<void> writeLogsToCache(List<Map<String, dynamic>> logs) async {
+    final data = await _load();
+    data['logs'] = logs;
+    await _vault.saveVaultBounded(jsonEncode(data), masterKeyB64);
+  }
 
   @override
   Future<Map<String, dynamic>> getAsset(String id) async {

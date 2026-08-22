@@ -46,12 +46,19 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, cors(rateLimit(newMux(db)))))
 }
 
-// runScheduler ticks the dead-man's-switch scan every 60s.
+// runScheduler ticks the dead-man's-switch scan every 60s; pruneLogs runs
+// once at startup and then every 24h.
 func runScheduler(db *sql.DB) {
+	pruneLogs(db)
+	lastPrune := time.Now()
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
-	for range ticker.C {
-		scan(db, time.Now())
+	for now := range ticker.C {
+		scan(db, now)
+		if now.Sub(lastPrune) >= 24*time.Hour {
+			pruneLogs(db)
+			lastPrune = now
+		}
 	}
 }
 

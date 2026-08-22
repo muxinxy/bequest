@@ -162,6 +162,21 @@ func handleExportLogs(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// pruneLogs 日志保留策略:每用户保留最近 90 天 + 最多 3000 条。
+// 先删超期(90 天前),再删每用户超出 3000 条的最旧部分(按 id 倒序保留最新)。
+// 由 scheduler 每天调用一次;不影响用户手动清除(handleClearLogs)。
+func pruneLogs(db *sql.DB) {
+	if _, err := db.Exec(`DELETE FROM audit_logs WHERE created_at < datetime('now', '-90 days')`); err != nil {
+		log.Printf("prune logs (expired): %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM audit_logs WHERE id IN (
+		SELECT id FROM audit_logs a
+		WHERE (SELECT COUNT(*) FROM audit_logs b WHERE b.user_id = a.user_id AND b.id >= a.id) > 3000
+	)`); err != nil {
+		log.Printf("prune logs (over quota): %v", err)
+	}
+}
+
 // handleClearLogs: DELETE /api/v1/logs?kind=&month= -> 200 {"deleted":n}。
 // 不传 kind/month 时清空该用户全部日志。
 func handleClearLogs(db *sql.DB) http.HandlerFunc {

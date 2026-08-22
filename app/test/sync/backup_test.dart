@@ -85,6 +85,15 @@ void main() {
             headers: {'content-type': 'application/json'},
           );
         }
+        if (request.method == 'GET' && path == '/api/v1/logs') {
+          return http.Response(
+            jsonEncode([
+              {'kind': 'audit', 'action': '新增资产「房产A」', 'created_at': '2026-08-01 10:00:00'},
+            ]),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
         if (request.method == 'POST' && path == '/api/v1/assets') {
           final body = jsonDecode(request.body) as Map<String, dynamic>;
           if (body['name'] == '坏资产') {
@@ -123,6 +132,8 @@ void main() {
     expect(backup['categories'], hasLength(1));
     expect(backup['reminder_templates'], hasLength(1));
     expect(backup['inheritors'], hasLength(1));
+    expect(backup['logs'], hasLength(1));
+    expect((backup['logs'] as List).first['action'], contains('新增资产'));
     // 服务器拉取后本地快照已写入,可用主密钥读回。
     expect(await vault.loadVault(key), json);
   });

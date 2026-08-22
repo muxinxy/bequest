@@ -327,7 +327,6 @@ class _SettingsPageState extends State<SettingsPage> {
             Icons.article_outlined,
             '操作记录',
             () => _push(context, const LogPage()),
-            enabled: !_isLocal,
           ),
           _section(context, '外观'),
           _entry(

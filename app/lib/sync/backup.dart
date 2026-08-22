@@ -42,6 +42,8 @@ Future<String> _fetchAll(String jwt, ApiClient api) async {
     'categories': await api.listCategories(jwt),
     'reminder_templates': await api.listReminderTemplates(jwt),
     'inheritors': await api.listInheritors(jwt),
+    // 离线缓存附带最近 200 条操作记录(全部类型),断网可查看。
+    'logs': (await api.listLogs(jwt)).take(200).toList(),
   });
 }
 

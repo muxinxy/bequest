@@ -594,8 +594,18 @@ class _HomePageState extends State<HomePage> {
       inheritors = await api.listInheritors(jwt);
       ladders = await loadTriggerLadders(api, jwt);
     } catch (_) {
-      _showSnack('加载继承人失败,请检查网络后重试');
-      return;
+      // 断网:回退读缓存继承人(仅可查看列表,绑定需联网)。
+      try {
+        final mk = await _store.readMasterKey() ?? '';
+        inheritors = await OfflineAssetRepository(
+          masterKeyB64: mk,
+        ).listInheritors();
+        ladders = const [];
+        _showSnack('离线,显示缓存继承人(绑定需联网)');
+      } catch (_) {
+        _showSnack('加载继承人失败,请检查网络后重试');
+        return;
+      }
     }
     if (inheritors.isEmpty) {
       _showSnack('暂无继承人,请先在设置中创建');

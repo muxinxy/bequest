@@ -23,6 +23,7 @@ class LocalAssetRepository implements AssetRepository {
         'schema': 1,
         'assets': <Map<String, dynamic>>[],
         'categories': <Map<String, dynamic>>[],
+        'activity_logs': <Map<String, dynamic>>[],
       };
     }
     _salt ??= data['salt']?.toString();
@@ -45,6 +46,25 @@ class LocalAssetRepository implements AssetRepository {
   List<Map<String, dynamic>> _asMaps(dynamic list) =>
       (list as List).whereType<Map<String, dynamic>>().toList();
 
+  /// 追加一条本地操作记录(审计),保留最近 200 条(超出删最旧)。
+  void _appendLog(Map<String, dynamic> data, String action, {String? detail}) {
+    final logs = data['activity_logs'] as List? ??
+        (data['activity_logs'] = <Map<String, dynamic>>[]);
+    logs.add({
+      'kind': 'audit',
+      'action': action,
+      if (detail != null && detail.isNotEmpty) 'detail': detail,
+      'created_at': _nowString(),
+    });
+    if (logs.length > 200) logs.removeRange(0, logs.length - 200);
+  }
+
+  /// 本地操作记录(倒序,最近 200 条)。
+  Future<List<Map<String, dynamic>>> listLocalLogs() async {
+    final logs = (await _load())['activity_logs'] as List? ?? const [];
+    return logs.whereType<Map<String, dynamic>>().toList().reversed.toList();
+  }
+
   @override
   Future<List<Map<String, dynamic>>> listCategories() async =>
       _asMaps((await _load())['categories']);
@@ -63,6 +83,7 @@ class LocalAssetRepository implements AssetRepository {
       'created_at': _nowString(),
     };
     (data['categories'] as List).add(category);
+    _appendLog(data, '新增分组「$name」');
     await _save(data);
     return category;
   }
@@ -89,6 +110,7 @@ class LocalAssetRepository implements AssetRepository {
       'remark': body['remark']?.toString() ?? old['remark']?.toString() ?? '',
     };
     categories[index] = updated;
+    _appendLog(data, '修改分组「${updated['name']}」');
     await _save(data);
     return updated;
   }
@@ -96,8 +118,10 @@ class LocalAssetRepository implements AssetRepository {
   @override
   Future<void> deleteCategory(String id, {String? moveTo}) async {
     final data = await _load();
-    (data['categories'] as List)
-        .removeWhere((c) => '${(c as Map)['id']}' == id);
+    final categories = data['categories'] as List;
+    final idx = categories.indexWhere((c) => '${(c as Map)['id']}' == id);
+    final name = idx >= 0 ? '${(categories[idx] as Map)['name']}' : '';
+    categories.removeWhere((c) => '${(c as Map)['id']}' == id);
     // 镜像服务器语义:moveTo 指定则移入目标分组,否则解关联(未分类)。
     // moveTo 为本地分组字符串 id('L<时间戳><序号>'),不做 int 转换。
     for (final asset in _asMaps(data['assets'])) {
@@ -105,6 +129,7 @@ class LocalAssetRepository implements AssetRepository {
         asset['category_id'] = moveTo;
       }
     }
+    _appendLog(data, '删除分组「$name」');
     await _save(data);
   }
 
@@ -131,6 +156,7 @@ class LocalAssetRepository implements AssetRepository {
       'updated_at': now,
     };
     (data['assets'] as List).add(asset);
+    _appendLog(data, '新增资产「${body['name']}」');
     await _save(data);
     return asset;
   }
@@ -165,6 +191,7 @@ class LocalAssetRepository implements AssetRepository {
       'status': body['status']?.toString() ?? old['status']?.toString() ?? 'active',
     };
     assets[index] = updated;
+    _appendLog(data, '修改资产「${updated['name']}」');
     await _save(data);
     return updated;
   }
@@ -172,7 +199,11 @@ class LocalAssetRepository implements AssetRepository {
   @override
   Future<void> deleteAsset(String id) async {
     final data = await _load();
-    (data['assets'] as List).removeWhere((a) => '${(a as Map)['id']}' == id);
+    final assets = data['assets'] as List;
+    final idx = assets.indexWhere((a) => '${(a as Map)['id']}' == id);
+    final name = idx >= 0 ? '${(assets[idx] as Map)['name']}' : '';
+    assets.removeWhere((a) => '${(a as Map)['id']}' == id);
+    _appendLog(data, '删除资产「$name」');
     await _save(data);
   }
 
@@ -184,8 +215,10 @@ class LocalAssetRepository implements AssetRepository {
     (data['assets'] as List).removeWhere(
       (a) => idSet.contains('${(a as Map)['id']}'),
     );
+    final deleted = before - (data['assets'] as List).length;
+    _appendLog(data, '批量删除 $deleted 个资产');
     await _save(data);
-    return before - (data['assets'] as List).length;
+    return deleted;
   }
 
   @override
@@ -203,6 +236,7 @@ class LocalAssetRepository implements AssetRepository {
       'updated_at': _nowString(),
     };
     assets.add(copy);
+    _appendLog(data, '复制资产「${src['name']}」');
     await _save(data);
     return copy;
   }
@@ -270,6 +304,7 @@ class LocalAssetRepository implements AssetRepository {
     }
     ordered.addAll(byId.values);
     data['categories'] = ordered;
+    _appendLog(data, '调整分组排序');
     await _save(data);
   }
 
@@ -290,6 +325,16 @@ class LocalAssetRepository implements AssetRepository {
         moved++;
       }
     }
+    var targetName = '未分类';
+    if (target != null) {
+      for (final c in cats) {
+        if ('${c['id']}' == target) {
+          targetName = '${c['name']}';
+          break;
+        }
+      }
+    }
+    _appendLog(data, '移动 $moved 个资产到「$targetName」');
     await _save(data);
     return {'moved': moved};
   }

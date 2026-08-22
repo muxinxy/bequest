@@ -3,17 +3,15 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../platform/file_share.dart';
+import '../repository/local_asset_repository.dart';
+import '../repository/offline_asset_repository.dart';
 import '../storage/secure_store.dart';
 import '../utils/time_format.dart';
 
-/// 操作记录页:审计日志查看、CSV 导出、按月清除。
-/// debug=true 时为调试模式:显示全部(审计+应用)日志,含 detail 原始 JSON。
-/// kind 筛选:'' = 全部,'audit' = 审计,'app' = 应用;年月从 /logs/months 推导。
+/// 操作记录页:全部日志(审计+应用,含 detail)查看、CSV 导出、按月清除。
+/// 云端优先走 API;断网/未登录/本地模式回退读缓存或本地记录。
 class LogPage extends StatefulWidget {
-  const LogPage({super.key, this.debug = false});
-
-  /// 调试模式:显示全部日志与 detail,标题"调试日志"。
-  final bool debug;
+  const LogPage({super.key});
 
   @override
   State<LogPage> createState() => _LogPageState();
@@ -28,9 +26,6 @@ class _LogPageState extends State<LogPage> {
   String? _month;
   bool _loading = true;
 
-  /// 操作记录只看审计;调试模式看全部。
-  String get _kind => widget.debug ? '' : 'audit';
-
   @override
   void initState() {
     super.initState();
@@ -39,20 +34,82 @@ class _LogPageState extends State<LogPage> {
 
   Future<ApiClient> get _api => ApiConfig.client();
 
+  /// 从日志推导有数据的月份(离线/本地无 months 接口时用)。
+  List<String> _deriveMonths(List<Map<String, dynamic>> logs) {
+    final months = <String>{};
+    for (final l in logs) {
+      final t = '${l['created_at'] ?? ''}';
+      if (t.length >= 7) months.add(t.substring(0, 7));
+    }
+    return months.toList()..sort();
+  }
+
+  /// 按当前月份筛选(离线/本地数据本地过滤)。
+  List<Map<String, dynamic>> _filterByMonth(List<Map<String, dynamic>> logs) {
+    final m = _month;
+    if (m == null || m.isEmpty) return logs;
+    return logs.where((l) => '${l['created_at'] ?? ''}'.startsWith(m)).toList();
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
+    final jwt = await _store.readJwt();
+    final mk = await _store.readMasterKey() ?? '';
+    final isLocal = (await _store.readStorageMode()) == 'local';
     try {
-      final jwt = await _store.readJwt();
-      if (jwt == null) throw ApiException('未登录');
-      final api = await _api;
-      final months = await api.listLogMonths(jwt);
-      final logs = await api.listLogs(jwt, kind: _kind, month: _month ?? '');
-      if (!mounted) return;
-      setState(() {
-        _months = months;
-        _logs = logs;
-        _loading = false;
-      });
+      if (isLocal) {
+        // 本地模式:读本地操作记录。
+        final logs = await LocalAssetRepository(masterKeyB64: mk).listLocalLogs();
+        if (!mounted) return;
+        setState(() {
+          _logs = _filterByMonth(logs);
+          _months = _deriveMonths(logs);
+          _loading = false;
+        });
+        return;
+      }
+      if (jwt == null || jwt.isEmpty) {
+        // 未登录:尝试读缓存。
+        final logs = await OfflineAssetRepository(
+          masterKeyB64: mk,
+        ).readLogsFromCache();
+        if (!mounted) return;
+        setState(() {
+          _logs = _filterByMonth(logs);
+          _months = _deriveMonths(logs);
+          _loading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(logs.isEmpty ? '请先登录或联网' : '离线,显示缓存数据')),
+        );
+        return;
+      }
+      // 云端:优先 API。
+      try {
+        final api = await _api;
+        final months = await api.listLogMonths(jwt);
+        final logs = await api.listLogs(jwt, kind: '', month: _month ?? '');
+        if (!mounted) return;
+        setState(() {
+          _months = months;
+          _logs = logs;
+          _loading = false;
+        });
+      } catch (_) {
+        // API 失败(断网):回退缓存。
+        final logs = await OfflineAssetRepository(
+          masterKeyB64: mk,
+        ).readLogsFromCache();
+        if (!mounted) return;
+        setState(() {
+          _logs = _filterByMonth(logs);
+          _months = _deriveMonths(logs);
+          _loading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('离线,显示缓存数据')),
+        );
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
@@ -75,29 +132,62 @@ class _LogPageState extends State<LogPage> {
     return ['全部', ...list];
   }
 
+  /// 导出文件名:操作记录-YYYYMMDD-HHMM.csv。
+  String get _exportFileName {
+    final now = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '操作记录-${now.year}${two(now.month)}${two(now.day)}'
+        '-${two(now.hour)}${two(now.minute)}.csv';
+  }
+
+  /// 当前显示数据拼 CSV(离线/本地导出用)。
+  String _logsToCsv(List<Map<String, dynamic>> logs) {
+    final buf = StringBuffer('类型,时间,操作,详情\n');
+    String esc(String s) => '"${s.replaceAll('"', '""')}"';
+    for (final l in logs) {
+      final kind = '${l['kind'] ?? ''}' == 'audit' ? '审计' : '应用';
+      buf.writeln('$kind,${esc('${l['created_at'] ?? ''}')},'
+          '${esc('${l['action'] ?? ''}')},${esc('${l['detail'] ?? ''}')}');
+    }
+    return buf.toString();
+  }
+
   Future<void> _export() async {
-    try {
-      final jwt = await _store.readJwt();
-      if (jwt == null) throw ApiException('未登录');
-      final csv = await (await _api).exportLogs(
-        jwt,
-        kind: _kind,
-        month: _month ?? '',
-      );
-      final ok = await shareTextFile(
-        'logs_${DateTime.now().millisecondsSinceEpoch}.csv',
-        csv,
-        '托孤日志导出(CSV)',
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ok ? '导出成功' : '导出失败,请检查网络后重试')),
-      );
-    } catch (_) {
+    final jwt = await _store.readJwt();
+    final isLocal = (await _store.readStorageMode()) == 'local';
+    // 云端已登录:优先 API 导出;失败回退本地 CSV。
+    if (!isLocal && jwt != null && jwt.isNotEmpty) {
+      try {
+        final csv = await (await _api).exportLogs(
+          jwt,
+          kind: '',
+          month: _month ?? '',
+        );
+        final ok = await shareTextFile(_exportFileName, csv, '操作记录导出(CSV)');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(ok ? '导出成功' : '导出失败,请检查网络后重试')),
+        );
+        return;
+      } catch (_) {
+        // 断网:回退到当前显示的数据。
+      }
+    }
+    if (_logs.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('导出失败,请检查网络后重试')));
+          .showSnackBar(const SnackBar(content: Text('暂无数据可导出')));
+      return;
     }
+    final ok = await shareTextFile(
+      _exportFileName,
+      _logsToCsv(_logs),
+      '操作记录导出(CSV)',
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? '导出成功' : '导出失败,请检查网络后重试')),
+    );
   }
 
   Future<void> _clear() async {
@@ -105,11 +195,7 @@ class _LogPageState extends State<LogPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('清除日志'),
-        content: Text(
-          widget.debug
-              ? '确定清除全部日志(审计+应用)吗?此操作不可恢复。'
-              : '确定清除当前筛选下的操作记录吗?此操作不可恢复。',
-        ),
+        content: const Text('确定清除全部日志吗?此操作不可恢复。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -128,7 +214,7 @@ class _LogPageState extends State<LogPage> {
       if (jwt == null) throw ApiException('未登录');
       final res = await (await _api).clearLogs(
         jwt,
-        kind: _kind,
+        kind: '',
         month: _month ?? '',
       );
       if (!mounted) return;
@@ -147,7 +233,7 @@ class _LogPageState extends State<LogPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.debug ? '调试日志' : '操作记录'),
+        title: const Text('操作记录'),
         actions: [
           IconButton(
             tooltip: '导出 CSV',
@@ -216,7 +302,7 @@ class _LogPageState extends State<LogPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _logs.isEmpty
-                    ? Center(child: Text(widget.debug ? '暂无日志' : '暂无操作记录'))
+                    ? const Center(child: Text('暂无操作记录'))
                     : RefreshIndicator(
                         onRefresh: _load,
                         child: ListView.separated(
@@ -231,14 +317,6 @@ class _LogPageState extends State<LogPage> {
                             final time = createdAt == null || createdAt.isEmpty
                                 ? ''
                                 : formatServerTime(createdAt);
-                            if (!widget.debug) {
-                              // 操作记录:只显示时间 + 整句中文 action。
-                              return ListTile(
-                                title: Text(action),
-                                subtitle: time.isEmpty ? null : Text(time),
-                              );
-                            }
-                            // 调试模式:类型标签 + 时间 + action + detail(原始 JSON)。
                             final isAudit = '${log['kind']}' == 'audit';
                             return ListTile(
                               leading: _KindTag(isAudit: isAudit),

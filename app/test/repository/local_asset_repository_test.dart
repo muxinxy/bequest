@@ -224,4 +224,41 @@ void main() {
     );
     expect(await vault.readSalt(key), 'c2FsdA==');
   });
+
+  test('本地操作记录:写操作追加中文 action,倒序返回', () async {
+    final r = repo();
+    final cat = await r.createCategory('房产');
+    final a = await r.createAsset({
+      'name': 'A房',
+      'asset_type': 'physical',
+      'category_id': cat['id'],
+      'encrypted_data': 'blob',
+    });
+    await r.updateAsset('${a['id']}', {'name': 'A房改'});
+    await r.moveAssets(['${a['id']}'], null);
+    await r.deleteAsset('${a['id']}');
+
+    final logs = await r.listLocalLogs();
+    expect(logs, hasLength(5));
+    // 倒序:最新在前。
+    expect(logs.first['action'], '删除资产「A房改」');
+    expect(logs[1]['action'], '移动 1 个资产到「未分类」');
+    expect(logs[2]['action'], '修改资产「A房改」');
+    expect(logs[3]['action'], '新增资产「A房」');
+    expect(logs[4]['action'], '新增分组「房产」');
+    expect(logs.first['kind'], 'audit');
+    expect(logs.first['created_at'], isNotNull);
+  });
+
+  test('本地操作记录:保留最近 200 条,超出删最旧', () async {
+    final r = repo();
+    for (var i = 0; i < 205; i++) {
+      await r.createAsset({'name': '资产$i', 'asset_type': 'physical'});
+    }
+    final logs = await r.listLocalLogs();
+    expect(logs, hasLength(200));
+    // 最新一条在最前,最旧的 5 条被丢弃。
+    expect(logs.first['action'], '新增资产「资产204」');
+    expect(logs.last['action'], '新增资产「资产5」');
+  });
 }
