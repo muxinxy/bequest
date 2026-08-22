@@ -576,7 +576,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 多选统一设置继承人:选一名继承人,批量绑定到所有选中分组。
+  /// 多选统一设置继承人:勾选多名继承人,批量绑定到所有选中分组。
   Future<void> _setSelectedGroupInheritors() async {
     final repo = _repo;
     if (repo == null) return;
@@ -599,27 +599,36 @@ class _HomePageState extends State<HomePage> {
     // 过滤出真实分组(跳过未分组 id='')。
     final groupIds = _selectedGroupIds.where((id) => id.isNotEmpty).toList();
     if (groupIds.isEmpty) return;
-    var selected = '${inheritors.first['id']}';
+    final selected = <String>{};
     if (!mounted) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('设置继承人'),
-          content: DropdownButtonFormField<String>(
-            initialValue: selected,
-            decoration: const InputDecoration(labelText: '继承人'),
-            items: [
-              for (final i in inheritors)
-                DropdownMenuItem(
-                  value: '${i['id']}',
-                  child: Text(
-                    '${i['name']}${i['email'] == null ? '' : ' (${i['email']})'}',
-                    overflow: TextOverflow.ellipsis,
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 360),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final i in inheritors)
+                  CheckboxListTile(
+                    value: selected.contains('${i['id']}'),
+                    onChanged: (v) => setDialogState(() {
+                      if (v == true) {
+                        selected.add('${i['id']}');
+                      } else {
+                        selected.remove('${i['id']}');
+                      }
+                    }),
+                    title: Text('${i['name']}'),
+                    subtitle: Text(
+                      '${i['email'] == null || (i['email'] as String).isEmpty ? '' : '${i['email']} · '}'
+                      '${i['category_count'] ?? 0} 个分组 · ${i['asset_count'] ?? 0} 个资产',
+                    ),
                   ),
-                ),
-            ],
-            onChanged: (v) => setDialogState(() => selected = v ?? selected),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -635,13 +644,20 @@ class _HomePageState extends State<HomePage> {
       ),
     );
     if (ok != true || !mounted) return;
+    if (selected.isEmpty) {
+      _showSnack('请至少选择一名继承人');
+      return;
+    }
     try {
+      // 每个选中分组 × 每个选中继承人批量绑定。
       for (final id in groupIds) {
-        await repo.createCategoryInheritor(id, {
-          'inheritor_id': int.tryParse(selected),
-          'priority': 1,
-          'trigger_days': null,
-        });
+        for (final iid in selected) {
+          await repo.createCategoryInheritor(id, {
+            'inheritor_id': int.tryParse(iid),
+            'priority': 1,
+            'trigger_days': null,
+          });
+        }
       }
     } catch (_) {
       _showSnack('绑定失败');
@@ -652,7 +668,7 @@ class _HomePageState extends State<HomePage> {
       _multiSelect = false;
       _selectedGroupIds.clear();
     });
-    _showSnack('已为 ${groupIds.length} 个分组设置继承人');
+    _showSnack('已为 ${groupIds.length} 个分组设置 ${selected.length} 名继承人');
   }
 
   void _showSnack(String message) {
@@ -899,6 +915,11 @@ class _HomePageState extends State<HomePage> {
     final selected = _selectedGroupIds.contains(id);
     // 未分组是特殊分组:不可删除、不可多选(无长按入口,多选态点击也不选中)。
     final isUngrouped = id.isEmpty;
+    // 分组绑定的继承人名字(服务端 inheritor_names;未分组/本地模式为空)。
+    final inheritors = isUngrouped
+        ? const <String>[]
+        : _categories.where((c) => c.id == id).firstOrNull?.inheritorNames ??
+              const <String>[];
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: InkWell(
@@ -923,7 +944,17 @@ class _HomePageState extends State<HomePage> {
             color: Theme.of(context).colorScheme.primary,
           ),
           title: Text(name),
-          subtitle: Text('$count 个资产'),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('$count 个资产'),
+              if (inheritors.isNotEmpty)
+                Text(
+                  '继承人:${inheritors.join('、')}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+            ],
+          ),
           trailing: _multiSelect
               ? Icon(
                   selected ? Icons.check_circle : Icons.circle_outlined,

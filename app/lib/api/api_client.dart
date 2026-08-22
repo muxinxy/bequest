@@ -358,6 +358,68 @@ class ApiClient {
     return _getList('/api/v1/audit-log', jwt);
   }
 
+  /// GET /api/v1/logs?kind=&month=&limit=500 -> 日志列表(倒序)。
+  /// kind: '' = 全部, 'audit' = 审计, 'app' = 应用;month 形如 '2026-08'。
+  Future<List<Map<String, dynamic>>> listLogs(
+    String jwt, {
+    String kind = '',
+    String month = '',
+  }) {
+    final q = <String, String>{
+      if (kind.isNotEmpty) 'kind': kind,
+      if (month.isNotEmpty) 'month': month,
+      'limit': '500',
+    };
+    return _getList('/api/v1/logs?${Uri(queryParameters: q).query}', jwt);
+  }
+
+  /// GET /api/v1/logs/months -> 有日志的月份列表,如 ["2026-08", ...]。
+  Future<List<String>> listLogMonths(String jwt) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/v1/logs/months'),
+      headers: _authHeaders(jwt),
+    );
+    _ensureSuccess(response);
+    final dynamic decoded = response.body.isEmpty ? const [] : jsonDecode(response.body);
+    if (decoded is! List) return const [];
+    return decoded.whereType<String>().toList();
+  }
+
+  /// GET /api/v1/logs/export?kind=&month= -> CSV 文本(浏览器下载/分享用)。
+  Future<String> exportLogs(
+    String jwt, {
+    String kind = '',
+    String month = '',
+  }) async {
+    final q = <String, String>{
+      if (kind.isNotEmpty) 'kind': kind,
+      if (month.isNotEmpty) 'month': month,
+    };
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/v1/logs/export?${Uri(queryParameters: q).query}'),
+      headers: _authHeaders(jwt),
+    );
+    _ensureSuccess(response);
+    return response.body;
+  }
+
+  /// DELETE /api/v1/logs?kind=&month= -> {"deleted":n} 清除日志。
+  Future<Map<String, dynamic>> clearLogs(
+    String jwt, {
+    String kind = '',
+    String month = '',
+  }) async {
+    final q = <String, String>{
+      if (kind.isNotEmpty) 'kind': kind,
+      if (month.isNotEmpty) 'month': month,
+    };
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/api/v1/logs?${Uri(queryParameters: q).query}'),
+      headers: _authHeaders(jwt),
+    );
+    return _decode(response);
+  }
+
   /// GET /api/v1/settings/smtp(不含密码,configured=false 表示未配置)。
   Future<Map<String, dynamic>> getSmtpSettings(String jwt) {
     return _get('/api/v1/settings/smtp', jwt);

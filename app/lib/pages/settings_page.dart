@@ -19,6 +19,7 @@ import 'import_page.dart';
 import 'inheritance_status_page.dart';
 import 'inheritor_assets_page.dart';
 import 'inheritors_page.dart';
+import 'log_page.dart';
 import 'reminder_templates_page.dart';
 import 'reset_master_password_page.dart';
 import 'server_settings_page.dart';
@@ -320,6 +321,12 @@ class _SettingsPageState extends State<SettingsPage> {
             Icons.receipt_long_outlined,
             '审计日志',
             () => _push(context, const AuditPage()),
+            enabled: !_isLocal,
+          ),
+          _entry(
+            Icons.article_outlined,
+            '日志',
+            () => _push(context, const LogPage()),
             enabled: !_isLocal,
           ),
           _section(context, '外观'),

@@ -32,11 +32,13 @@ func accessCodeMatches(storedHash, code string) bool {
 // ---------- inheritors ----------
 
 type inheritorJSON struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	Email     string `json:"email"`
-	Priority  int    `json:"priority"`
-	CreatedAt string `json:"created_at"`
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	Email         string `json:"email"`
+	Priority      int    `json:"priority"`
+	CreatedAt     string `json:"created_at"`
+	AssetCount    int    `json:"asset_count"`    // 绑定的资产数量
+	CategoryCount int    `json:"category_count"` // 绑定的分组数量
 }
 
 type inheritorRequest struct {
@@ -70,8 +72,10 @@ func validateInheritor(req inheritorRequest) string {
 // handleListInheritors: GET /api/v1/inheritors -> 200 [] (access_code_hash never exposed)
 func handleListInheritors(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rows, err := db.Query(`SELECT id, name, email, priority, created_at
-			FROM inheritors WHERE user_id = ? ORDER BY priority, id`, userID(r))
+		rows, err := db.Query(`SELECT i.id, i.name, i.email, i.priority, i.created_at,
+			(SELECT COUNT(*) FROM asset_inheritors ai WHERE ai.inheritor_id = i.id),
+			(SELECT COUNT(*) FROM category_inheritors ci WHERE ci.inheritor_id = i.id)
+			FROM inheritors i WHERE i.user_id = ? ORDER BY i.priority, i.id`, userID(r))
 		if err != nil {
 			log.Printf("list inheritors: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -81,7 +85,7 @@ func handleListInheritors(db *sql.DB) http.HandlerFunc {
 		list := []inheritorJSON{}
 		for rows.Next() {
 			var in inheritorJSON
-			if err := rows.Scan(&in.ID, &in.Name, &in.Email, &in.Priority, &in.CreatedAt); err != nil {
+			if err := rows.Scan(&in.ID, &in.Name, &in.Email, &in.Priority, &in.CreatedAt, &in.AssetCount, &in.CategoryCount); err != nil {
 				log.Printf("scan inheritor: %v", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
@@ -118,6 +122,7 @@ func handleCreateInheritor(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+		logAudit(db, userID(r), "新增继承人", map[string]any{"id": id, "name": in.Name})
 		writeJSON(w, http.StatusCreated, in)
 	}
 }
@@ -173,6 +178,7 @@ func handleUpdateInheritor(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+		logAudit(db, uid, "修改继承人", map[string]any{"id": id, "name": in.Name})
 		writeJSON(w, http.StatusOK, in)
 	}
 }
@@ -195,6 +201,7 @@ func handleDeleteInheritor(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, "inheritor not found")
 			return
 		}
+		logAudit(db, userID(r), "删除继承人", map[string]any{"id": id})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

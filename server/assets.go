@@ -68,6 +68,7 @@ func handleBatchMoveAssets(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		n, _ := res.RowsAffected()
+		logApp(db, userID(r), "移动资产", map[string]any{"ids": req.IDs, "category_id": req.CategoryID})
 		writeJSON(w, http.StatusOK, map[string]int64{"moved": n})
 	}
 }
@@ -297,6 +298,7 @@ func handleCreateAsset(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+		logAudit(db, uid, "新增资产", map[string]any{"id": id, "name": a.Name})
 		writeJSON(w, http.StatusCreated, a)
 	}
 }
@@ -352,6 +354,7 @@ func handleUpdateAsset(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+		logAudit(db, uid, "修改资产", map[string]any{"id": id, "name": a.Name})
 		writeJSON(w, http.StatusOK, a)
 	}
 }
@@ -375,6 +378,7 @@ func handleDeleteAsset(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, "asset not found")
 			return
 		}
+		logAudit(db, userID(r), "删除资产", map[string]any{"id": id})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -424,6 +428,7 @@ func handleCopyAsset(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+		logAudit(db, uid, "复制资产", map[string]any{"source_id": id, "new_id": newID, "name": a.Name})
 		writeJSON(w, http.StatusCreated, a)
 	}
 }

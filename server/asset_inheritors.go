@@ -105,6 +105,7 @@ func handleCreateAssetInheritor(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		id, _ := res.LastInsertId()
+		logAudit(db, userID(r), "绑定资产继承人", map[string]any{"asset_id": assetID, "inheritor_id": req.InheritorID})
 		writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 	}
 }
@@ -138,6 +139,7 @@ func handleDeleteAssetInheritor(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, "binding not found")
 			return
 		}
+		logAudit(db, userID(r), "解绑资产继承人", map[string]any{"asset_id": assetID, "binding_id": iid})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -252,6 +254,7 @@ func handleCreateCategoryInheritor(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		id, _ := res.LastInsertId()
+		logAudit(db, userID(r), "绑定分组继承人", map[string]any{"category_id": catID, "inheritor_id": req.InheritorID})
 		writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 	}
 }
@@ -287,6 +290,7 @@ func handleDeleteCategoryInheritor(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, "binding not found")
 			return
 		}
+		logAudit(db, userID(r), "解绑分组继承人", map[string]any{"category_id": catID, "binding_id": iid})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

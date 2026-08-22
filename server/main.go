@@ -128,6 +128,11 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.HandleFunc("POST /api/v1/inheritance/claim", handleClaim(db))
 	mux.Handle("GET /api/v1/inheritance/status", auth(handleInheritanceStatus(db)))
 	mux.Handle("GET /api/v1/audit-log", auth(handleAuditLog(db)))
+	// 日志(审计/应用):列表按年月筛选、导出 CSV、清除。
+	mux.Handle("GET /api/v1/logs", auth(handleListLogs(db)))
+	mux.Handle("GET /api/v1/logs/months", auth(handleLogMonths(db)))
+	mux.Handle("GET /api/v1/logs/export", auth(handleExportLogs(db)))
+	mux.Handle("DELETE /api/v1/logs", auth(handleClearLogs(db)))
 	mux.Handle("GET /api/v1/settings/smtp", auth(handleGetSMTP(db)))
 	mux.Handle("PUT /api/v1/settings/smtp", auth(handlePutSMTP(db)))
 	mux.Handle("DELETE /api/v1/settings/smtp", auth(handleDeleteSMTP(db)))

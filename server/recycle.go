@@ -121,6 +121,7 @@ func handleRestoreRecycleItem(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid kind")
 			return
 		}
+		logAudit(db, uid, "恢复回收站项目", map[string]any{"kind": kind, "id": id})
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	}
 }
@@ -153,6 +154,7 @@ func handlePurgeRecycleItem(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, "item not found")
 			return
 		}
+		logAudit(db, uid, "永久删除回收站项目", map[string]any{"kind": kind, "id": id})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -171,6 +173,7 @@ func handleEmptyRecycleBin(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+		logAudit(db, uid, "清空回收站", nil)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -203,6 +206,7 @@ func handleBatchDeleteAssets(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		n, _ := res.RowsAffected()
+		logAudit(db, userID(r), "批量删除资产", map[string]any{"ids": req.IDs, "deleted": n})
 		writeJSON(w, http.StatusOK, map[string]int64{"deleted": n})
 	}
 }

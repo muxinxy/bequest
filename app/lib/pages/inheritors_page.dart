@@ -248,7 +248,8 @@ class _InheritorsPageState extends State<InheritorsPage> {
                             title: Text(inheritor.name),
                             subtitle: Text(
                               '${inheritor.email.isEmpty ? '未填写邮箱' : inheritor.email}'
-                              '${inheritor.priority == null ? '' : ' · 优先级 ${inheritor.priority}'}',
+                              '${inheritor.priority == null ? '' : ' · 优先级 ${inheritor.priority}'}'
+                              ' · ${inheritor.categoryCount} 个分组 · ${inheritor.assetCount} 个资产',
                             ),
                             trailing: IconButton(
                               tooltip: '删除',

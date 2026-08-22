@@ -9,6 +9,7 @@ class Category {
     this.createdAt,
     this.assetCount = 0,
     this.remark = '',
+    this.inheritorNames = const [],
   });
 
   factory Category.fromJson(Map<String, dynamic> json) => Category(
@@ -19,6 +20,10 @@ class Category {
         createdAt: json['created_at']?.toString(),
         assetCount: (json['asset_count'] as num?)?.toInt() ?? 0,
         remark: json['remark']?.toString() ?? '',
+        inheritorNames: [
+          for (final n in (json['inheritor_names'] as List? ?? const []))
+            n.toString(),
+        ],
       );
 
   final String id;
@@ -32,4 +37,7 @@ class Category {
 
   /// 分组备注。
   final String remark;
+
+  /// 绑定的继承人名字数组(服务端统计;可能为空/缺省)。
+  final List<String> inheritorNames;
 }
