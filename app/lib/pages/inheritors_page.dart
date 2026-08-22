@@ -178,70 +178,122 @@ class _InheritorsPageState extends State<InheritorsPage> {
     }
   }
 
-  /// 编辑继承人:改名称/邮箱(访问码留空则服务端不改)。
+  /// 编辑继承人:改名称/邮箱/访问码(访问码留空则服务端不改)。
   Future<void> _editInheritor(Inheritor inheritor) async {
     final nameController = TextEditingController(text: inheritor.name);
     final emailController = TextEditingController(text: inheritor.email);
+    final codeController = TextEditingController();
+    String? newCode;
+
     final result = await showDialog<_InheritorDraft>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('编辑继承人'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: '姓名 *',
-                border: OutlineInputBorder(),
-              ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('编辑继承人'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: '姓名 *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: '邮箱 *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: codeController,
+                        decoration: InputDecoration(
+                          labelText: '继承码(留空则不修改)',
+                          hintText: inheritor.accessCode.isEmpty
+                              ? '8 位字母数字'
+                              : '当前:${inheritor.accessCode}',
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        newCode = _generateAccessCode();
+                        codeController.text = newCode!;
+                        setDialogState(() {});
+                      },
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('生成'),
+                    ),
+                  ],
+                ),
+                if (newCode != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    '请立即将新的继承码线下告知继承人。',
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ],
+              ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: '邮箱 *',
-                border: OutlineInputBorder(),
-              ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final name = nameController.text.trim();
+                final email = emailController.text.trim();
+                if (name.isEmpty || email.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('姓名与邮箱不能为空')),
+                  );
+                  return;
+                }
+                Navigator.of(context).pop(
+                  _InheritorDraft(
+                    name: name,
+                    email: email,
+                    // 留空 = 不修改继承码;填了 = 重置。
+                    accessCode: codeController.text.trim(),
+                  ),
+                );
+              },
+              child: const Text('保存'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final name = nameController.text.trim();
-              final email = emailController.text.trim();
-              if (name.isEmpty || email.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('姓名与邮箱不能为空')),
-                );
-                return;
-              }
-              Navigator.of(context).pop(
-                _InheritorDraft(name: name, email: email, accessCode: ''),
-              );
-            },
-            child: const Text('保存'),
-          ),
-        ],
       ),
     );
     nameController.dispose();
     emailController.dispose();
+    codeController.dispose();
     if (result == null) return;
     try {
       final jwt = await _store.readJwt();
       if (jwt == null) throw ApiException('未登录');
-      await (await _api).updateInheritor(jwt, inheritor.id, {
+      final body = <String, dynamic>{
         'name': result.name,
         'email': result.email,
-      });
+      };
+      if (result.accessCode.isNotEmpty) {
+        body['access_code'] = result.accessCode;
+      }
+      await (await _api).updateInheritor(jwt, inheritor.id, body);
       await _load();
     } on ApiException catch (e) {
       _showError(e.message);
@@ -311,7 +363,8 @@ class _InheritorsPageState extends State<InheritorsPage> {
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             padding: const EdgeInsets.all(12),
             child: const Text(
-              '访问码需线下告知继承人,用于触发继承后领取资产密钥。',
+              '继承码用于触发继承后领取资产密钥,请线下告知继承人;'
+              '显示"未设置"的继承人(历史数据)可在编辑中生成新的继承码。',
               style: TextStyle(fontSize: 12),
             ),
           ),
