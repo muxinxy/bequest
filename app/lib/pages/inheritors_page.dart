@@ -59,6 +59,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
   Future<void> _addInheritor() async {
     final nameController = TextEditingController();
     final emailController = TextEditingController();
+    final phoneController = TextEditingController();
     final codeController = TextEditingController();
     String? accessCode;
 
@@ -84,7 +85,17 @@ class _InheritorsPageState extends State<InheritorsPage> {
                   controller: emailController,
                   keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(
-                    labelText: '邮箱',
+                    labelText: '邮箱(可选)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: phoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: '手机号(可选)',
+                    helperText: '邮箱或手机号至少填一个',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -133,10 +144,18 @@ class _InheritorsPageState extends State<InheritorsPage> {
             FilledButton(
               onPressed: () {
                 final name = nameController.text.trim();
+                final email = emailController.text.trim();
+                final phone = phoneController.text.trim();
                 final code = codeController.text.trim();
                 if (name.isEmpty) {
                   ScaffoldMessenger.of(context)
                       .showSnackBar(const SnackBar(content: Text('请输入姓名')));
+                  return;
+                }
+                if (email.isEmpty && phone.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('邮箱或手机号至少填一个')),
+                  );
                   return;
                 }
                 if (code.isEmpty) {
@@ -145,7 +164,12 @@ class _InheritorsPageState extends State<InheritorsPage> {
                   return;
                 }
                 Navigator.of(context).pop(
-                  _InheritorDraft(name: name, email: emailController.text.trim(), accessCode: code),
+                  _InheritorDraft(
+                    name: name,
+                    email: email,
+                    phone: phone,
+                    accessCode: code,
+                  ),
                 );
               },
               child: const Text('保存'),
@@ -156,6 +180,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
     );
     nameController.dispose();
     emailController.dispose();
+    phoneController.dispose();
     codeController.dispose();
     if (result == null) return;
     try {
@@ -164,6 +189,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
       await (await _api).createInheritor(jwt, {
         'name': result.name,
         'email': result.email,
+        'phone': result.phone,
         'access_code': result.accessCode,
       });
       if (!mounted) return;
@@ -178,10 +204,11 @@ class _InheritorsPageState extends State<InheritorsPage> {
     }
   }
 
-  /// 编辑继承人:改名称/邮箱/访问码(访问码留空则服务端不改)。
+  /// 编辑继承人:改名称/邮箱/手机号/访问码(访问码留空则服务端不改)。
   Future<void> _editInheritor(Inheritor inheritor) async {
     final nameController = TextEditingController(text: inheritor.name);
     final emailController = TextEditingController(text: inheritor.email);
+    final phoneController = TextEditingController(text: inheritor.phone);
     final codeController = TextEditingController();
     String? newCode;
 
@@ -207,7 +234,17 @@ class _InheritorsPageState extends State<InheritorsPage> {
                   controller: emailController,
                   keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(
-                    labelText: '邮箱 *',
+                    labelText: '邮箱(可选)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: phoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: '手机号(可选)',
+                    helperText: '邮箱或手机号至少填一个',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -259,9 +296,16 @@ class _InheritorsPageState extends State<InheritorsPage> {
               onPressed: () {
                 final name = nameController.text.trim();
                 final email = emailController.text.trim();
-                if (name.isEmpty || email.isEmpty) {
+                final phone = phoneController.text.trim();
+                if (name.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('姓名与邮箱不能为空')),
+                    const SnackBar(content: Text('请输入姓名')),
+                  );
+                  return;
+                }
+                if (email.isEmpty && phone.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('邮箱或手机号至少填一个')),
                   );
                   return;
                 }
@@ -269,6 +313,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
                   _InheritorDraft(
                     name: name,
                     email: email,
+                    phone: phone,
                     // 留空 = 不修改继承码;填了 = 重置。
                     accessCode: codeController.text.trim(),
                   ),
@@ -282,6 +327,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
     );
     nameController.dispose();
     emailController.dispose();
+    phoneController.dispose();
     codeController.dispose();
     if (result == null) return;
     try {
@@ -290,6 +336,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
       final body = <String, dynamic>{
         'name': result.name,
         'email': result.email,
+        'phone': result.phone,
       };
       if (result.accessCode.isNotEmpty) {
         body['access_code'] = result.accessCode;
@@ -387,6 +434,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
                               children: [
                                 Text(
                                   '${inheritor.email.isEmpty ? '未填写邮箱' : inheritor.email}'
+                                  '${inheritor.phone.isEmpty ? '' : ' · ${inheritor.phone}'}'
                                   '${inheritor.priority == null ? '' : ' · 优先级 ${inheritor.priority}'}'
                                   ' · ${inheritor.categoryCount} 个分组 · ${inheritor.assetCount} 个资产',
                                 ),
@@ -448,10 +496,12 @@ class _InheritorDraft {
   const _InheritorDraft({
     required this.name,
     required this.email,
+    required this.phone,
     required this.accessCode,
   });
 
   final String name;
   final String email;
+  final String phone;
   final String accessCode;
 }

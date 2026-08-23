@@ -35,6 +35,7 @@ type inheritorJSON struct {
 	ID            int64  `json:"id"`
 	Name          string `json:"name"`
 	Email         string `json:"email"`
+	Phone         string `json:"phone"`
 	Priority      int    `json:"priority"`
 	CreatedAt     string `json:"created_at"`
 	AssetCount    int    `json:"asset_count"`    // 绑定的资产数量
@@ -45,15 +46,16 @@ type inheritorJSON struct {
 type inheritorRequest struct {
 	Name       string `json:"name"`
 	Email      string `json:"email"`
+	Phone      string `json:"phone"`
 	AccessCode string `json:"access_code"`
 }
 
 // fetchInheritor loads one inheritor scoped to the owner; errNotFound if absent.
 func fetchInheritor(db *sql.DB, id, uid int64) (*inheritorJSON, error) {
 	var in inheritorJSON
-	err := db.QueryRow(`SELECT id, name, email, priority, created_at, COALESCE(access_code, '')
+	err := db.QueryRow(`SELECT id, name, email, COALESCE(phone, ''), priority, created_at, COALESCE(access_code, '')
 		FROM inheritors WHERE id = ? AND user_id = ?`, id, uid).
-		Scan(&in.ID, &in.Name, &in.Email, &in.Priority, &in.CreatedAt, &in.AccessCode)
+		Scan(&in.ID, &in.Name, &in.Email, &in.Phone, &in.Priority, &in.CreatedAt, &in.AccessCode)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errNotFound
 	}
@@ -64,8 +66,14 @@ func fetchInheritor(db *sql.DB, id, uid int64) (*inheritorJSON, error) {
 }
 
 func validateInheritor(req inheritorRequest) string {
-	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.AccessCode) == "" {
-		return "名称、邮箱和访问码均必填"
+	if strings.TrimSpace(req.Name) == "" {
+		return "名称必填"
+	}
+	if strings.TrimSpace(req.Email) == "" && strings.TrimSpace(req.Phone) == "" {
+		return "邮箱或手机号至少填一个"
+	}
+	if strings.TrimSpace(req.AccessCode) == "" {
+		return "访问码必填"
 	}
 	return ""
 }
@@ -73,7 +81,7 @@ func validateInheritor(req inheritorRequest) string {
 // handleListInheritors: GET /api/v1/inheritors -> 200 [] (access_code_hash never exposed)
 func handleListInheritors(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rows, err := db.Query(`SELECT i.id, i.name, i.email, i.priority, i.created_at,
+		rows, err := db.Query(`SELECT i.id, i.name, i.email, COALESCE(i.phone, ''), i.priority, i.created_at,
 			(SELECT COUNT(*) FROM asset_inheritors ai WHERE ai.inheritor_id = i.id),
 			(SELECT COUNT(*) FROM category_inheritors ci WHERE ci.inheritor_id = i.id),
 			COALESCE(i.access_code, '')
@@ -87,7 +95,7 @@ func handleListInheritors(db *sql.DB) http.HandlerFunc {
 		list := []inheritorJSON{}
 		for rows.Next() {
 			var in inheritorJSON
-			if err := rows.Scan(&in.ID, &in.Name, &in.Email, &in.Priority, &in.CreatedAt, &in.AssetCount, &in.CategoryCount, &in.AccessCode); err != nil {
+			if err := rows.Scan(&in.ID, &in.Name, &in.Email, &in.Phone, &in.Priority, &in.CreatedAt, &in.AssetCount, &in.CategoryCount, &in.AccessCode); err != nil {
 				log.Printf("scan inheritor: %v", err)
 				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
@@ -110,8 +118,8 @@ func handleCreateInheritor(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, msg)
 			return
 		}
-		res, err := db.Exec(`INSERT INTO inheritors (user_id, name, email, access_code_hash, access_code) VALUES (?, ?, ?, ?, ?)`,
-			userID(r), strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), hashAccessCode(req.AccessCode), strings.TrimSpace(req.AccessCode))
+		res, err := db.Exec(`INSERT INTO inheritors (user_id, name, email, phone, access_code_hash, access_code) VALUES (?, ?, ?, ?, ?, ?)`,
+			userID(r), strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), strings.TrimSpace(req.Phone), hashAccessCode(req.AccessCode), strings.TrimSpace(req.AccessCode))
 		if err != nil {
 			log.Printf("insert inheritor: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -144,14 +152,14 @@ func handleUpdateInheritor(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
-		if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Email) == "" {
-			writeError(w, http.StatusBadRequest, "名称和邮箱必填")
+		if strings.TrimSpace(req.Name) == "" || (strings.TrimSpace(req.Email) == "" && strings.TrimSpace(req.Phone) == "") {
+			writeError(w, http.StatusBadRequest, "名称必填,邮箱或手机号至少填一个")
 			return
 		}
 		// only re-hash when a new access code is supplied
 		if req.AccessCode != "" {
-			res, err := db.Exec(`UPDATE inheritors SET name = ?, email = ?, access_code_hash = ?, access_code = ? WHERE id = ? AND user_id = ?`,
-				strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), hashAccessCode(req.AccessCode), strings.TrimSpace(req.AccessCode), id, uid)
+			res, err := db.Exec(`UPDATE inheritors SET name = ?, email = ?, phone = ?, access_code_hash = ?, access_code = ? WHERE id = ? AND user_id = ?`,
+				strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), strings.TrimSpace(req.Phone), hashAccessCode(req.AccessCode), strings.TrimSpace(req.AccessCode), id, uid)
 			if err != nil {
 				log.Printf("update inheritor: %v", err)
 				writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -162,8 +170,8 @@ func handleUpdateInheritor(db *sql.DB) http.HandlerFunc {
 				return
 			}
 		} else {
-			res, err := db.Exec(`UPDATE inheritors SET name = ?, email = ? WHERE id = ? AND user_id = ?`,
-				strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), id, uid)
+			res, err := db.Exec(`UPDATE inheritors SET name = ?, email = ?, phone = ? WHERE id = ? AND user_id = ?`,
+				strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), strings.TrimSpace(req.Phone), id, uid)
 			if err != nil {
 				log.Printf("update inheritor: %v", err)
 				writeError(w, http.StatusInternalServerError, "服务器内部错误")

@@ -139,6 +139,9 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("DELETE /api/v1/reminder-templates/{id}", auth(handleDeleteTemplate(db)))
 	mux.Handle("GET /api/v1/reminders", auth(handleListReminders(db)))
 	mux.Handle("POST /api/v1/reminders/{id}/read", auth(handleMarkReminderRead(db)))
+	// 通知渠道(邮箱/手机号)。
+	mux.Handle("GET /api/v1/notification-channels", auth(handleGetNotificationChannels(db)))
+	mux.Handle("PUT /api/v1/notification-channels", auth(handlePutNotificationChannels(db)))
 	mux.HandleFunc("POST /api/v1/inheritance/claim", handleClaim(db))
 	mux.Handle("GET /api/v1/inheritance/status", auth(handleInheritanceStatus(db)))
 	mux.Handle("GET /api/v1/audit-log", auth(handleAuditLog(db)))
@@ -169,6 +172,11 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("POST /api/v1/admin/2fa/disable", admin(handleAdmin2FADisable(db)))
 	mux.Handle("GET /api/v1/admin/config", admin(http.HandlerFunc(handleAdminGetConfig)))
 	mux.Handle("PUT /api/v1/admin/config", admin(handleAdminPutConfig(db)))
+	// 短信提供商管理。
+	mux.Handle("GET /api/v1/admin/sms-providers", admin(handleAdminListSMSProviders(db)))
+	mux.Handle("POST /api/v1/admin/sms-providers", admin(handleAdminCreateSMSProvider(db)))
+	mux.Handle("PUT /api/v1/admin/sms-providers/{id}", admin(handleAdminUpdateSMSProvider(db)))
+	mux.Handle("DELETE /api/v1/admin/sms-providers/{id}", admin(handleAdminDeleteSMSProvider(db)))
 	mux.HandleFunc("GET /api/v1/version", handleVersion)
 	return mux
 }

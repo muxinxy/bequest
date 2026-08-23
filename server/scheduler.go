@@ -20,12 +20,17 @@ func scan(db *sql.DB, now time.Time) {
 }
 
 // insertReminder inserts a reminder; the UNIQUE(user_id, dedup_key) index
-// makes re-runs no-ops (ON CONFLICT DO NOTHING).
-func insertReminder(db *sql.DB, uid int64, rtype string, assetID *int64, title, body, dedup string) {
-	if _, err := db.Exec(`INSERT INTO reminders (user_id, type, asset_id, title, body, dedup_key) VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(user_id, dedup_key) DO NOTHING`, uid, rtype, assetID, title, body, dedup); err != nil {
+// makes re-runs no-ops (ON CONFLICT DO NOTHING). Returns true when a new row
+// was actually inserted (callers use it to gate once-per-day sends).
+func insertReminder(db *sql.DB, uid int64, rtype string, assetID *int64, title, body, dedup string) bool {
+	res, err := db.Exec(`INSERT INTO reminders (user_id, type, asset_id, title, body, dedup_key) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(user_id, dedup_key) DO NOTHING`, uid, rtype, assetID, title, body, dedup)
+	if err != nil {
 		log.Printf("insert reminder: %v", err)
+		return false
 	}
+	n, _ := res.RowsAffected()
+	return n > 0
 }
 
 // ---------- expiry ----------
@@ -111,7 +116,7 @@ func userLadderDays(db *sql.DB, uid int64, tier string) []int {
 // (number of tiers crossed), capped at len(thresholds)-1 because crossing the
 // final tier is the inheritance trigger, not a distinct level.
 func processEscalation(db *sql.DB, now time.Time) {
-	rows, err := db.Query(`SELECT id, tier, escalation_level, last_login_at, email
+	rows, err := db.Query(`SELECT id, tier, escalation_level, last_login_at
 		FROM users WHERE last_login_at IS NOT NULL AND last_login_at != ''
 			AND inheritance_enabled = 1`) // 继承开关关闭:跳过升级/触发
 	if err != nil {
@@ -124,12 +129,11 @@ func processEscalation(db *sql.DB, now time.Time) {
 		tier      string
 		level     int
 		lastLogin string
-		email     string
 	}
 	var users []userRow
 	for rows.Next() {
 		var u userRow
-		if err := rows.Scan(&u.id, &u.tier, &u.level, &u.lastLogin, &u.email); err != nil {
+		if err := rows.Scan(&u.id, &u.tier, &u.level, &u.lastLogin); err != nil {
 			log.Printf("scan user: %v", err)
 			return
 		}
@@ -160,19 +164,10 @@ func processEscalation(db *sql.DB, now time.Time) {
 		if level > u.level {
 			if _, err := db.Exec(`UPDATE users SET escalation_level = ? WHERE id = ?`, level, u.id); err != nil {
 				log.Printf("update escalation: %v", err)
-				continue
-			}
-			body := fmt.Sprintf("您已 %d 天未登录,资产安全提醒升级。", daysSince)
-			notifyUser(db, u.id, u.tier, "escalation", "长时间未登录提醒", body, fmt.Sprintf("esc:%d:%d", u.id, level))
-			// escalation email cutoff stays here (level >= 2), unchanged.
-			// ponytail: notifyUser also emails the generic body; if SMTP is ever
-			// configured, members at level>=2 get two mails — fold the cutoff
-			// into notifyUser if that ever matters.
-			if level >= 2 && u.email != "" {
-				sendMail(u.email, "资产安全提醒升级",
-					fmt.Sprintf("您已 %d 天未登录,资产安全提醒升级,请尽快登录以确认仍在世。", daysSince))
 			}
 		}
+		// 分级通知(系统/邮件/短信),dedup 按天防刷屏。
+		notifyEscalation(db, u.id, u.tier, daysSince, thresholds)
 		if idx >= len(thresholds)-1 {
 			triggerInheritance(db, u.id, daysSince)
 		}

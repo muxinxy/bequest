@@ -66,14 +66,16 @@ func ladderOwnedBy(db *sql.DB, ladderID, uid int64) bool {
 	return false
 }
 
-// validateLadderDays:days 至少 1 个正整数,≤10 个。
+// validateLadderDays:必须恰好 4 个正整数且严格递增
+// (语义:系统通知、邮件、短信、触发继承)。
 func validateLadderDays(days []int) string {
-	if len(days) < 1 || len(days) > 10 {
-		return "触发天数需包含 1 到 10 个值"
+	const msg = "触发阶梯需要 4 个依次递增的正整数(系统通知、邮件、短信、触发继承)"
+	if len(days) != 4 {
+		return msg
 	}
-	for _, d := range days {
-		if d <= 0 {
-			return "触发天数必须为正整数"
+	for i, d := range days {
+		if d <= 0 || (i > 0 && d <= days[i-1]) {
+			return msg
 		}
 	}
 	return ""

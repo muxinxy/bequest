@@ -19,6 +19,7 @@ import 'inheritance_status_page.dart';
 import 'inheritor_assets_page.dart';
 import 'inheritors_page.dart';
 import 'log_page.dart';
+import 'notification_channels_page.dart';
 import 'reminder_templates_page.dart';
 import 'reset_master_password_page.dart';
 import 'server_settings_page.dart';
@@ -299,6 +300,12 @@ class _SettingsPageState extends State<SettingsPage> {
             Icons.person_outline,
             '账号信息',
             () => _push(context, const AccountSettingsPage()),
+            enabled: !_isLocal,
+          ),
+          _entry(
+            Icons.notifications_outlined,
+            '通知渠道',
+            () => _push(context, const NotificationChannelsPage()),
             enabled: !_isLocal,
           ),
           _entry(

@@ -499,6 +499,25 @@ class ApiClient {
     return _decode(response);
   }
 
+  /// GET /api/v1/notification-channels -> {"emails":[],"phones":[]}(各 0-3 个)。
+  Future<Map<String, dynamic>> getNotificationChannels(String jwt) {
+    return _get('/api/v1/notification-channels', jwt);
+  }
+
+  /// PUT /api/v1/notification-channels {emails,phones}:整体替换。
+  /// 免费用户提交手机号 -> 400「手机号功能为会员专属」。
+  Future<Map<String, dynamic>> putNotificationChannels(
+    String jwt, {
+    required List<String> emails,
+    required List<String> phones,
+  }) {
+    return _put(
+      '/api/v1/notification-channels',
+      {'emails': emails, 'phones': phones},
+      jwt,
+    );
+  }
+
   /// GET /api/v1/settings/smtp(不含密码,configured=false 表示未配置)。
   Future<Map<String, dynamic>> getSmtpSettings(String jwt) {
     return _get('/api/v1/settings/smtp', jwt);

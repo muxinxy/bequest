@@ -47,51 +47,53 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
     }
   }
 
-  /// 解析逗号/空格分隔的天数输入;返回 null 表示非法。
-  static List<int>? _parseDays(String input) {
-    final days = input
-        .split(RegExp(r'[,，\s]+'))
-        .map((s) => int.tryParse(s.trim()))
-        .whereType<int>()
-        .where((d) => d > 0)
-        .toList();
-    if (days.isEmpty || days.length > 10) return null;
-    return days;
-  }
+  /// 4 档语义标签(系统通知、邮件、短信、触发继承)。
+  static const _dayLabels = ['系统通知(天)', '邮件通知(天)', '短信通知(天)', '触发继承(天)'];
 
-  /// 新增/修改阶梯对话框(名称 + 天数,逗号分隔)。
+  /// 新增/修改阶梯对话框(名称 + 固定 4 档天数输入)。
   Future<void> _editLadder({TriggerLadder? ladder}) async {
     final nameController = TextEditingController(text: ladder?.name ?? '');
-    final daysController = TextEditingController(
-      text: ladder == null ? '' : ladder.days.join(','),
-    );
+    final days = ladder?.days ?? const <int>[];
+    final dayControllers = [
+      for (var i = 0; i < 4; i++)
+        TextEditingController(text: i < days.length ? '${days[i]}' : ''),
+    ];
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(ladder == null ? '新增阶梯' : '修改阶梯'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              maxLength: 20,
-              decoration: const InputDecoration(
-                labelText: '阶梯名称 *',
-                border: OutlineInputBorder(),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                maxLength: 20,
+                decoration: const InputDecoration(
+                  labelText: '阶梯名称 *',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: daysController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: '触发天数(逗号分隔,如 30,60,90)',
-                helperText: '1-10 个正整数,号主连续未登录天数升级序列',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 8),
+              for (var i = 0; i < 4; i++) ...[
+                TextField(
+                  controller: dayControllers[i],
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: _dayLabels[i],
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                if (i < 3) const SizedBox(height: 8),
+              ],
+              const SizedBox(height: 4),
+              const Text(
+                '4 档依次递增:系统通知 < 邮件 < 短信 < 触发继承',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -101,16 +103,28 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
           FilledButton(
             onPressed: () {
               final name = nameController.text.trim();
-              final days = _parseDays(daysController.text);
+              final days = <int>[];
+              for (final c in dayControllers) {
+                final v = int.tryParse(c.text.trim());
+                if (v == null || v <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('需要 4 个依次递增的正整数')),
+                  );
+                  return;
+                }
+                days.add(v);
+              }
+              for (var i = 1; i < 4; i++) {
+                if (days[i] <= days[i - 1]) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('需要 4 个依次递增的正整数')),
+                  );
+                  return;
+                }
+              }
               if (name.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('请输入阶梯名称')),
-                );
-                return;
-              }
-              if (days == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('请输入 1-10 个正整数天数')),
                 );
                 return;
               }
@@ -123,7 +137,9 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
       ),
     );
     nameController.dispose();
-    daysController.dispose();
+    for (final c in dayControllers) {
+      c.dispose();
+    }
     if (result != true) return;
   }
 
@@ -282,7 +298,7 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                           ],
                         ],
                       ),
-                      subtitle: Text('触发天数:${l.daysLabel}'),
+                      subtitle: Text('系统/邮件/短信/继承:${l.days.join('/')} 天'),
                       onLongPress: l.isGlobal || _multiSelect
                           ? null
                           : () => setState(() {

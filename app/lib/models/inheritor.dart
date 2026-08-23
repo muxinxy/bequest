@@ -4,6 +4,7 @@ class Inheritor {
     required this.id,
     required this.name,
     required this.email,
+    this.phone = '',
     this.priority,
     this.createdAt,
     this.assetCount = 0,
@@ -15,6 +16,7 @@ class Inheritor {
         id: json['id']?.toString() ?? '',
         name: json['name']?.toString() ?? '',
         email: json['email']?.toString() ?? '',
+        phone: json['phone']?.toString() ?? '',
         priority: (json['priority'] as num?)?.toInt(),
         createdAt: json['created_at']?.toString(),
         assetCount: (json['asset_count'] as num?)?.toInt() ?? 0,
@@ -25,6 +27,9 @@ class Inheritor {
   final String id;
   final String name;
   final String email;
+
+  /// 手机号(可选;邮箱或手机号至少一个)。
+  final String phone;
   final int? priority;
   final String? createdAt;
 

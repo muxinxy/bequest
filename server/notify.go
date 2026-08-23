@@ -3,13 +3,15 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
+	"time"
 )
 
 // notifyUser is the single dispatch point for user-facing reminders:
 // in-app (reminders table, dedup key as today), email via the user's own
 // SMTP when configured (falling back to system SMTP), and — members only —
-// the SMS/phone stubs below.
+// the SMS channel.
 func notifyUser(db *sql.DB, uid int64, tier, typ, title, body, dedup string) {
 	insertReminder(db, uid, typ, nil, title, body, dedup)
 	var email string
@@ -20,8 +22,9 @@ func notifyUser(db *sql.DB, uid int64, tier, typ, title, body, dedup string) {
 		sendMail(email, title, body)
 	}
 	if tier == "member" {
-		sendSMS("", body) // ponytail: users table has no phone column yet; phone capture is a future member field
-		sendPhone("", body)
+		for _, phone := range userPhones(db, uid) {
+			sendSMS(db, phone, body)
+		}
 	}
 }
 
@@ -55,13 +58,54 @@ func sendCustomForUser(db *sql.DB, uid int64, to, subject, body string) bool {
 	return true
 }
 
-// sendSMS and sendPhone are the reserved member-only channel endpoints.
-// Stubs until a real SMS/phone provider is wired up — they only log, but the
-// dispatch point and its tier gating already exist here.
-func sendSMS(phone, body string) {
-	log.Printf("sms not configured, skipping: %s", body)
+// ---------- 触发阶梯分级通知 ----------
+
+// userEmails 返回通知渠道里的邮箱列表;为空时回退注册邮箱。
+func userEmails(db *sql.DB, uid int64) []string {
+	emails, _ := loadChannels(db, uid)
+	if len(emails) > 0 {
+		return emails
+	}
+	var email string
+	if err := db.QueryRow(`SELECT email FROM users WHERE id = ?`, uid).Scan(&email); err == nil && email != "" {
+		return []string{email}
+	}
+	return nil
 }
 
-func sendPhone(phone, body string) {
-	log.Printf("phone not configured, skipping: %s", body)
+// userPhones 返回通知渠道里的手机号列表(免费用户无手机,会员功能)。
+func userPhones(db *sql.DB, uid int64) []string {
+	_, phones := loadChannels(db, uid)
+	return phones
+}
+
+// notifyEscalation 按已跨过的档位分级通知(阶梯 4 档):
+// 档1(>=d1,<d2)系统通知;档2(>=d2,<d3)+邮件;档3(>=d3,<d4)+短信;
+// 档4(>=d4)触发继承由调用方(processEscalation)处理。
+// 每天一条:dedup key 带日期,当天重复扫描不重发。
+func notifyEscalation(db *sql.DB, uid int64, tier string, daysSince int, ladder []int) {
+	if len(ladder) != 4 {
+		return
+	}
+	title := "长时间未登录提醒"
+	body := fmt.Sprintf("您已 %d 天未登录,资产安全提醒升级。", daysSince)
+	// 系统通知当天已插入则跳过邮件/短信(防刷屏)。
+	if !insertReminder(db, uid, "escalation", nil, title, body,
+		fmt.Sprintf("esc:%d:%s", uid, time.Now().Format("2006-01-02"))) {
+		return
+	}
+	if daysSince < ladder[1] {
+		return // 未到邮件档
+	}
+	for _, to := range userEmails(db, uid) {
+		sendMail(to, title, body)
+	}
+	if daysSince < ladder[2] {
+		return // 未到短信档
+	}
+	if tier == "member" {
+		for _, phone := range userPhones(db, uid) {
+			sendSMS(db, phone, body)
+		}
+	}
 }
