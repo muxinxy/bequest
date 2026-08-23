@@ -27,10 +27,13 @@ type provider struct {
 }
 
 type appConfig struct {
-	SMTPServers    []smtpServer `json:"smtp_servers"`
-	SMSProviders   []provider   `json:"sms_providers"`
-	PhoneProviders []provider   `json:"phone_providers"`
-	FreeAssetQuota int          `json:"free_asset_quota"`
+	SMTPServers         []smtpServer `json:"smtp_servers"`
+	SMSProviders        []provider   `json:"sms_providers"`
+	PhoneProviders      []provider   `json:"phone_providers"`
+	FreeAssetQuota      int          `json:"free_asset_quota"`
+	FreeMonthlyEmails   int          `json:"free_monthly_emails"`
+	MemberMonthlyEmails int          `json:"member_monthly_emails"`
+	MemberMonthlySms    int          `json:"member_monthly_sms"`
 }
 
 var (
@@ -41,6 +44,10 @@ var (
 	// freeAssetQuota is the asset cap for free-tier users; members are
 	// unlimited. Default 50, overridable via config.json free_asset_quota.
 	freeAssetQuota = 50
+	// 通知额度(每月):免费用户系统邮件 / 会员系统邮件 / 会员短信。
+	freeMonthlyEmails   = 10
+	memberMonthlyEmails = 100
+	memberMonthlySms    = 50
 
 	// configFile is overridable in tests to avoid touching the repo.
 	configFile = "config.json"
@@ -79,6 +86,15 @@ func loadConfig() {
 	phoneProviders = cfg.PhoneProviders
 	if cfg.FreeAssetQuota > 0 {
 		freeAssetQuota = cfg.FreeAssetQuota
+	}
+	if cfg.FreeMonthlyEmails > 0 {
+		freeMonthlyEmails = cfg.FreeMonthlyEmails
+	}
+	if cfg.MemberMonthlyEmails > 0 {
+		memberMonthlyEmails = cfg.MemberMonthlyEmails
+	}
+	if cfg.MemberMonthlySms > 0 {
+		memberMonthlySms = cfg.MemberMonthlySms
 	}
 	if _, err := os.Stat(configFile); err == nil {
 		log.Printf("smtp server configured: %d", len(systemServers))

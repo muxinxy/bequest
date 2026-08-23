@@ -650,10 +650,13 @@ func handleAdminGetConfig(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"smtp_servers":     servers,
-		"free_asset_quota": freeAssetQuota,
-		"sms_providers":    maskProviders(smsProviders),
-		"phone_providers":  maskProviders(phoneProviders),
+		"smtp_servers":          servers,
+		"free_asset_quota":      freeAssetQuota,
+		"free_monthly_emails":   freeMonthlyEmails,
+		"member_monthly_emails": memberMonthlyEmails,
+		"member_monthly_sms":    memberMonthlySms,
+		"sms_providers":         maskProviders(smsProviders),
+		"phone_providers":       maskProviders(phoneProviders),
 	})
 }
 
@@ -672,10 +675,13 @@ type providerInput struct {
 }
 
 type adminConfigInput struct {
-	SMTPServers    []smtpServerInput `json:"smtp_servers"`
-	SMSProviders   []providerInput   `json:"sms_providers"`
-	PhoneProviders []providerInput   `json:"phone_providers"`
-	FreeAssetQuota int               `json:"free_asset_quota"`
+	SMTPServers         []smtpServerInput `json:"smtp_servers"`
+	SMSProviders        []providerInput   `json:"sms_providers"`
+	PhoneProviders      []providerInput   `json:"phone_providers"`
+	FreeAssetQuota      int               `json:"free_asset_quota"`
+	FreeMonthlyEmails   int               `json:"free_monthly_emails"`
+	MemberMonthlyEmails int               `json:"member_monthly_emails"`
+	MemberMonthlySms    int               `json:"member_monthly_sms"`
 }
 
 // mergeProviders 按名称合并:留空的 key/secret 保留原值。
@@ -734,17 +740,27 @@ func handleAdminPutConfig(db *sql.DB) http.HandlerFunc {
 		cfg.SMTPServers = servers
 		cfg.SMSProviders = mergeProviders(req.SMSProviders, cfg.SMSProviders)
 		cfg.PhoneProviders = mergeProviders(req.PhoneProviders, cfg.PhoneProviders)
-		if req.FreeAssetQuota > 0 {
-			cfg.FreeAssetQuota = req.FreeAssetQuota
-		}
-		if err := writeConfigFile(cfg); err != nil {
-			log.Printf("admin write config: %v", err)
-			writeError(w, http.StatusInternalServerError, "无法写入 config.json")
-			return
-		}
-		loadConfig() // reload systemServers/freeAssetQuota/providers in memory
-		auditAdmin(db, actor, "admin_config_update", fmt.Sprintf("smtp_servers:%d sms:%d phone:%d quota:%d",
-			len(servers), len(cfg.SMSProviders), len(cfg.PhoneProviders), freeAssetQuota))
+if req.FreeAssetQuota > 0 {
+		cfg.FreeAssetQuota = req.FreeAssetQuota
+	}
+	if req.FreeMonthlyEmails > 0 {
+		cfg.FreeMonthlyEmails = req.FreeMonthlyEmails
+	}
+	if req.MemberMonthlyEmails > 0 {
+		cfg.MemberMonthlyEmails = req.MemberMonthlyEmails
+	}
+	if req.MemberMonthlySms > 0 {
+		cfg.MemberMonthlySms = req.MemberMonthlySms
+	}
+	if err := writeConfigFile(cfg); err != nil {
+		log.Printf("admin write config: %v", err)
+		writeError(w, http.StatusInternalServerError, "无法写入 config.json")
+		return
+	}
+	loadConfig() // reload systemServers/freeAssetQuota/providers in memory
+	auditAdmin(db, actor, "admin_config_update", fmt.Sprintf("smtp_servers:%d sms:%d phone:%d quota:%d emails:%d/%d sms:%d",
+		len(servers), len(cfg.SMSProviders), len(cfg.PhoneProviders), freeAssetQuota,
+		freeMonthlyEmails, memberMonthlyEmails, memberMonthlySms))
 		writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
 	}
 }

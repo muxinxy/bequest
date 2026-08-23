@@ -224,15 +224,15 @@ class _MembershipPageState extends State<MembershipPage> {
               children: [
                 Padding(
                   padding: const EdgeInsets.all(8),
-                  child: Text('权益', style: headerStyle),
+                  child: Align(alignment: Alignment.center, child: Text('权益', style: headerStyle)),
                 ),
                 Padding(
                   padding: const EdgeInsets.all(8),
-                  child: Text('免费', style: headerStyle),
+                  child: Align(alignment: Alignment.center, child: Text('免费', style: headerStyle)),
                 ),
                 Padding(
                   padding: const EdgeInsets.all(8),
-                  child: Text('会员', style: headerStyle),
+                  child: Align(alignment: Alignment.center, child: Text('会员', style: headerStyle)),
                 ),
               ],
             ),

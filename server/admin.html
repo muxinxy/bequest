@@ -132,6 +132,22 @@
       <input id="cfg-quota" class="md" type="number" min="1">
       <span class="muted">免费档最多可创建的资产数;会员不限</span>
     </div>
+    <h3 style="margin:18px 0 12px">通知额度(每月)</h3>
+    <div class="form-row">
+      <label>免费用户邮件</label>
+      <input id="cfg-free-emails" class="md" type="number" min="0">
+      <span class="muted">免费用户每月系统邮件额度</span>
+    </div>
+    <div class="form-row">
+      <label>会员邮件</label>
+      <input id="cfg-member-emails" class="md" type="number" min="0">
+      <span class="muted">会员每月系统邮件额度</span>
+    </div>
+    <div class="form-row">
+      <label>会员短信</label>
+      <input id="cfg-member-sms" class="md" type="number" min="0">
+      <span class="muted">会员每月短信额度</span>
+    </div>
     <div class="form-row" style="margin-top:16px">
       <button class="primary" id="cfg-save">保存配置</button>
     </div>
@@ -433,6 +449,9 @@ function loadConfig() {
       if (!c[kind + '_providers'].length) box.appendChild(providerRow());
     });
     document.getElementById('cfg-quota').value = c.free_asset_quota;
+    document.getElementById('cfg-free-emails').value = c.free_monthly_emails;
+    document.getElementById('cfg-member-emails').value = c.member_monthly_emails;
+    document.getElementById('cfg-member-sms').value = c.member_monthly_sms;
   }).catch(function (e) { toast(e.message, false); });
   load2FA();
 }
@@ -482,7 +501,10 @@ document.getElementById('cfg-save').addEventListener('click', function () {
       smtp_servers: collectRows('smtp-rows'),
       sms_providers: collectProviders('sms-rows'),
       phone_providers: collectProviders('phone-rows'),
-      free_asset_quota: parseInt(document.getElementById('cfg-quota').value, 10) || 0
+      free_asset_quota: parseInt(document.getElementById('cfg-quota').value, 10) || 0,
+      free_monthly_emails: parseInt(document.getElementById('cfg-free-emails').value, 10) || 0,
+      member_monthly_emails: parseInt(document.getElementById('cfg-member-emails').value, 10) || 0,
+      member_monthly_sms: parseInt(document.getElementById('cfg-member-sms').value, 10) || 0
     })
   })
     .then(function () { toast('配置已保存', true); loadConfig(); })

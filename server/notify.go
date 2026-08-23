@@ -11,19 +11,28 @@ import (
 // notifyUser is the single dispatch point for user-facing reminders:
 // in-app (reminders table, dedup key as today), email via the user's own
 // SMTP when configured (falling back to system SMTP), and — members only —
-// the SMS channel.
+// the SMS channel. 邮件/短信走通知渠道列表;系统发送受月度额度限制。
 func notifyUser(db *sql.DB, uid int64, tier, typ, title, body, dedup string) {
 	insertReminder(db, uid, typ, nil, title, body, dedup)
-	var email string
-	if err := db.QueryRow(`SELECT email FROM users WHERE id = ?`, uid).Scan(&email); err != nil {
-		log.Printf("notifyUser: query email: %v", err)
-	}
-	if !sendCustomForUser(db, uid, email, title, body) {
-		sendMail(email, title, body)
+	for _, to := range userEmails(db, uid) {
+		if sendCustomForUser(db, uid, to, title, body) {
+			continue // 用户自定义 SMTP 成功:不计系统额度
+		}
+		if quotaAllowed(db, uid, tier, "email") {
+			sendMail(to, title, body)
+			quotaIncr(db, uid, "email")
+		} else {
+			log.Printf("notifyUser: email quota exceeded for user %d", uid)
+		}
 	}
 	if tier == "member" {
 		for _, phone := range userPhones(db, uid) {
-			sendSMS(db, phone, body)
+			if quotaAllowed(db, uid, tier, "sms") {
+				sendSMS(db, phone, body)
+				quotaIncr(db, uid, "sms")
+			} else {
+				log.Printf("notifyUser: sms quota exceeded for user %d", uid)
+			}
 		}
 	}
 }
@@ -98,14 +107,24 @@ func notifyEscalation(db *sql.DB, uid int64, tier string, daysSince int, ladder 
 		return // 未到邮件档
 	}
 	for _, to := range userEmails(db, uid) {
-		sendMail(to, title, body)
+		if quotaAllowed(db, uid, tier, "email") {
+			sendMail(to, title, body)
+			quotaIncr(db, uid, "email")
+		} else {
+			log.Printf("notifyEscalation: email quota exceeded for user %d", uid)
+		}
 	}
 	if daysSince < ladder[2] {
 		return // 未到短信档
 	}
 	if tier == "member" {
 		for _, phone := range userPhones(db, uid) {
-			sendSMS(db, phone, body)
+			if quotaAllowed(db, uid, tier, "sms") {
+				sendSMS(db, phone, body)
+				quotaIncr(db, uid, "sms")
+			} else {
+				log.Printf("notifyEscalation: sms quota exceeded for user %d", uid)
+			}
 		}
 	}
 }
