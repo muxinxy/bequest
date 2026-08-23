@@ -165,17 +165,18 @@ func handleAdminStats(db *sql.DB) http.HandlerFunc {
 // ---------- users ----------
 
 type adminUser struct {
-	ID             int64  `json:"id"`
-	Username       string `json:"username"`
-	Email          string `json:"email"`
-	Tier           string `json:"tier"`
-	Role           string `json:"role"`
-	Disabled       bool   `json:"disabled"`
-	InheritStage   string `json:"inherit_stage"`
-	LastLoginAt    string `json:"last_login_at"`
-	CreatedAt      string `json:"created_at"`
-	AssetCount     int    `json:"asset_count"`
-	InheritorCount int    `json:"inheritor_count"`
+	ID               int64  `json:"id"`
+	Username         string `json:"username"`
+	Email            string `json:"email"`
+	Tier             string `json:"tier"`
+	MemberExpiresAt  string `json:"member_expires_at"` // 空=永久/非会员
+	Role             string `json:"role"`
+	Disabled         bool   `json:"disabled"`
+	InheritStage     string `json:"inherit_stage"`
+	LastLoginAt      string `json:"last_login_at"`
+	CreatedAt        string `json:"created_at"`
+	AssetCount       int    `json:"asset_count"`
+	InheritorCount   int    `json:"inheritor_count"`
 }
 
 // handleAdminListUsers: GET /api/v1/admin/users?q=&role=&tier=&page=&page_size=
@@ -213,7 +214,7 @@ func handleAdminListUsers(db *sql.DB) http.HandlerFunc {
 		}
 		args = append(args, pageSize, (page-1)*pageSize)
 		rows, err := db.Query(`SELECT u.id, u.username, u.email, u.tier, u.role, u.disabled,
-				u.inherit_stage, u.last_login_at, u.created_at,
+				u.inherit_stage, u.last_login_at, u.created_at, COALESCE(u.member_expires_at, ''),
 				(SELECT COUNT(*) FROM assets a WHERE a.user_id = u.id),
 				(SELECT COUNT(*) FROM inheritors i WHERE i.user_id = u.id)
 			FROM users u WHERE `+cond+` ORDER BY u.id DESC LIMIT ? OFFSET ?`, args...)
@@ -229,7 +230,7 @@ func handleAdminListUsers(db *sql.DB) http.HandlerFunc {
 			var disabled int
 			var lastLogin sql.NullString
 			if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.Tier, &u.Role, &disabled,
-				&u.InheritStage, &lastLogin, &u.CreatedAt, &u.AssetCount, &u.InheritorCount); err != nil {
+				&u.InheritStage, &lastLogin, &u.CreatedAt, &u.MemberExpiresAt, &u.AssetCount, &u.InheritorCount); err != nil {
 				log.Printf("admin scan user: %v", err)
 				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
@@ -256,12 +257,12 @@ func handleAdminGetUser(db *sql.DB) http.HandlerFunc {
 		var disabled int
 		var lastLogin sql.NullString
 		err = db.QueryRow(`SELECT u.id, u.username, u.email, u.tier, u.role, u.disabled,
-				u.inherit_stage, u.last_login_at, u.created_at,
+				u.inherit_stage, u.last_login_at, u.created_at, COALESCE(u.member_expires_at, ''),
 				(SELECT COUNT(*) FROM assets a WHERE a.user_id = u.id),
 				(SELECT COUNT(*) FROM inheritors i WHERE i.user_id = u.id)
 			FROM users u WHERE u.id = ?`, id).
 			Scan(&u.ID, &u.Username, &u.Email, &u.Tier, &u.Role, &disabled,
-				&u.InheritStage, &lastLogin, &u.CreatedAt, &u.AssetCount, &u.InheritorCount)
+				&u.InheritStage, &lastLogin, &u.CreatedAt, &u.MemberExpiresAt, &u.AssetCount, &u.InheritorCount)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "用户不存在")
 			return
