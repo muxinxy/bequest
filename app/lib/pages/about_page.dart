@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../api/api_config.dart';
 import '../logger.dart';
 import '../platform/file_share.dart';
+import '../storage/secure_store.dart';
 
 /// 关于本应用:版本信息、简介、GitHub 链接、日志导出/清空。
 /// 所有插件调用都包 try/catch,插件缺失或失败时回退,不影响页面展示。
@@ -59,7 +61,38 @@ class _AboutPageState extends State<AboutPage> {
     _snack('链接已复制到剪贴板');
   }
 
+  /// 导出日志:优先导出云端全部日志(审计+应用,含 detail)供排查;
+  /// 未登录/断网时回退导出本地调试日志。
   Future<void> _exportLog() async {
+    // 云端全部日志(排查用)。
+    try {
+      final jwt = await SecureStore().readJwt();
+      if (jwt != null && jwt.isNotEmpty) {
+        final api = await ApiConfig.client();
+        final logs = await api.listLogs(jwt, kind: '', month: '', limit: 2000);
+        final now = DateTime.now();
+        String two(int n) => n.toString().padLeft(2, '0');
+        final fname = '日志-${now.year}${two(now.month)}${two(now.day)}'
+            '-${two(now.hour)}${two(now.minute)}.csv';
+        final buf = StringBuffer('类型,时间,操作,详情\n');
+        String esc(String s) => '"${s.replaceAll('"', '""')}"';
+        for (final l in logs) {
+          final kind = '${l['kind'] ?? ''}' == 'audit' ? '审计' : '应用';
+          buf.writeln('$kind,${esc('${l['created_at'] ?? ''}')},'
+              '${esc('${l['action'] ?? ''}')},${esc('${l['detail'] ?? ''}')}');
+        }
+        final ok = await shareTextFile(fname, buf.toString(), '托孤日志导出(CSV)');
+        if (!mounted) return;
+        if (ok) {
+          _snack('已导出 ${logs.length} 条日志');
+        } else {
+          _snack('导出日志失败');
+        }
+        return;
+      }
+    } catch (_) {
+      // 云端拉取失败(断网):回退本地调试日志。
+    }
     try {
       final log = await Logger.instance.readLog();
       if (log.trim().isEmpty) {

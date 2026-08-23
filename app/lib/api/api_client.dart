@@ -443,11 +443,12 @@ class ApiClient {
     String jwt, {
     String kind = '',
     String month = '',
+    int limit = 500,
   }) {
     final q = <String, String>{
       if (kind.isNotEmpty) 'kind': kind,
       if (month.isNotEmpty) 'month': month,
-      'limit': '500',
+      'limit': '$limit',
     };
     return _getList('/api/v1/logs?${Uri(queryParameters: q).query}', jwt);
   }

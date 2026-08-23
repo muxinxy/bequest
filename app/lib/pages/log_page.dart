@@ -88,7 +88,7 @@ class _LogPageState extends State<LogPage> {
       try {
         final api = await _api;
         final months = await api.listLogMonths(jwt);
-        final logs = await api.listLogs(jwt, kind: '', month: _month ?? '');
+        final logs = await api.listLogs(jwt, kind: 'audit', month: _month ?? '');
         if (!mounted) return;
         setState(() {
           _months = months;
@@ -160,7 +160,7 @@ class _LogPageState extends State<LogPage> {
       try {
         final csv = await (await _api).exportLogs(
           jwt,
-          kind: '',
+          kind: 'audit',
           month: _month ?? '',
         );
         final ok = await shareTextFile(_exportFileName, csv, '操作记录导出(CSV)');
@@ -194,8 +194,8 @@ class _LogPageState extends State<LogPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('清除日志'),
-        content: const Text('确定清除全部日志吗?此操作不可恢复。'),
+        title: const Text('清除操作记录'),
+        content: const Text('确定清除操作记录吗?此操作不可恢复。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -312,7 +312,6 @@ class _LogPageState extends State<LogPage> {
                           itemBuilder: (context, index) {
                             final log = _logs[index];
                             final action = log['action']?.toString() ?? '';
-                            final detail = log['detail']?.toString();
                             final createdAt = log['created_at']?.toString();
                             final time = createdAt == null || createdAt.isEmpty
                                 ? ''
@@ -321,21 +320,9 @@ class _LogPageState extends State<LogPage> {
                             return ListTile(
                               leading: _KindTag(isAudit: isAudit),
                               title: Text(action),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (time.isNotEmpty) Text(time),
-                                  if (detail != null && detail.isNotEmpty)
-                                    Text(
-                                      detail,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade600,
-                                        fontFamily: 'monospace',
-                                      ),
-                                    ),
-                                ],
-                              ),
+                              subtitle: time.isEmpty
+                                  ? null
+                                  : Text(time),
                             );
                           },
                         ),
