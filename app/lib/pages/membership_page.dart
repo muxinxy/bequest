@@ -97,7 +97,10 @@ class _MembershipPageState extends State<MembershipPage> {
 
   String _fmtRemaining(Duration d) {
     if (d.isNegative) return '已到期';
-    if (d.inDays >= 1) return '${d.inDays} 天';
+    // 天数向上取整:到期时间点是当天某时刻,30 天兑换码在任意时刻查看都应显示 30 天,
+    // 直到真正跨过到期日才减为 29 天。inDays 向下取整会在兑换后几小时就显示 29 天。
+    final days = (d.inMinutes + 1439) ~/ 1440;
+    if (days >= 1) return '$days 天';
     if (d.inHours >= 1) return '${d.inHours} 小时';
     return '${d.inMinutes} 分钟';
   }
