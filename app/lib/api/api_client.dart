@@ -127,6 +127,11 @@ class ApiClient {
     return _get('/api/v1/me', jwt);
   }
 
+  /// POST /api/v1/membership/redeem,兑换会员码。
+  Future<Map<String, dynamic>> redeemMembership(String jwt, String code) {
+    return _postAuth('/api/v1/membership/redeem', {'code': code}, jwt);
+  }
+
   /// GET /api/v1/categories
   Future<List<Map<String, dynamic>>> listCategories(String jwt) {
     return _getList('/api/v1/categories', jwt);

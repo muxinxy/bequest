@@ -144,12 +144,13 @@ func verifyToken(tokenStr string) (*claims, error) {
 // ---------- handlers ----------
 
 type userJSON struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Tier     string `json:"tier"`
-	Role     string `json:"role"`
-	Disabled bool   `json:"disabled"`
+	ID               int64  `json:"id"`
+	Username         string `json:"username"`
+	Email            string `json:"email"`
+	Tier             string `json:"tier"`
+	Role             string `json:"role"`
+	Disabled         bool   `json:"disabled"`
+	MemberExpiresAt  string `json:"member_expires_at"` // 空串=非会员(或永久会员)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -315,6 +316,12 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "用户名或密码错误")
 			return
 		}
+		// 登录时会员过期自动降级,并取最新 tier/到期时间返回。
+		syncMemberTier(db, id)
+		var memberExpires string
+		if err := db.QueryRow(`SELECT tier, COALESCE(member_expires_at, '') FROM users WHERE id = ?`, id).Scan(&tier, &memberExpires); err != nil {
+			log.Printf("query tier after sync: %v", err)
+		}
 		// Login is the owner's "still alive" proof: reset the dead man's
 		// switch — refresh last_login_at, drop any escalation/inheritance
 		// state, and reverse outstanding inheritance events.
@@ -369,7 +376,7 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"token":       mustSign(id, tokenVersion),
-			"user":        userJSON{ID: id, Username: username, Email: email, Tier: tier, Role: role, Disabled: disabled == 1},
+			"user":        userJSON{ID: id, Username: username, Email: email, Tier: tier, Role: role, Disabled: disabled == 1, MemberExpiresAt: memberExpires},
 			"master_salt": salt.String,
 		})
 	}
@@ -408,8 +415,9 @@ func handleVerify2FA(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "无效的验证码")
 			return
 		}
-		var username, email, tier string
-		if err := db.QueryRow(`SELECT username, email, tier FROM users WHERE id = ?`, c.UserID).Scan(&username, &email, &tier); err != nil {
+		var username, email, tier, memberExpires string
+		syncMemberTier(db, c.UserID)
+		if err := db.QueryRow(`SELECT username, email, tier, COALESCE(member_expires_at, '') FROM users WHERE id = ?`, c.UserID).Scan(&username, &email, &tier, &memberExpires); err != nil {
 			log.Printf("query 2fa user: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
@@ -420,7 +428,7 @@ func handleVerify2FA(db *sql.DB) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"token": mustSign(c.UserID, tokenVersion),
-			"user":  userJSON{ID: c.UserID, Username: username, Email: email, Tier: tier, Role: role},
+			"user":  userJSON{ID: c.UserID, Username: username, Email: email, Tier: tier, Role: role, MemberExpiresAt: memberExpires},
 		})
 	}
 }
@@ -429,10 +437,12 @@ func handleVerify2FA(db *sql.DB) http.HandlerFunc {
 func handleMe(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uid := r.Context().Value(ctxUserIDKey).(int64)
-		var username, email, tier, role string
+		// 会员过期自动降级,再返回最新状态。
+		syncMemberTier(db, uid)
+		var username, email, tier, role, memberExpires string
 		var disabled int
-		err := db.QueryRow(`SELECT username, email, tier, role, disabled FROM users WHERE id = ?`, uid).
-			Scan(&username, &email, &tier, &role, &disabled)
+		err := db.QueryRow(`SELECT username, email, tier, role, disabled, COALESCE(member_expires_at, '') FROM users WHERE id = ?`, uid).
+			Scan(&username, &email, &tier, &role, &disabled, &memberExpires)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusUnauthorized, "用户已不存在")
 			return
@@ -443,7 +453,7 @@ func handleMe(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"user": userJSON{ID: uid, Username: username, Email: email, Tier: tier, Role: role, Disabled: disabled == 1},
+			"user": userJSON{ID: uid, Username: username, Email: email, Tier: tier, Role: role, Disabled: disabled == 1, MemberExpiresAt: memberExpires},
 		})
 	}
 }

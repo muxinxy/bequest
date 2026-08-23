@@ -66,6 +66,7 @@
     <button data-tab="dash" class="active">仪表盘</button>
     <button data-tab="users">用户</button>
     <button data-tab="config">系统配置</button>
+    <button data-tab="codes">兑换码</button>
     <button data-tab="audit">审计日志</button>
   </nav>
   <div class="spacer"></div>
@@ -136,6 +137,20 @@
     </div>
     <h3 style="margin:18px 0 12px">管理后台两步验证 (2FA)</h3>
     <div id="2fa-box" class="muted">加载中...</div>
+  </section>
+
+  <section id="tab-codes" class="card hidden">
+    <h3 style="margin-bottom:12px">生成兑换码</h3>
+    <div class="form-row">
+      <label>数量</label><input id="rc-count" class="sm" type="number" min="1" max="100" value="1">
+      <label>时长(天)</label><input id="rc-days" class="sm" type="number" min="1" max="3650" value="30">
+      <button class="primary" id="rc-gen">生成</button>
+    </div>
+    <div id="rc-result" class="muted" style="margin-bottom:12px"></div>
+    <table>
+      <thead><tr><th>ID</th><th>兑换码</th><th>时长(天)</th><th>使用人</th><th>使用时间</th><th>创建时间</th><th>操作</th></tr></thead>
+      <tbody id="rc-body"></tbody>
+    </table>
   </section>
 
   <section id="tab-audit" class="card hidden">
@@ -266,12 +281,13 @@ function switchTab(name) {
   document.querySelectorAll('#tabs button').forEach(function (b) {
     b.classList.toggle('active', b.dataset.tab === name);
   });
-  ['dash', 'users', 'config', 'audit'].forEach(function (t) {
+  ['dash', 'users', 'config', 'codes', 'audit'].forEach(function (t) {
     document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
   });
   if (name === 'dash') loadStats();
   if (name === 'users') loadUsers();
   if (name === 'config') loadConfig();
+  if (name === 'codes') loadCodes();
   if (name === 'audit') loadAudit();
 }
 document.querySelectorAll('#tabs button').forEach(function (b) {
@@ -510,6 +526,39 @@ function load2FA() {
     }
   }).catch(function (e) { toast(e.message, false); });
 }
+
+/* ---------- 兑换码 ---------- */
+function loadCodes() {
+  api('/admin/redemption-codes').then(function (d) {
+    var rows = d.map(function (c) {
+      var stB = c.used_by ? '<span class="badge off">已用</span>' : '<span class="badge on">未用</span>';
+      var del = c.used_by ? '' : '<button class="danger" data-del="' + c.id + '">删除</button>';
+      return '<tr><td>' + c.id + '</td><td><code>' + esc(c.code) + '</code></td><td>' + c.duration_days + '</td>' +
+        '<td>' + (c.used_by || '') + '</td><td>' + esc(fmtTime(c.used_at)) + '</td><td>' + esc(fmtTime(c.created_at)) + '</td>' +
+        '<td>' + stB + ' ' + del + '</td></tr>';
+    }).join('');
+    document.getElementById('rc-body').innerHTML = rows || '<tr><td colspan="7" class="muted">暂无兑换码</td></tr>';
+  }).catch(function (e) { toast(e.message, false); });
+}
+document.getElementById('rc-gen').addEventListener('click', function () {
+  var count = parseInt(document.getElementById('rc-count').value, 10) || 0;
+  var days = parseInt(document.getElementById('rc-days').value, 10) || 0;
+  api('/admin/redemption-codes', { method: 'POST', body: JSON.stringify({ count: count, duration_days: days }) })
+    .then(function (d) {
+      document.getElementById('rc-result').innerHTML = '已生成 ' + d.codes.length + ' 个:<br>' + d.codes.map(esc).join('<br>');
+      toast('已生成', true);
+      loadCodes();
+    }).catch(function (e) { toast(e.message, false); });
+});
+document.getElementById('rc-body').addEventListener('click', function (e) {
+  var btn = e.target.closest('button[data-del]');
+  if (!btn) return;
+  var id = btn.dataset.del;
+  if (!confirm('确定删除兑换码 #' + id + '?')) return;
+  api('/admin/redemption-codes/' + id, { method: 'DELETE' })
+    .then(function () { toast('已删除', true); loadCodes(); })
+    .catch(function (e) { toast(e.message, false); });
+});
 
 /* ---------- audit ---------- */
 function loadAudit(page) {

@@ -19,6 +19,7 @@ import '../widgets/ladder_dropdown.dart';
 import 'asset_edit_page.dart';
 import 'group_detail_page.dart';
 import 'login_page.dart';
+import 'membership_page.dart';
 import 'recycle_bin_page.dart';
 import 'reminders_page.dart';
 import 'settings_page.dart';
@@ -717,17 +718,21 @@ class _HomePageState extends State<HomePage> {
 
   Widget _tierBadge() {
     final ent = Entitlements.forJwtAndTier(hasJwt: _hasJwt, tier: _tier);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        ent.label,
-        style: TextStyle(
-          fontSize: 12,
-          color: Theme.of(context).colorScheme.onSecondaryContainer,
+    return InkWell(
+      onTap: () => _openPage(const MembershipPage()),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          ent.label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSecondaryContainer,
+          ),
         ),
       ),
     );

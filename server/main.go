@@ -96,6 +96,8 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("PUT /api/v1/me", auth(handleUpdateProfile(db)))
 	mux.Handle("PUT /api/v1/me/password", auth(handleChangePassword(db)))
 	mux.Handle("GET /api/v1/me", auth(handleMe(db)))
+	// 会员兑换码。
+	mux.Handle("POST /api/v1/membership/redeem", auth(handleRedeemMembership(db)))
 	mux.Handle("GET /api/v1/categories", auth(handleListCategories(db)))
 	mux.Handle("POST /api/v1/categories", auth(handleCreateCategory(db)))
 	mux.Handle("DELETE /api/v1/categories/{id}", auth(handleDeleteCategory(db)))
@@ -177,6 +179,10 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("POST /api/v1/admin/sms-providers", admin(handleAdminCreateSMSProvider(db)))
 	mux.Handle("PUT /api/v1/admin/sms-providers/{id}", admin(handleAdminUpdateSMSProvider(db)))
 	mux.Handle("DELETE /api/v1/admin/sms-providers/{id}", admin(handleAdminDeleteSMSProvider(db)))
+	// 兑换码管理。
+	mux.Handle("GET /api/v1/admin/redemption-codes", admin(handleListRedemptionCodes(db)))
+	mux.Handle("POST /api/v1/admin/redemption-codes", admin(handleCreateRedemptionCodes(db)))
+	mux.Handle("DELETE /api/v1/admin/redemption-codes/{id}", admin(handleDeleteRedemptionCode(db)))
 	mux.HandleFunc("GET /api/v1/version", handleVersion)
 	return mux
 }
