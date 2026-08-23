@@ -7,6 +7,7 @@ import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../models/inheritor.dart';
 import '../storage/secure_store.dart';
+import '../utils/validation.dart';
 
 /// 继承人管理:列表、新增、删除。
 class InheritorsPage extends StatefulWidget {
@@ -158,6 +159,18 @@ class _InheritorsPageState extends State<InheritorsPage> {
                   );
                   return;
                 }
+                if (email.isNotEmpty && !isValidEmail(email)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('邮箱格式不正确')),
+                  );
+                  return;
+                }
+                if (phone.isNotEmpty && !isValidPhone(phone)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('手机号格式不正确(5-20 位数字)')),
+                  );
+                  return;
+                }
                 if (code.isEmpty) {
                   ScaffoldMessenger.of(context)
                       .showSnackBar(const SnackBar(content: Text('请输入或生成访问码')));
@@ -306,6 +319,18 @@ class _InheritorsPageState extends State<InheritorsPage> {
                 if (email.isEmpty && phone.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('邮箱或手机号至少填一个')),
+                  );
+                  return;
+                }
+                if (email.isNotEmpty && !isValidEmail(email)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('邮箱格式不正确')),
+                  );
+                  return;
+                }
+                if (phone.isNotEmpty && !isValidPhone(phone)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('手机号格式不正确(5-20 位数字)')),
                   );
                   return;
                 }

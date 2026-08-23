@@ -66,15 +66,15 @@ func ladderOwnedBy(db *sql.DB, ladderID, uid int64) bool {
 	return false
 }
 
-// validateLadderDays:必须恰好 4 个正整数且严格递增
-// (语义:系统通知、邮件、短信、触发继承)。
+// validateLadderDays:必须恰好 4 个严格递增正整数
+// (语义:系统通知、邮件、短信、触发继承),每个 1-3650 天(约 10 年)。
 func validateLadderDays(days []int) string {
-	const msg = "触发阶梯需要 4 个依次递增的正整数(系统通知、邮件、短信、触发继承)"
+	const msg = "触发阶梯需要 4 个依次递增的正整数(系统通知、邮件、短信、触发继承),每个 1-3650 天"
 	if len(days) != 4 {
 		return msg
 	}
 	for i, d := range days {
-		if d <= 0 || (i > 0 && d <= days[i-1]) {
+		if d <= 0 || d > 3650 || (i > 0 && d <= days[i-1]) {
 			return msg
 		}
 	}

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../storage/secure_store.dart';
+import '../utils/validation.dart';
 import 'login_page.dart';
 
 /// 账号信息:修改用户名/邮箱 + 修改登录密码。
@@ -67,6 +68,10 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     final email = _emailController.text.trim();
     if (username.isEmpty || email.isEmpty) {
       _show('用户名和邮箱不能为空');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      _show('邮箱格式不正确');
       return;
     }
     setState(() => _saving = true);

@@ -136,7 +136,7 @@ class _LogPageState extends State<LogPage> {
   String get _exportFileName {
     final now = DateTime.now();
     String two(int n) => n.toString().padLeft(2, '0');
-    return '操作记录-${now.year}${two(now.month)}${two(now.day)}'
+    return 'bequest-操作记录-${now.year}${two(now.month)}${two(now.day)}'
         '-${two(now.hour)}${two(now.minute)}.csv';
   }
 

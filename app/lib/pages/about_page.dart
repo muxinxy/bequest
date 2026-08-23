@@ -72,7 +72,7 @@ class _AboutPageState extends State<AboutPage> {
         final logs = await api.listLogs(jwt, kind: '', month: '', limit: 2000);
         final now = DateTime.now();
         String two(int n) => n.toString().padLeft(2, '0');
-        final fname = '日志-${now.year}${two(now.month)}${two(now.day)}'
+        final fname = 'bequest-日志-${now.year}${two(now.month)}${two(now.day)}'
             '-${two(now.hour)}${two(now.minute)}.csv';
         final buf = StringBuffer('类型,时间,操作,详情\n');
         String esc(String s) => '"${s.replaceAll('"', '""')}"';
@@ -99,7 +99,11 @@ class _AboutPageState extends State<AboutPage> {
         _snack('暂无日志');
         return;
       }
-      final ok = await shareTextFile('bequest_logs.txt', log, '托孤调试日志');
+      final now = DateTime.now();
+      String two(int n) => n.toString().padLeft(2, '0');
+      final fname = 'bequest_logs-${now.year}${two(now.month)}${two(now.day)}'
+          '-${two(now.hour)}${two(now.minute)}.txt';
+      final ok = await shareTextFile(fname, log, '托孤调试日志');
       if (!ok && mounted) _snack('导出日志失败');
     } catch (_) {
       if (!mounted) return;

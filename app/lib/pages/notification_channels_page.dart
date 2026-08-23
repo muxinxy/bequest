@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../storage/secure_store.dart';
+import '../utils/validation.dart';
 
 /// 通知渠道:邮箱/手机号各最多 3 个,整体替换保存。
 /// 手机号为会员专属:免费用户输入框置灰禁用。
@@ -106,13 +107,13 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
         .where((s) => s.isNotEmpty)
         .toList();
     for (final e in emails) {
-      if (!e.contains('@')) {
+      if (!isValidEmail(e)) {
         _show('邮箱格式不正确');
         return;
       }
     }
     for (final p in phones) {
-      if (!RegExp(r'^\d{5,20}$').hasMatch(p)) {
+      if (!isValidPhone(p)) {
         _show('手机号格式不正确(5-20 位数字)');
         return;
       }

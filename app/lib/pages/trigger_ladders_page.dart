@@ -106,9 +106,9 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
               final days = <int>[];
               for (final c in dayControllers) {
                 final v = int.tryParse(c.text.trim());
-                if (v == null || v <= 0) {
+                if (v == null || v <= 0 || v > 3650) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('需要 4 个依次递增的正整数')),
+                    const SnackBar(content: Text('天数需为 1-3650 的正整数')),
                   );
                   return;
                 }
