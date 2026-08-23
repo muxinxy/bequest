@@ -616,3 +616,86 @@ func TestAuditLog(t *testing.T) {
 		t.Fatalf("B audit not isolated: %+v", list)
 	}
 }
+
+// ---------- 8. 资产级继承端到端 ----------
+
+func TestAssetLevelInheritance(t *testing.T) {
+	ts, db := newTestServer(t)
+	token := registerUser(t, ts, "alice")
+	uid := getUID(t, db, "alice")
+	if _, err := db.Exec(`UPDATE users SET master_key_wrapped = ? WHERE id = ?`, []byte("wrapped-key-bytes"), uid); err != nil {
+		t.Fatalf("set master key: %v", err)
+	}
+
+	// 创建资产并设置继承包装密钥 WK(claim 时发放给继承人)
+	wkB64 := base64.StdEncoding.EncodeToString([]byte("asset-wk-bytes"))
+	rr := doReq(t, ts, http.MethodPost, "/api/v1/assets",
+		fmt.Sprintf(`{"name":"保险箱","asset_type":"virtual","encrypted_data":"QUJD","asset_key_wrapped_wk":%q}`, wkB64), token)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create asset: %d body=%s", rr.Code, rr.Body.String())
+	}
+	var assetID int64
+	if err := db.QueryRow(`SELECT id FROM assets WHERE user_id=?`, uid).Scan(&assetID); err != nil {
+		t.Fatalf("get asset id: %v", err)
+	}
+
+	// 创建继承人 bob 并绑定到该资产(全局阶梯)
+	bobID := createInheritor(t, ts, token, "bob", "bob@example.com", "abc12345")
+	rr = doReq(t, ts, http.MethodPost, fmt.Sprintf("/api/v1/assets/%d/inheritors", assetID),
+		fmt.Sprintf(`{"inheritor_id":%d,"ladder_id":null}`, bobID), token)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("bind inheritor: %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// 130 天未登录 -> 触发资产级 pending 事件
+	setLastLogin(t, db, uid, "-130 days")
+	scan(db, time.Now().UTC())
+
+	var eventKey, evStatus string
+	if err := db.QueryRow(`SELECT event_key, status FROM inheritance_events WHERE user_id=? AND asset_id=?`, uid, assetID).
+		Scan(&eventKey, &evStatus); err != nil {
+		t.Fatalf("asset event not created: %v", err)
+	}
+	if evStatus != "pending" || eventKey == "" {
+		t.Fatalf("event status=%q key=%q want pending+non-empty", evStatus, eventKey)
+	}
+
+	// 错误访问码 -> 401
+	body := fmt.Sprintf(`{"event_key":%q,"access_code":"wrongcode"}`, eventKey)
+	if rr := doReq(t, ts, http.MethodPost, "/api/v1/inheritance/claim", body, ""); rr.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong code: %d want 401", rr.Code)
+	}
+	// 正确访问码 -> 200 发放资产 WK
+	body = fmt.Sprintf(`{"event_key":%q,"access_code":"abc12345"}`, eventKey)
+	rr = doReq(t, ts, http.MethodPost, "/api/v1/inheritance/claim", body, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("claim: %d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		AssetKeyWrappedWk string `json:"asset_key_wrapped_wk"`
+		AssetID           int64  `json:"asset_id"`
+		Status            string `json:"status"`
+		ReversableUntil   string `json:"reversable_until"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse claim: %v", err)
+	}
+	if resp.AssetKeyWrappedWk != wkB64 || resp.Status != "claimed" || resp.ReversableUntil == "" || resp.AssetID != assetID {
+		t.Fatalf("unexpected claim response: %+v", resp)
+	}
+
+	// 事件状态已更新为 claimed
+	if err := db.QueryRow(`SELECT status FROM inheritance_events WHERE user_id=? AND asset_id=?`, uid, assetID).
+		Scan(&evStatus); err != nil {
+		t.Fatalf("query event status: %v", err)
+	}
+	if evStatus != "claimed" {
+		t.Fatalf("event status=%q want claimed", evStatus)
+	}
+
+	// 状态接口返回 claimed 事件与 reversable_until(72h 反悔窗口)
+	rr = doReq(t, ts, http.MethodGet, "/api/v1/inheritance/status", "", token)
+	if !strings.Contains(rr.Body.String(), `"status":"claimed"`) || !strings.Contains(rr.Body.String(), `"reversable_until"`) {
+		t.Fatalf("status missing claimed/reversable_until: %s", rr.Body.String())
+	}
+}

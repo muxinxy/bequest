@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -23,6 +24,43 @@ func syncMemberTier(db *sql.DB, uid int64) {
 }
 
 // ---------- 用户兑换 ----------
+
+// ---------- 兑换码防爆破(用户级失败计数) ----------
+// IP 级限流挡不住换 IP 枚举;这里按 user_id 记连续失败次数,
+// 连续 5 次失败后直接 429,兑换成功即清零,记录 5 分钟过期。
+
+type redeemFail struct {
+	count    int
+	lastFail time.Time
+}
+
+var redeemFailures = struct {
+	sync.Mutex
+	m map[int64]*redeemFail
+}{m: map[int64]*redeemFail{}}
+
+// redeemFailRecord 记录一次兑换失败;返回 true 表示应限流(429)。
+func redeemFailRecord(uid int64) bool {
+	redeemFailures.Lock()
+	defer redeemFailures.Unlock()
+	now := time.Now()
+	f, ok := redeemFailures.m[uid]
+	if !ok || now.Sub(f.lastFail) > 5*time.Minute {
+		// 首次失败或记录过期:重置计数
+		redeemFailures.m[uid] = &redeemFail{count: 1, lastFail: now}
+		return false
+	}
+	f.count++
+	f.lastFail = now
+	return f.count >= 5
+}
+
+// redeemFailClear 兑换成功后清除该用户计数。
+func redeemFailClear(uid int64) {
+	redeemFailures.Lock()
+	defer redeemFailures.Unlock()
+	delete(redeemFailures.m, uid)
+}
 
 // handleRedeemMembership: POST /api/v1/membership/redeem {code} -> 200 {tier, member_expires_at}
 // 有效会员(未过期或永久)兑换则叠加时长,否则从当前时间起算。
@@ -46,6 +84,10 @@ func handleRedeemMembership(db *sql.DB) http.HandlerFunc {
 		err := db.QueryRow(`SELECT id, duration_days FROM redemption_codes WHERE code = ? AND used_at IS NULL`, code).
 			Scan(&rcID, &durationDays)
 		if errors.Is(err, sql.ErrNoRows) {
+			if redeemFailRecord(uid) {
+				writeError(w, http.StatusTooManyRequests, "尝试次数过多,请稍后再试")
+				return
+			}
 			writeError(w, http.StatusBadRequest, "兑换码无效或已被使用")
 			return
 		}
@@ -94,6 +136,7 @@ func handleRedeemMembership(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
+		redeemFailClear(uid)
 		logAudit(db, uid, "兑换会员", map[string]any{"code": code})
 		writeJSON(w, http.StatusOK, map[string]any{"tier": "member", "member_expires_at": newExpires})
 	}

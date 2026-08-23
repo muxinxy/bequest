@@ -29,6 +29,15 @@ func accessCodeMatches(storedHash, code string) bool {
 	return subtle.ConstantTimeCompare([]byte(storedHash), []byte(hashAccessCode(code))) == 1
 }
 
+// maskAccessCode 列表展示用掩码:长度>4 显示首尾字符(A***D),短码显示 ****。
+// 明文只在创建/重置继承码时经 fetchInheritor 返回一次,列表不再泄露。
+func maskAccessCode(code string) string {
+	if len(code) <= 4 {
+		return "****"
+	}
+	return code[:1] + "***" + code[len(code)-1:]
+}
+
 // ---------- inheritors ----------
 
 type inheritorJSON struct {
@@ -100,6 +109,7 @@ func handleListInheritors(db *sql.DB) http.HandlerFunc {
 				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
 			}
+			in.AccessCode = maskAccessCode(in.AccessCode)
 			list = append(list, in)
 		}
 		writeJSON(w, http.StatusOK, list)

@@ -117,7 +117,8 @@ func rateLimit(next http.Handler) http.Handler {
 			r.URL.Path == "/api/v1/auth/2fa/verify" ||
 			r.URL.Path == "/api/v1/auth/reset-request" ||
 			r.URL.Path == "/api/v1/auth/reset" ||
-			r.URL.Path == "/api/v1/inheritance/claim"
+			r.URL.Path == "/api/v1/inheritance/claim" ||
+			r.URL.Path == "/api/v1/membership/redeem"
 		allowed := globalLimiter.allow(globalLimiter.api, ip, apiLimit, apiWindow)
 		if isAuth {
 			// 严格限制叠加:登录/注册也计入常规窗口,但独立计数更紧。

@@ -437,7 +437,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
             padding: const EdgeInsets.all(12),
             child: const Text(
               '继承码用于触发继承后领取资产密钥,请线下告知继承人;'
-              '显示"未设置"的继承人(历史数据)可在编辑中生成新的继承码。',
+              '列表仅显示掩码,查看/重置请在编辑中点击"生成"。',
               style: TextStyle(fontSize: 12),
             ),
           ),
@@ -476,7 +476,8 @@ class _InheritorsPageState extends State<InheritorsPage> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
-                                    if (inheritor.accessCode.isNotEmpty)
+                                    if (inheritor.accessCode.isNotEmpty &&
+                                        !inheritor.accessCode.contains('*'))
                                       IconButton(
                                         tooltip: '复制继承码',
                                         visualDensity: VisualDensity.compact,
