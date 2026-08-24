@@ -466,6 +466,11 @@ class ApiClient {
     return _postAuth('/api/v1/reminders/$id/read', const {}, jwt);
   }
 
+  /// POST /api/v1/reminders/read-all
+  Future<Map<String, dynamic>> markAllRemindersRead(String jwt) {
+    return _postAuth('/api/v1/reminders/read-all', const {}, jwt);
+  }
+
   /// GET /api/v1/inheritance/status
   Future<Map<String, dynamic>> getInheritanceStatus(String jwt) {
     return _get('/api/v1/inheritance/status', jwt);

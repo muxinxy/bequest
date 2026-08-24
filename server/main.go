@@ -141,6 +141,7 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("DELETE /api/v1/reminder-templates/{id}", auth(handleDeleteTemplate(db)))
 	mux.Handle("GET /api/v1/reminders", auth(handleListReminders(db)))
 	mux.Handle("POST /api/v1/reminders/{id}/read", auth(handleMarkReminderRead(db)))
+	mux.Handle("POST /api/v1/reminders/read-all", auth(handleMarkAllRemindersRead(db)))
 	// 通知渠道(邮箱/手机号)。
 	mux.Handle("GET /api/v1/notification-channels", auth(handleGetNotificationChannels(db)))
 	mux.Handle("PUT /api/v1/notification-channels", auth(handlePutNotificationChannels(db)))

@@ -20,6 +20,7 @@ class _RemindersPageState extends State<RemindersPage> {
 
   List<Reminder> _reminders = const [];
   bool _loading = true;
+  String? _filter; // null=全部,否则为 type 值
 
   @override
   void initState() {
@@ -104,6 +105,37 @@ class _RemindersPageState extends State<RemindersPage> {
     );
   }
 
+  /// 全部已读:调后端后本地把所有 pending 置为 read。
+  Future<void> _markAllRead() async {
+    try {
+      final jwt = await _store.readJwt();
+      if (jwt == null) throw ApiException('未登录');
+      await (await _api).markAllRemindersRead(jwt);
+      if (!mounted) return;
+      setState(() {
+        _reminders = [
+          for (final r in _reminders)
+            r.isUnread
+                ? Reminder(
+                    id: r.id,
+                    type: r.type,
+                    title: r.title,
+                    body: r.body,
+                    status: 'read',
+                    createdAt: r.createdAt,
+                  )
+                : r,
+        ];
+      });
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已全部标记为已读')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('操作失败,请稍后重试')));
+    }
+  }
+
   static String _typeLabel(String type) => switch (type) {
         'expiry' => '到期提醒',
         'escalation' => '继承升级',
@@ -121,53 +153,104 @@ class _RemindersPageState extends State<RemindersPage> {
   @override
   Widget build(BuildContext context) {
     final unreadCount = _reminders.where((r) => r.isUnread).length;
+    // 基于 _reminders 内存过滤,不重新拉取。
+    final visible = _filter == null
+        ? _reminders
+        : _reminders.where((r) => r.type == _filter).toList(growable: false);
     return Scaffold(
       appBar: AppBar(
         title: Text(unreadCount == 0 ? '提醒' : '提醒($unreadCount)'),
+        actions: [
+          if (unreadCount > 0)
+            TextButton.icon(
+              onPressed: _markAllRead,
+              icon: const Icon(Icons.done_all, size: 18),
+              label: const Text('全部已读'),
+            ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _reminders.isEmpty
               ? const Center(child: Text('暂无提醒'))
-              : ListView.separated(
-                  itemCount: _reminders.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final reminder = _reminders[index];
-                    return ListTile(
-                      leading: Icon(_typeIcon(reminder.type)),
-                      title: Row(
+              : Column(
+                  children: [
+                    // 分类筛选:全部 / 到期提醒 / 继承升级 / 继承事件
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      child: Row(
                         children: [
-                          if (reminder.isUnread) ...[
-                            Container(
-                              width: 8,
-                              height: 8,
-                              margin: const EdgeInsets.only(right: 8),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.error,
-                                shape: BoxShape.circle,
+                          for (final (value, label) in [
+                            (null, '全部'),
+                            ('expiry', '到期提醒'),
+                            ('escalation', '继承升级'),
+                            ('inheritance', '继承事件'),
+                          ])
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: ChoiceChip(
+                                label: Text(label),
+                                selected: _filter == value,
+                                onSelected: (_) =>
+                                    setState(() => _filter = value),
                               ),
                             ),
-                          ],
-                          Expanded(
-                            child: Text(
-                              reminder.title,
-                              style: reminder.isUnread
-                                  ? const TextStyle(fontWeight: FontWeight.bold)
-                                  : null,
-                            ),
-                          ),
                         ],
                       ),
-                      subtitle: Text(
-                        '${_typeLabel(reminder.type)}'
-                        '${reminder.createdAt == null ? '' : ' · ${formatServerTime(reminder.createdAt)}'}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      onTap: () => _openReminder(reminder),
-                    );
-                  },
+                    ),
+                    Expanded(
+                      child: visible.isEmpty
+                          ? const Center(child: Text('该分类暂无提醒'))
+                          : ListView.separated(
+                              itemCount: visible.length,
+                              separatorBuilder: (_, _) =>
+                                  const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final reminder = visible[index];
+                                return ListTile(
+                                  leading: Icon(_typeIcon(reminder.type)),
+                                  title: Row(
+                                    children: [
+                                      if (reminder.isUnread) ...[
+                                        Container(
+                                          width: 8,
+                                          height: 8,
+                                          margin: const EdgeInsets.only(
+                                              right: 8),
+                                          decoration: BoxDecoration(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .error,
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                      ],
+                                      Expanded(
+                                        child: Text(
+                                          reminder.title,
+                                          style: reminder.isUnread
+                                              ? const TextStyle(
+                                                  fontWeight:
+                                                      FontWeight.bold)
+                                              : null,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  subtitle: Text(
+                                    '${_typeLabel(reminder.type)}'
+                                    '${reminder.createdAt == null ? '' : ' · ${formatServerTime(reminder.createdAt)}'}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  onTap: () => _openReminder(reminder),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
                 ),
     );
   }

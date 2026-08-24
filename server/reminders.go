@@ -231,6 +231,22 @@ func handleMarkReminderRead(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// handleMarkAllRemindersRead: POST /api/v1/reminders/read-all -> 200 {"marked":n}
+// 将该用户全部未读提醒标记为已读。
+func handleMarkAllRemindersRead(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		res, err := db.Exec(`UPDATE reminders SET status = 'read'
+			WHERE user_id = ? AND status = 'pending'`, userID(r))
+		if err != nil {
+			log.Printf("mark all reminders read: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		n, _ := res.RowsAffected()
+		writeJSON(w, http.StatusOK, map[string]int64{"marked": n})
+	}
+}
+
 // ---------- audit log ----------
 
 type auditJSON struct {
