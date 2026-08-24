@@ -286,3 +286,42 @@ func jsonContains(s, sub string) bool {
 	}
 	return false
 }
+
+// TestAdminLoginLock:管理员连续 5 次密码错误后锁定(429),正确密码也被拒;
+// 普通用户不启用锁定。
+func TestAdminLoginLock(t *testing.T) {
+	ts, db := newTestServer(t)
+	t.Setenv("ADMIN_USERNAME", "root")
+	t.Setenv("ADMIN_PASSWORD", "adminpass123")
+	ensureAdmin(db)
+
+	// 5 次错误密码 -> 第 5 次后锁定。
+	for i := 0; i < 5; i++ {
+		rr := doReq(t, ts, http.MethodPost, "/api/v1/auth/login",
+			`{"username":"root","password":"wrongpass"}`, "")
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("wrong pass #%d: status=%d want 401", i+1, rr.Code)
+		}
+	}
+	// 锁定后即使密码正确也 429。
+	rr := doReq(t, ts, http.MethodPost, "/api/v1/auth/login",
+		`{"username":"root","password":"adminpass123"}`, "")
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("locked admin login: status=%d want 429 body=%s", rr.Code, rr.Body.String())
+	}
+	// 普通用户不受影响:注册新用户,5 次错误密码后仍可正常登录。
+	token := registerUser(t, ts, "lockuser")
+	_ = token
+	for i := 0; i < 5; i++ {
+		rr := doReq(t, ts, http.MethodPost, "/api/v1/auth/login",
+			`{"username":"lockuser","password":"wrongpass"}`, "")
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("normal user wrong pass #%d: status=%d want 401", i+1, rr.Code)
+		}
+	}
+	rr = doReq(t, ts, http.MethodPost, "/api/v1/auth/login",
+		`{"username":"lockuser","password":"password123"}`, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("normal user login after 5 fails: status=%d want 200 body=%s", rr.Code, rr.Body.String())
+	}
+}

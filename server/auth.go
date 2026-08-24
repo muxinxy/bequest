@@ -307,14 +307,45 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
+		// 管理员账号失败锁定:连续失败 5 次锁定 5 分钟(普通用户不启用)。
+		if role == "admin" {
+			var failCnt int
+			var locked sql.NullString
+			if err := db.QueryRow(`SELECT login_fail_count, locked_until FROM users WHERE id = ?`, id).
+				Scan(&failCnt, &locked); err != nil {
+				log.Printf("query admin lock: %v", err)
+			}
+			if locked.Valid && locked.String != "" && locked.String > time.Now().UTC().Format("2006-01-02 15:04:05") {
+				writeError(w, http.StatusTooManyRequests, "尝试次数过多,账号已锁定,请 5 分钟后再试")
+				return
+			}
+		}
 		if disabled == 1 {
 			writeError(w, http.StatusForbidden, "账号已被禁用")
 			return
 		}
 		ok, err := verifyPassword(hash, req.Password)
 		if err != nil || !ok {
+			// 管理员登录失败计数:5 次锁定 5 分钟。
+			if role == "admin" {
+				if _, uerr := db.Exec(`UPDATE users SET login_fail_count = login_fail_count + 1 WHERE id = ?`, id); uerr != nil {
+					log.Printf("admin login fail count: %v", uerr)
+				}
+				var failCnt int
+				if err := db.QueryRow(`SELECT login_fail_count FROM users WHERE id = ?`, id).Scan(&failCnt); err == nil && failCnt >= 5 {
+					if _, uerr := db.Exec(`UPDATE users SET locked_until = datetime('now', '+5 minutes'), login_fail_count = 0 WHERE id = ?`, id); uerr != nil {
+						log.Printf("admin lock: %v", uerr)
+					}
+				}
+			}
 			writeError(w, http.StatusUnauthorized, "用户名或密码错误")
 			return
+		}
+		// 登录成功:清除锁定与失败计数。
+		if role == "admin" {
+			if _, uerr := db.Exec(`UPDATE users SET login_fail_count = 0, locked_until = NULL WHERE id = ?`, id); uerr != nil {
+				log.Printf("admin unlock: %v", uerr)
+			}
 		}
 		// 登录时会员过期自动降级,并取最新 tier/到期时间返回。
 		syncMemberTier(db, id)
