@@ -148,6 +148,14 @@
       <input id="cfg-member-sms" class="md" type="number" min="0">
       <span class="muted">会员每月短信额度</span>
     </div>
+    <h3 style="margin:18px 0 12px">默认触发阶梯(天)</h3>
+    <div class="form-row">
+      <label>一级/二级</label>
+      <input id="cfg-ladder-1" class="sm" type="number" min="1" max="3650">
+      <span class="muted">,</span>
+      <input id="cfg-ladder-2" class="sm" type="number" min="1" max="3650">
+      <span class="muted">一级:IM+邮件;二级:一级+短信,跨过二级触发继承</span>
+    </div>
     <div class="form-row" style="margin-top:16px">
       <button class="primary" id="cfg-save">保存配置</button>
     </div>
@@ -452,6 +460,9 @@ function loadConfig() {
     document.getElementById('cfg-free-emails').value = c.free_monthly_emails;
     document.getElementById('cfg-member-emails').value = c.member_monthly_emails;
     document.getElementById('cfg-member-sms').value = c.member_monthly_sms;
+    var ld = c.default_ladder_days || [15, 60];
+    document.getElementById('cfg-ladder-1').value = ld[0];
+    document.getElementById('cfg-ladder-2').value = ld[1];
   }).catch(function (e) { toast(e.message, false); });
   load2FA();
 }
@@ -504,7 +515,11 @@ document.getElementById('cfg-save').addEventListener('click', function () {
       free_asset_quota: parseInt(document.getElementById('cfg-quota').value, 10) || 0,
       free_monthly_emails: parseInt(document.getElementById('cfg-free-emails').value, 10) || 0,
       member_monthly_emails: parseInt(document.getElementById('cfg-member-emails').value, 10) || 0,
-      member_monthly_sms: parseInt(document.getElementById('cfg-member-sms').value, 10) || 0
+      member_monthly_sms: parseInt(document.getElementById('cfg-member-sms').value, 10) || 0,
+      default_ladder_days: [
+        parseInt(document.getElementById('cfg-ladder-1').value, 10) || 0,
+        parseInt(document.getElementById('cfg-ladder-2').value, 10) || 0
+      ]
     })
   })
     .then(function () { toast('配置已保存', true); loadConfig(); })

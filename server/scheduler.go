@@ -76,14 +76,22 @@ func processExpiryReminders(db *sql.DB, now time.Time) {
 			daysLeft := int(expDate.Sub(now).Hours() / 24)
 			for _, adv := range expiryAdvances {
 				if !expDate.After(now.AddDate(0, 0, adv)) {
-					title := fmt.Sprintf("资产「%s」即将到期", a.name)
-					body := fmt.Sprintf("您的资产 %s 将于 %s 到期,剩余 %d 天,请及时处理续费或迁移。", a.name, a.exp, daysLeft)
+					title, body := renderTemplate(db, a.uid, "expiry",
+						map[string]string{"name": a.name, "date": a.exp, "days": fmt.Sprint(daysLeft)})
+					if title == "" { // 模板缺失:回退硬编码
+						title = fmt.Sprintf("资产「%s」即将到期", a.name)
+						body = fmt.Sprintf("您的资产 %s 将于 %s 到期,剩余 %d 天,请及时处理续费或迁移。", a.name, a.exp, daysLeft)
+					}
 					notifyUser(db, a.uid, a.tier, "expiry", title, body, fmt.Sprintf("exp:%d:%d", a.id, adv))
 				}
 			}
 		} else {
-			title := fmt.Sprintf("资产「%s」已到期", a.name)
-			body := fmt.Sprintf("您的资产 %s 已于 %s 到期,请及时处理续费或迁移。", a.name, a.exp)
+			title, body := renderTemplate(db, a.uid, "expiry",
+				map[string]string{"name": a.name, "date": a.exp})
+			if title == "" {
+				title = fmt.Sprintf("资产「%s」已到期", a.name)
+				body = fmt.Sprintf("您的资产 %s 已于 %s 到期,请及时处理续费或迁移。", a.name, a.exp)
+			}
 			notifyUser(db, a.uid, a.tier, "expiry", title, body, fmt.Sprintf("exp:%d:past", a.id))
 		}
 	}
@@ -92,14 +100,11 @@ func processExpiryReminders(db *sql.DB, now time.Time) {
 // ---------- escalation & inheritance trigger ----------
 
 // 触发阶梯 2 级:一级 IM+邮件,二级 一级+短信。跨过最后一档触发继承。
-// 免费与会员统一默认 [15, 60]:15 天一级提醒,60 天二级升级并触发继承。
-var escalationTiers = map[string][]int{
-	"free":   {15, 60},
-	"member": {15, 60},
-}
+// 默认 [15, 60]:15 天一级提醒,60 天二级升级并触发继承;管理员可在
+// config.json 配 default_ladder_days 覆盖(见 config.go defaultLadderConfig)。
 
 // userLadderDays 返回该用户全局触发阶梯的 days(JSON 解析);
-// 无全局阶梯时回退 escalationTiers[tier]。
+// 无全局阶梯时回退默认配置 defaultLadderConfig。
 func userLadderDays(db *sql.DB, uid int64, tier string) []int {
 	var days string
 	if err := db.QueryRow(`SELECT days FROM trigger_ladders WHERE user_id = ? AND is_global = 1`, uid).Scan(&days); err == nil {
@@ -108,10 +113,7 @@ func userLadderDays(db *sql.DB, uid int64, tier string) []int {
 			return d
 		}
 	}
-	if th, ok := escalationTiers[tier]; ok {
-		return th
-	}
-	return escalationTiers["free"]
+	return defaultLadderConfig
 }
 
 // processEscalation walks inactive users; the reported level is 1-based
@@ -326,14 +328,20 @@ func createInheritanceEvent(db *sql.DB, uid, inID int64, inEmail, codeHash strin
 		log.Printf("set triggered stage: %v", err)
 	}
 	assetNote := ""
+	assetName := ""
 	if assetID != nil {
 		var name string
 		if err := db.QueryRow(`SELECT name FROM assets WHERE id = ?`, *assetID).Scan(&name); err == nil {
+			assetName = name
 			assetNote = " (资产: " + name + ")"
 		}
 	}
-	insertReminder(db, uid, "inheritance", assetID, "继承交接已触发"+assetNote,
-		"继承交接已触发,事件密钥: "+eventKey, fmt.Sprintf("inherit:%d:%v", uid, assetID))
+	title, body := renderTemplate(db, uid, "inheritance", map[string]string{"name": assetName})
+	if title == "" { // 模板缺失:回退硬编码
+		title = "继承交接已触发" + assetNote
+		body = "继承交接已触发,事件密钥: " + eventKey
+	}
+	insertReminder(db, uid, "inheritance", assetID, title, body, fmt.Sprintf("inherit:%d:%v", uid, assetID))
 	// event_key is written to the audit detail so it stays retrievable in dev
 	// (and emailed to the inheritor when SMTP is configured).
 	if _, err := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'system', 'inheritance_triggered', ?)`,

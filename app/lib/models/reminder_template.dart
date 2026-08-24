@@ -1,4 +1,5 @@
 /// 提醒模板。is_preset=1 为系统模板,只读。
+/// type: expiry(资产到期) | escalation(未登录升级) | inheritance(继承事件)。
 class ReminderTemplate {
   const ReminderTemplate({
     required this.id,
@@ -6,6 +7,7 @@ class ReminderTemplate {
     this.titleTemplate,
     this.bodyTemplate,
     this.isPreset = false,
+    this.type = 'expiry',
     this.createdAt,
   });
 
@@ -16,6 +18,7 @@ class ReminderTemplate {
         titleTemplate: json['title_template']?.toString(),
         bodyTemplate: json['body_template']?.toString(),
         isPreset: json['is_preset'] == 1 || json['is_preset'] == true,
+        type: json['type']?.toString() ?? 'expiry',
         createdAt: json['created_at']?.toString(),
       );
 
@@ -24,5 +27,6 @@ class ReminderTemplate {
   final String? titleTemplate;
   final String? bodyTemplate;
   final bool isPreset;
+  final String type;
   final String? createdAt;
 }

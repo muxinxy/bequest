@@ -25,13 +25,10 @@ type ladderRequest struct {
 	Days []int  `json:"days"`
 }
 
-// defaultLadderDays 返回 tier 默认升级天数的 JSON 数组字符串(用于补建全局阶梯)。
+// defaultLadderDays 返回默认触发阶梯的 JSON 数组字符串(用于补建全局阶梯)。
+// 免费/会员统一用全局默认配置 defaultLadderConfig。
 func defaultLadderDays(tier string) string {
-	days, ok := escalationTiers[tier]
-	if !ok {
-		days = escalationTiers["free"]
-	}
-	b, _ := json.Marshal(days)
+	b, _ := json.Marshal(defaultLadderConfig)
 	return string(b)
 }
 

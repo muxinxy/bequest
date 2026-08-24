@@ -34,6 +34,7 @@ type appConfig struct {
 	FreeMonthlyEmails   int          `json:"free_monthly_emails"`
 	MemberMonthlyEmails int          `json:"member_monthly_emails"`
 	MemberMonthlySms    int          `json:"member_monthly_sms"`
+	DefaultLadderDays   []int        `json:"default_ladder_days"`
 }
 
 var (
@@ -48,6 +49,10 @@ var (
 	freeMonthlyEmails   = 10
 	memberMonthlyEmails = 100
 	memberMonthlySms    = 50
+
+	// defaultLadderConfig 是全局默认触发阶梯(2 级递增);
+	// 管理员可在 config.json 配 default_ladder_days 覆盖。
+	defaultLadderConfig = []int{15, 60}
 
 	// configFile is overridable in tests to avoid touching the repo.
 	configFile = "config.json"
@@ -95,6 +100,10 @@ func loadConfig() {
 	}
 	if cfg.MemberMonthlySms > 0 {
 		memberMonthlySms = cfg.MemberMonthlySms
+	}
+	// 默认触发阶梯:配置了 2 个递增正整数才覆盖全局。
+	if len(cfg.DefaultLadderDays) == 2 && cfg.DefaultLadderDays[0] > 0 && cfg.DefaultLadderDays[1] > cfg.DefaultLadderDays[0] {
+		defaultLadderConfig = cfg.DefaultLadderDays
 	}
 	if _, err := os.Stat(configFile); err == nil {
 		log.Printf("smtp server configured: %d", len(systemServers))

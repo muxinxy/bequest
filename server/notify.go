@@ -95,8 +95,11 @@ func notifyEscalation(db *sql.DB, uid int64, tier string, daysSince int, ladder 
 	if len(ladder) != 2 {
 		return
 	}
-	title := "长时间未登录提醒"
-	body := fmt.Sprintf("您已 %d 天未登录,资产安全提醒升级。", daysSince)
+	title, body := renderTemplate(db, uid, "escalation", map[string]string{"days": fmt.Sprint(daysSince)})
+	if title == "" { // 模板缺失:回退硬编码
+		title = "长时间未登录提醒"
+		body = fmt.Sprintf("您已 %d 天未登录,资产安全提醒升级。", daysSince)
+	}
 	// 系统通知当天已插入则跳过邮件/短信/IM(防刷屏)。
 	if !insertReminder(db, uid, "escalation", nil, title, body,
 		fmt.Sprintf("esc:%d:%s", uid, time.Now().Format("2006-01-02"))) {

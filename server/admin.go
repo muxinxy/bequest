@@ -655,6 +655,7 @@ func handleAdminGetConfig(w http.ResponseWriter, r *http.Request) {
 		"free_monthly_emails":   freeMonthlyEmails,
 		"member_monthly_emails": memberMonthlyEmails,
 		"member_monthly_sms":    memberMonthlySms,
+		"default_ladder_days":   defaultLadderConfig,
 		"sms_providers":         maskProviders(smsProviders),
 		"phone_providers":       maskProviders(phoneProviders),
 	})
@@ -682,6 +683,7 @@ type adminConfigInput struct {
 	FreeMonthlyEmails   int               `json:"free_monthly_emails"`
 	MemberMonthlyEmails int               `json:"member_monthly_emails"`
 	MemberMonthlySms    int               `json:"member_monthly_sms"`
+	DefaultLadderDays   []int             `json:"default_ladder_days"`
 }
 
 // mergeProviders 按名称合并:留空的 key/secret 保留原值。
@@ -752,15 +754,22 @@ if req.FreeAssetQuota > 0 {
 	if req.MemberMonthlySms > 0 {
 		cfg.MemberMonthlySms = req.MemberMonthlySms
 	}
+	if len(req.DefaultLadderDays) > 0 {
+		if msg := validateLadderDays(req.DefaultLadderDays); msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+		cfg.DefaultLadderDays = req.DefaultLadderDays
+	}
 	if err := writeConfigFile(cfg); err != nil {
 		log.Printf("admin write config: %v", err)
 		writeError(w, http.StatusInternalServerError, "无法写入 config.json")
 		return
 	}
 	loadConfig() // reload systemServers/freeAssetQuota/providers in memory
-	auditAdmin(db, actor, "admin_config_update", fmt.Sprintf("smtp_servers:%d sms:%d phone:%d quota:%d emails:%d/%d sms:%d",
+	auditAdmin(db, actor, "admin_config_update", fmt.Sprintf("smtp_servers:%d sms:%d phone:%d quota:%d emails:%d/%d sms:%d ladder:%v",
 		len(servers), len(cfg.SMSProviders), len(cfg.PhoneProviders), freeAssetQuota,
-		freeMonthlyEmails, memberMonthlyEmails, memberMonthlySms))
+		freeMonthlyEmails, memberMonthlyEmails, memberMonthlySms, defaultLadderConfig))
 		writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
 	}
 }

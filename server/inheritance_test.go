@@ -147,8 +147,13 @@ func TestInheritorsCRUD(t *testing.T) {
 // ---------- 2. reminder templates CRUD ----------
 
 func TestTemplatesCRUD(t *testing.T) {
-	ts, _ := newTestServer(t)
+	ts, db := newTestServer(t)
 	token := registerUser(t, ts, "alice")
+	uid := getUID(t, db, "alice")
+	// 自定义模板为会员功能:先升级为会员。
+	if _, err := db.Exec(`UPDATE users SET tier = 'member' WHERE id = ?`, uid); err != nil {
+		t.Fatalf("set tier member: %v", err)
+	}
 
 	// system defaults seeded by migration 002
 	rr := doReq(t, ts, http.MethodGet, "/api/v1/reminder-templates", "", token)
@@ -364,7 +369,7 @@ func TestSchedulerExpiry(t *testing.T) {
 	if err := db.QueryRow(`SELECT body FROM reminders WHERE user_id=? AND dedup_key=?`, uid, fmt.Sprintf("exp:%d:past", idPast)).Scan(&pastBody); err != nil {
 		t.Fatalf("query past body: %v", err)
 	}
-	if !strings.Contains(pastBody, "旧卡") || !strings.Contains(pastBody, "已于") {
+	if !strings.Contains(pastBody, "旧卡") || !strings.Contains(pastBody, "到期") {
 		t.Fatalf("unexpected expired body: %q", pastBody)
 	}
 
