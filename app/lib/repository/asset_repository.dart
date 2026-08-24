@@ -9,6 +9,14 @@ abstract class AssetRepository {
   // categoryId 为分组 id(字符串,null = 未分类);云端实现在内部转 int64。
   Future<Map<String, dynamic>> moveAssets(List<String> ids, String? categoryId);
   Future<List<Map<String, dynamic>>> listAssets(); // metadata only
+  /// 分页拉取资产(云端按分组分页;本地/离线忽略分页参数,全量返回)。
+  /// categoryId: 分组 id;'0'/'-1' = 未分组;null = 全部。
+  /// 返回 (items, total)。
+  Future<(List<Map<String, dynamic>>, int)> listAssetsPaged({
+    String? categoryId,
+    int limit = 50,
+    int offset = 0,
+  });
   Future<Map<String, dynamic>> getAsset(String id); // incl encrypted_data
   Future<Map<String, dynamic>> createAsset(Map<String, dynamic> body);
   Future<Map<String, dynamic>> updateAsset(String id, Map<String, dynamic> body);
@@ -34,4 +42,20 @@ abstract class AssetRepository {
   // 分组绑定继承预览:经该分组继承的具体资产列表(响应形状 {assets:[...]})。
   Future<Map<String, dynamic>> listCategoryInheritorAssets(
       String categoryId, String iid);
+}
+
+/// 按分组过滤资产列表(本地/离线共用;categoryId '0'/'-1' = 未分组)。
+List<Map<String, dynamic>> filterAssetsByCategory(
+  List<Map<String, dynamic>> assets,
+  String? categoryId,
+) {
+  if (categoryId == null || categoryId.isEmpty) return assets;
+  final uncategorized = categoryId == '0' || categoryId == '-1';
+  return assets
+      .where((a) {
+        final cid = a['category_id']?.toString();
+        if (uncategorized) return cid == null || cid.isEmpty;
+        return cid == categoryId;
+      })
+      .toList();
 }

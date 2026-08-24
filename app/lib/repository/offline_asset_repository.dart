@@ -42,6 +42,17 @@ class OfflineAssetRepository implements AssetRepository {
           .whereType<Map<String, dynamic>>()
           .toList();
 
+  @override
+  Future<(List<Map<String, dynamic>>, int)> listAssetsPaged({
+    String? categoryId,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    // 离线数据量小:忽略分页参数,全量拉取后按分组过滤。
+    final items = filterAssetsByCategory(await listAssets(), categoryId);
+    return (items, items.length);
+  }
+
   /// 缓存的继承人列表(含 access_code/计数),断网可查看。
   Future<List<Map<String, dynamic>>> listInheritors() async =>
       ((await _load())['inheritors'] as List? ?? const [])

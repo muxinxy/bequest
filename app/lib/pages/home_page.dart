@@ -378,22 +378,30 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 分组列表:(id, 名称, 资产数)。资产数按当前资产列表本地统计
-  /// (云端/本地/离线一致),未分组 = category_id 为空的资产数。
+  /// 分组列表:(id, 名称, 资产数)。云端分组计数用服务端 asset_count
+  /// (后端已统计,免全量资产);本地/离线无该字段,仍按资产列表统计。
+  /// 未分组无对应 category,始终从资产列表统计。
   /// 支持搜索(分组名)与排序(名称/数量/创建时间),未分组固定排最后。
   List<(String, String, int)> get _groups {
+    final useServerCount = !_isLocal && !_offlineMode;
     final counts = <String, int>{};
     var uncategorized = 0;
     for (final a in _assets) {
       final cid = a.categoryId;
       if (cid == null || cid.isEmpty) {
         uncategorized++;
-      } else {
+      } else if (!useServerCount) {
         counts[cid] = (counts[cid] ?? 0) + 1;
       }
     }
     final groups = <(String, String, int, String?)>[
-      for (final c in _categories) (c.id, c.name, counts[c.id] ?? 0, c.createdAt),
+      for (final c in _categories)
+        (
+          c.id,
+          c.name,
+          useServerCount ? c.assetCount : (counts[c.id] ?? 0),
+          c.createdAt,
+        ),
       ('', '未分组', uncategorized, null),
     ];
     final query = _search.trim().toLowerCase();

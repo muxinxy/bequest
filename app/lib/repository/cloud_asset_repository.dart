@@ -56,6 +56,19 @@ class CloudAssetRepository implements AssetRepository {
   Future<List<Map<String, dynamic>>> listAssets() => _api.listAssets(jwt);
 
   @override
+  Future<(List<Map<String, dynamic>>, int)> listAssetsPaged({
+    String? categoryId,
+    int limit = 50,
+    int offset = 0,
+  }) =>
+      _api.listAssetsPaged(
+        jwt,
+        categoryId: int.tryParse(categoryId ?? ''),
+        limit: limit,
+        offset: offset,
+      );
+
+  @override
   Future<Map<String, dynamic>> getAsset(String id) => _api.getAsset(jwt, id);
 
   @override

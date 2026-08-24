@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -179,37 +180,107 @@ func fetchAsset(db *sql.DB, id, uid int64) (*assetJSON, error) {
 	return &a, nil
 }
 
-// handleListAssets: GET /api/v1/assets -> 200 metadata only (排除回收站)
+// handleListAssets: GET /api/v1/assets -> 200 metadata only (排除回收站)。
+// 无任何查询参数时返回数组(兼容旧前端/离线缓存);带 category_id/limit/offset
+// 任一参数时返回分页对象 {"items":[...], "total":n}(数组元素结构不变)。
 func handleListAssets(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rows, err := db.Query(`SELECT id, name, asset_type, category_id, expiry_date, status, updated_at
-			FROM assets WHERE user_id = ? AND deleted_at IS NULL ORDER BY id`, userID(r))
-		if err != nil {
-			log.Printf("list assets: %v", err)
-			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+		q := r.URL.Query()
+		// 无参 -> 旧行为:全量数组
+		if len(q) == 0 {
+			writeJSON(w, http.StatusOK, listAssets(db, userID(r), "", 0, 0))
 			return
 		}
-		defer rows.Close()
-		list := []assetListJSON{}
-		for rows.Next() {
-			var a assetListJSON
-			var catID sql.NullInt64
-			var exp sql.NullString
-			if err := rows.Scan(&a.ID, &a.Name, &a.AssetType, &catID, &exp, &a.Status, &a.UpdatedAt); err != nil {
-				log.Printf("scan asset: %v", err)
-				writeError(w, http.StatusInternalServerError, "服务器内部错误")
+		// 有参 -> 分页对象
+		limit := 50
+		if v := q.Get("limit"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 1 {
+				writeError(w, http.StatusBadRequest, "无效的 limit")
 				return
 			}
-			if catID.Valid {
-				a.CategoryID = &catID.Int64
+			if n > 200 {
+				n = 200
 			}
-			if exp.Valid {
-				a.ExpiryDate = &exp.String
-			}
-			list = append(list, a)
+			limit = n
 		}
-		writeJSON(w, http.StatusOK, list)
+		offset := 0
+		if v := q.Get("offset"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				writeError(w, http.StatusBadRequest, "无效的 offset")
+				return
+			}
+			offset = n
+		}
+		cat := q.Get("category_id")
+		items := listAssets(db, userID(r), cat, limit, offset)
+		total := countAssets(db, userID(r), cat)
+		writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
 	}
+}
+
+// listAssets 查询资产列表;cat 为空=全部,否则过滤该分组(cat=="0" 或 "-1" 表示未分组)。
+func listAssets(db *sql.DB, uid int64, cat string, limit, offset int) []assetListJSON {
+	where := "user_id = ? AND deleted_at IS NULL"
+	args := []any{uid}
+	if cat != "" {
+		if cat == "0" || cat == "-1" {
+			where += " AND category_id IS NULL"
+		} else {
+			where += " AND category_id = ?"
+			args = append(args, cat)
+		}
+	}
+	query := `SELECT id, name, asset_type, category_id, expiry_date, status, updated_at
+		FROM assets WHERE ` + where + ` ORDER BY id`
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+	}
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		log.Printf("list assets: %v", err)
+		return nil
+	}
+	defer rows.Close()
+	list := []assetListJSON{}
+	for rows.Next() {
+		var a assetListJSON
+		var catID sql.NullInt64
+		var exp sql.NullString
+		if err := rows.Scan(&a.ID, &a.Name, &a.AssetType, &catID, &exp, &a.Status, &a.UpdatedAt); err != nil {
+			log.Printf("scan asset: %v", err)
+			return nil
+		}
+		if catID.Valid {
+			a.CategoryID = &catID.Int64
+		}
+		if exp.Valid {
+			a.ExpiryDate = &exp.String
+		}
+		list = append(list, a)
+	}
+	return list
+}
+
+// countAssets 统计筛选条件下的资产总数(不含 limit/offset)。
+func countAssets(db *sql.DB, uid int64, cat string) int {
+	where := "user_id = ? AND deleted_at IS NULL"
+	args := []any{uid}
+	if cat != "" {
+		if cat == "0" || cat == "-1" {
+			where += " AND category_id IS NULL"
+		} else {
+			where += " AND category_id = ?"
+			args = append(args, cat)
+		}
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM assets WHERE `+where, args...).Scan(&n); err != nil {
+		log.Printf("count assets: %v", err)
+		return 0
+	}
+	return n
 }
 
 // handleGetAsset: GET /api/v1/assets/{id} -> 200 full (encrypted_data base64)

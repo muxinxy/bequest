@@ -37,9 +37,17 @@ enum _AssetSort { name, updated, status }
 
 class _GroupDetailPageState extends State<GroupDetailPage> {
   final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
+
+  /// 分页大小(云端按分组分页;本地/离线忽略分页参数,全量返回)。
+  static const _pageSize = 200;
 
   List<Asset> _assets = const [];
   List<Category> _categories = const [];
+
+  /// 服务端统计的总数(懒加载判断用)。
+  int _total = 0;
+  bool _loadingMore = false;
 
   /// assetId → 继承人名列表(云端逐资产拉取;本地/离线为空)。
   Map<String, List<String>> _inheritors = const {};
@@ -80,49 +88,48 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
   void initState() {
     super.initState();
     _groupName = widget.category?.name ?? '未分组';
+    _scrollController.addListener(_onScroll);
     _load();
   }
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
+  /// 滚动接近底部时加载下一页(搜索时不做:搜索基于已加载列表)。
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      _loadMore();
+    }
+  }
+
+  bool get _hasMore => _assets.length < _total;
+
   Future<void> _load() async {
     try {
-      final all = (await widget.repository.listAssets())
-          .map(Asset.fromJson)
-          .toList(growable: false);
-      final inGroup = all
-          .where((a) {
-            final cid = a.categoryId;
-            if (_groupId.isEmpty) return cid == null || cid.isEmpty;
-            return cid == _groupId;
-          })
-          .toList(growable: false);
+      // 云端按分组分页拉取;本地/离线忽略分页参数,全量返回。
+      final (items, total) = await widget.repository.listAssetsPaged(
+        categoryId: _groupId.isEmpty ? '0' : _groupId,
+        limit: _pageSize,
+        offset: 0,
+      );
+      final inGroup = items.map(Asset.fromJson).toList(growable: false);
       final categories = (await widget.repository.listCategories())
           .map(Category.fromJson)
           .toList(growable: false);
-      // 并行拉取各资产继承人(仅云端有数据;本地/离线返回空)。
-      final inheritors = <String, List<String>>{};
-      await Future.wait(inGroup.map((a) async {
-        try {
-          final names = (await widget.repository.listAssetInheritors(a.id))
-              .map((m) => '${m['inheritor_name'] ?? ''}')
-              .where((n) => n.isNotEmpty)
-              .toList();
-          if (names.isNotEmpty) inheritors[a.id] = names;
-        } catch (_) {
-          // 单资产继承人拉取失败不影响列表。
-        }
-      }));
+      final inheritors = await _fetchInheritors(inGroup);
       if (!mounted) return;
       setState(() {
         _assets = inGroup;
+        _total = total;
         _categories = categories;
         _inheritors = inheritors;
         _loading = false;
+        _loadingMore = false;
       });
     } catch (_) {
       if (!mounted) return;
@@ -134,6 +141,48 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
         ),
       );
       Navigator.of(context).pop();
+    }
+  }
+
+  /// 并行拉取各资产继承人(仅云端有数据;本地/离线返回空)。
+  Future<Map<String, List<String>>> _fetchInheritors(List<Asset> assets) async {
+    final inheritors = <String, List<String>>{};
+    await Future.wait(assets.map((a) async {
+      try {
+        final names = (await widget.repository.listAssetInheritors(a.id))
+            .map((m) => '${m['inheritor_name'] ?? ''}')
+            .where((n) => n.isNotEmpty)
+            .toList();
+        if (names.isNotEmpty) inheritors[a.id] = names;
+      } catch (_) {
+        // 单资产继承人拉取失败不影响列表。
+      }
+    }));
+    return inheritors;
+  }
+
+  /// 懒加载下一页:offset 按已加载条数推进,追加到 _assets。
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore || _search.isNotEmpty) return;
+    _loadingMore = true;
+    try {
+      final (items, total) = await widget.repository.listAssetsPaged(
+        categoryId: _groupId.isEmpty ? '0' : _groupId,
+        limit: _pageSize,
+        offset: _assets.length,
+      );
+      final more = items.map(Asset.fromJson).toList(growable: false);
+      final inheritors = await _fetchInheritors(more);
+      if (!mounted) return;
+      setState(() {
+        _assets = [..._assets, ...more];
+        _total = total;
+        _inheritors = {..._inheritors, ...inheritors};
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingMore = false);
     }
   }
 
@@ -621,11 +670,23 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                       : RefreshIndicator(
                           onRefresh: _load,
                           child: ListView.builder(
+                            controller: _scrollController,
                             physics: const AlwaysScrollableScrollPhysics(),
                             padding: const EdgeInsets.only(bottom: 88),
-                            itemCount: _visibleAssets.length,
-                            itemBuilder: (context, index) =>
-                                _assetCard(_visibleAssets[index]),
+                            itemCount: _visibleAssets.length +
+                                (_hasMore && _search.isEmpty ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (index >= _visibleAssets.length) {
+                                // 底部加载中指示(仅未搜索时显示)。
+                                return const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                );
+                              }
+                              return _assetCard(_visibleAssets[index]);
+                            },
                           ),
                         ),
                 ),

@@ -219,6 +219,40 @@ class ApiClient {
     return _getList('/api/v1/assets', jwt);
   }
 
+  /// GET /api/v1/assets 分页版:带查询参数返回 {items, total}。
+  /// categoryId: 分组 id;0/-1 = 未分组;null = 全部。
+  /// 兼容旧响应(无参数返回数组)时按数组长度计 total。
+  Future<(List<Map<String, dynamic>>, int)> listAssetsPaged(
+    String jwt, {
+    int? categoryId,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final q = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      if (categoryId != null) 'category_id': '$categoryId',
+    };
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/v1/assets?${Uri(queryParameters: q).query}'),
+      headers: _authHeaders(jwt),
+    );
+    _ensureSuccess(response);
+    final dynamic decoded =
+        response.body.isEmpty ? null : jsonDecode(response.body);
+    if (decoded is List) {
+      final items = decoded.whereType<Map<String, dynamic>>().toList();
+      return (items, items.length);
+    }
+    final map =
+        decoded is Map<String, dynamic> ? decoded : const <String, dynamic>{};
+    final items = (map['items'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    final total = (map['total'] as num?)?.toInt() ?? items.length;
+    return (items, total);
+  }
+
   /// GET /api/v1/assets/{id},包含 encrypted_data。
   Future<Map<String, dynamic>> getAsset(String jwt, String id) {
     return _get('/api/v1/assets/$id', jwt);

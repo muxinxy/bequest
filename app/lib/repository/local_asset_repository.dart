@@ -138,6 +138,17 @@ class LocalAssetRepository implements AssetRepository {
       _asMaps((await _load())['assets']);
 
   @override
+  Future<(List<Map<String, dynamic>>, int)> listAssetsPaged({
+    String? categoryId,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    // 本地数据量小:忽略分页参数,全量拉取后按分组过滤。
+    final items = filterAssetsByCategory(await listAssets(), categoryId);
+    return (items, items.length);
+  }
+
+  @override
   Future<Map<String, dynamic>> getAsset(String id) async {
     for (final asset in _asMaps((await _load())['assets'])) {
       if ('${asset['id']}' == id) return asset;
