@@ -15,9 +15,7 @@ import 'change_master_password_page.dart';
 import 'excel_export_page.dart';
 import 'export_page.dart';
 import 'import_page.dart';
-import 'inheritance_preview_page.dart';
-import 'inheritance_status_page.dart';
-import 'inheritor_assets_page.dart';
+import 'inheritance_page.dart';
 import 'inheritors_page.dart';
 import 'log_page.dart';
 import 'notification_channels_page.dart';
@@ -42,50 +40,8 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final _store = SecureStore();
 
-  /// 全局继承开关(仅云端模式有意义;本地模式无继承)。
-  bool _inheritanceEnabled = true;
-  bool _hasJwt = false;
-
   /// 本地模式:需登录的功能(提醒模板/继承人/继承状态等)置灰。
   bool get _isLocal => widget.repository is LocalAssetRepository;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadToggle();
-  }
-
-  Future<void> _loadToggle() async {
-    try {
-      final jwt = await _store.readJwt();
-      if (jwt == null || jwt.isEmpty) return;
-      final api = await ApiConfig.client();
-      final res = await api.getInheritanceToggle(jwt);
-      if (mounted) {
-        setState(() {
-          _hasJwt = true;
-          _inheritanceEnabled = res['enabled'] == true;
-        });
-      }
-    } catch (_) {
-      // 未登录/网络失败:保持默认。
-    }
-  }
-
-  Future<void> _toggleInheritance(bool value) async {
-    setState(() => _inheritanceEnabled = value);
-    try {
-      final jwt = await _store.readJwt();
-      if (jwt == null) return;
-      await (await ApiConfig.client()).putInheritanceToggle(jwt, value);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _inheritanceEnabled = !value);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('开关保存失败,请检查网络后重试')));
-    }
-  }
 
   Future<void> _exportFlow(BuildContext context) async {
     final assets = await widget.repository.listAssets().then(
@@ -262,12 +218,6 @@ class _SettingsPageState extends State<SettingsPage> {
             enabled: !_isLocal,
           ),
           _entry(
-            Icons.people_outline,
-            '继承人',
-            () => _push(context, const InheritorsPage()),
-            enabled: !_isLocal,
-          ),
-          _entry(
             Icons.format_list_numbered_outlined,
             '触发阶梯',
             () => _push(context, const TriggerLaddersPage()),
@@ -275,31 +225,14 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           _entry(
             Icons.flag_outlined,
-            '继承状态',
-            () => _push(context, const InheritanceStatusPage()),
+            '继承',
+            () => _push(context, const InheritancePage()),
             enabled: !_isLocal,
           ),
           _entry(
-            Icons.visibility_outlined,
-            '继承预览',
-            () => _push(context, const InheritancePreviewPage()),
-            enabled: !_isLocal,
-          ),
-          // 全局继承开关:一键开启/关闭继承功能(关闭后不再升级提醒/触发交接)。
-          SwitchListTile(
-            secondary: const Icon(Icons.power_settings_new),
-            title: const Text('继承开关'),
-            subtitle: Text(
-              _hasJwt ? '关闭后不触发继承交接' : '仅登录后可用',
-              style: const TextStyle(fontSize: 12),
-            ),
-            value: _inheritanceEnabled,
-            onChanged: _hasJwt ? _toggleInheritance : null,
-          ),
-          _entry(
-            Icons.people_alt_outlined,
-            '继承人绑定资产',
-            () => _push(context, InheritorAssetsPage(repository: widget.repository)),
+            Icons.people_outline,
+            '继承人',
+            () => _push(context, InheritorsPage(repository: widget.repository)),
             enabled: !_isLocal,
           ),
           _section(context, '账户与安全'),

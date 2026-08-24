@@ -481,6 +481,20 @@ class ApiClient {
     return _get('/api/v1/inheritance/preview', jwt);
   }
 
+  /// GET /api/v1/inheritance/default-inheritor:默认继承人(inheritor_id 可为 null)。
+  Future<Map<String, dynamic>> getDefaultInheritor(String jwt) {
+    return _get('/api/v1/inheritance/default-inheritor', jwt);
+  }
+
+  /// PUT /api/v1/inheritance/default-inheritor {inheritor_id: int?}:设置默认继承人(null=按第一顺位)。
+  Future<Map<String, dynamic>> putDefaultInheritor(String jwt, int? inheritorId) {
+    return _put(
+      '/api/v1/inheritance/default-inheritor',
+      {'inheritor_id': inheritorId},
+      jwt,
+    );
+  }
+
   /// GET /api/v1/notification-usage:本月通知用量(邮件/短信已用与额度)。
   Future<Map<String, dynamic>> getNotificationUsage(String jwt) {
     return _get('/api/v1/notification-usage', jwt);

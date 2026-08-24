@@ -295,8 +295,19 @@ func triggerInheritance(db *sql.DB, uid int64, daysSince int) {
 	if n > 0 {
 		return // one live global event per user
 	}
+	// 用户级全量事件:优先用默认继承人;未设置(或指向已删除继承人)时回退第一顺位。
 	var inID int64
 	var inEmail, codeHash string
+	var defID sql.NullInt64
+	if err := db.QueryRow(`SELECT default_inheritor_id FROM users WHERE id = ?`, uid).Scan(&defID); err == nil && defID.Valid {
+		err = db.QueryRow(`SELECT id, email, access_code_hash FROM inheritors
+			WHERE id = ? AND user_id = ?`, defID.Int64, uid).
+			Scan(&inID, &inEmail, &codeHash)
+		if err == nil {
+			createInheritanceEvent(db, uid, inID, inEmail, codeHash, nil)
+			return
+		}
+	}
 	err = db.QueryRow(`SELECT id, email, access_code_hash FROM inheritors
 		WHERE user_id = ? ORDER BY priority ASC, id ASC LIMIT 1`, uid).
 		Scan(&inID, &inEmail, &codeHash)

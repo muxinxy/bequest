@@ -6,12 +6,16 @@ import 'package:flutter/services.dart';
 import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../models/inheritor.dart';
+import '../repository/asset_repository.dart';
 import '../storage/secure_store.dart';
 import '../utils/validation.dart';
+import 'inheritor_assets_page.dart';
 
-/// 继承人管理:列表、新增、删除。
+/// 继承人管理:列表、新增、删除;点击行查看该继承人的绑定资产。
 class InheritorsPage extends StatefulWidget {
-  const InheritorsPage({super.key});
+  const InheritorsPage({super.key, required this.repository});
+
+  final AssetRepository repository;
 
   @override
   State<InheritorsPage> createState() => _InheritorsPageState();
@@ -415,6 +419,18 @@ class _InheritorsPageState extends State<InheritorsPage> {
     }
   }
 
+  /// 打开该继承人的绑定资产页(固定为该继承人)。
+  void _openAssets(Inheritor inheritor) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => InheritorAssetsPage(
+          repository: widget.repository,
+          initialInheritorId: inheritor.id,
+        ),
+      ),
+    );
+  }
+
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -492,9 +508,15 @@ class _InheritorsPageState extends State<InheritorsPage> {
                                 ),
                               ],
                             ),
+                            onTap: () => _openAssets(inheritor),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                IconButton(
+                                  tooltip: '查看绑定资产',
+                                  icon: const Icon(Icons.inventory_2_outlined),
+                                  onPressed: () => _openAssets(inheritor),
+                                ),
                                 IconButton(
                                   tooltip: '编辑',
                                   icon: const Icon(Icons.edit_outlined),

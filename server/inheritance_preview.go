@@ -175,15 +175,25 @@ func handleInheritancePreview(db *sql.DB) http.HandlerFunc {
 			preview = append(preview, pa)
 		}
 
-		// 用户级全量事件交给 priority 最小的继承人。
+		// 用户级全量事件:优先用默认继承人;未设置(或指向已删除继承人)时回退第一顺位。
 		var userLevelInheritors []string
 		if userLevel[0] {
 			var iid int64
 			var name string
-			if err := db.QueryRow(`SELECT id, name FROM inheritors WHERE user_id = ? ORDER BY priority ASC, id ASC LIMIT 1`, uid).
-				Scan(&iid, &name); err == nil {
-				userLevelInheritors = append(userLevelInheritors, name)
-				inheritorCount[iid]++
+			var defID sql.NullInt64
+			if err := db.QueryRow(`SELECT default_inheritor_id FROM users WHERE id = ?`, uid).Scan(&defID); err == nil && defID.Valid {
+				if err := db.QueryRow(`SELECT id, name FROM inheritors WHERE id = ? AND user_id = ?`, defID.Int64, uid).
+					Scan(&iid, &name); err == nil {
+					userLevelInheritors = append(userLevelInheritors, name)
+					inheritorCount[iid]++
+				}
+			}
+			if len(userLevelInheritors) == 0 {
+				if err := db.QueryRow(`SELECT id, name FROM inheritors WHERE user_id = ? ORDER BY priority ASC, id ASC LIMIT 1`, uid).
+					Scan(&iid, &name); err == nil {
+					userLevelInheritors = append(userLevelInheritors, name)
+					inheritorCount[iid]++
+				}
 			}
 		}
 
@@ -211,4 +221,66 @@ func handleInheritancePreview(db *sql.DB) http.HandlerFunc {
 
 func itoa(n int) string {
 	return fmt.Sprintf("%d", n)
+}
+
+// handleGetDefaultInheritor: GET /api/v1/inheritance/default-inheritor -> 200
+// 返回默认继承人;未设置时 inheritor_id 为 null。
+func handleGetDefaultInheritor(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		var defID sql.NullInt64
+		var name string
+		if err := db.QueryRow(`SELECT default_inheritor_id FROM users WHERE id = ?`, uid).Scan(&defID); err != nil {
+			log.Printf("get default inheritor: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		if defID.Valid {
+			// 指向已删除继承人时视为未设置。
+			if err := db.QueryRow(`SELECT name FROM inheritors WHERE id = ? AND user_id = ?`, defID.Int64, uid).
+				Scan(&name); err != nil {
+				defID.Valid = false
+			}
+		}
+		var id *int64
+		if defID.Valid {
+			v := defID.Int64
+			id = &v
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"inheritor_id": id, "inheritor_name": name})
+	}
+}
+
+// handlePutDefaultInheritor: PUT /api/v1/inheritance/default-inheritor
+// body {"inheritor_id": 5} 或 {"inheritor_id": null}(null=不指定,回退第一顺位)。
+// 非空时须属于该用户,否则 400。
+func handlePutDefaultInheritor(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		var body struct {
+			InheritorID *int64 `json:"inheritor_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "请求格式错误")
+			return
+		}
+		if body.InheritorID != nil {
+			var n int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM inheritors WHERE id = ? AND user_id = ?`, *body.InheritorID, uid).
+				Scan(&n); err != nil || n == 0 {
+				writeError(w, http.StatusBadRequest, "继承人不存在或不属于该用户")
+				return
+			}
+		}
+		var defID any
+		if body.InheritorID != nil {
+			defID = *body.InheritorID
+		}
+		if _, err := db.Exec(`UPDATE users SET default_inheritor_id = ? WHERE id = ?`, defID, uid); err != nil {
+			log.Printf("set default inheritor: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"default_inheritor_id": body.InheritorID})
+	}
 }

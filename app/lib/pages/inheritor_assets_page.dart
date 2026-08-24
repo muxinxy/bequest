@@ -6,10 +6,16 @@ import '../storage/secure_store.dart';
 
 /// 查看某继承人绑定的所有资产(直接绑定 + 经分组继承),支持多选解绑。
 /// 解绑资产级绑定删除 asset_inheritors 行;分组级绑定删除 category_inheritors 行。
+/// [initialInheritorId] 指定后固定为该继承人(隐藏下拉),供继承人列表页跳转。
 class InheritorAssetsPage extends StatefulWidget {
-  const InheritorAssetsPage({super.key, required this.repository});
+  const InheritorAssetsPage({
+    super.key,
+    required this.repository,
+    this.initialInheritorId,
+  });
 
   final AssetRepository repository;
+  final String? initialInheritorId;
 
   @override
   State<InheritorAssetsPage> createState() => _InheritorAssetsPageState();
@@ -36,15 +42,24 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
       final inheritors = jwt == null
           ? <Map<String, dynamic>>[]
           : await (await ApiConfig.client()).listInheritors(jwt);
-      if (mounted) {
-        setState(() => _inheritors = inheritors);
-        if (inheritors.isNotEmpty) {
-          await _select('${inheritors.first['id']}');
-        }
-      }
+      if (!mounted) return;
+      setState(() => _inheritors = inheritors);
+      // 指定了初始继承人:直接选中;否则默认第一个。
+      final target = widget.initialInheritorId ??
+          (inheritors.isEmpty ? null : '${inheritors.first['id']}');
+      if (target != null) await _select(target);
     } catch (_) {
       // 加载失败:下拉框留空,页面显示"暂无继承人"。
     }
+  }
+
+  /// 固定继承人时显示其姓名(列表为空则兜底)。
+  String get _inheritorName {
+    final id = widget.initialInheritorId;
+    for (final i in _inheritors) {
+      if ('${i['id']}' == id) return '${i['name']}';
+    }
+    return '该继承人';
   }
 
   Future<void> _select(String id) async {    setState(() {
@@ -181,9 +196,18 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
-            child: _inheritors.isEmpty
-                ? const Text('暂无继承人,请先在「继承人」中创建', style: TextStyle(color: Colors.grey))
-                : DropdownButtonFormField<String>(
+            child: widget.initialInheritorId != null
+                // 固定继承人:只显示姓名,不提供下拉选择。
+                ? Text(
+                    '继承人:$_inheritorName',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  )
+                : _inheritors.isEmpty
+                    ? const Text(
+                        '暂无继承人,请先在「继承人」中创建',
+                        style: TextStyle(color: Colors.grey),
+                      )
+                    : DropdownButtonFormField<String>(
                     initialValue: _selectedId,
                     decoration: const InputDecoration(
                       labelText: '选择继承人',
