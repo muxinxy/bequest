@@ -53,4 +53,5 @@ jobs:
       # 注:跳过 flutter analyze —— 存在预存的 web dart:js_util 误报(条件导入),
       # 非 web 编译环境必然报 error。类型/编译正确性由 test + build web 覆盖。
       - name: build web
-        run: flutter build web --no-tree-shake-icons
+        # --no-web-resources-cdn:CanvasKit 本地打包,国内不依赖 gstatic CDN(否则白屏)。
+        run: flutter build web --no-tree-shake-icons --no-web-resources-cdn
