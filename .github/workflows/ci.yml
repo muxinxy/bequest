@@ -1,0 +1,56 @@
+# CI:push/PR 时自动验证
+#   1. go test  (server/,含全部后端测试)
+#   2. flutter test + flutter build web (app/)
+# 通过后才允许合并;失败会在 PR 上标红。
+name: ci
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Go 测试
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./... -count=1
+
+  frontend:
+    name: Flutter 测试 + Web 构建
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: 依赖
+        run: flutter pub get
+
+      - name: flutter test
+        # 串行:Windows/CI 上并行跑多个测试文件会竞争临时目录导致偶发写失败。
+        run: flutter test --concurrency=1
+
+      # 注:跳过 flutter analyze —— 存在预存的 web dart:js_util 误报(条件导入),
+      # 非 web 编译环境必然报 error。类型/编译正确性由 test + build web 覆盖。
+      - name: build web
+        run: flutter build web --no-tree-shake-icons
