@@ -71,7 +71,7 @@ func sendCustomForUser(db *sql.DB, uid int64, to, subject, body string) bool {
 
 // userEmails 返回通知渠道里的邮箱列表;为空时回退注册邮箱。
 func userEmails(db *sql.DB, uid int64) []string {
-	emails, _ := loadChannels(db, uid)
+	emails := loadChannels(db, uid).emails
 	if len(emails) > 0 {
 		return emails
 	}
@@ -84,27 +84,34 @@ func userEmails(db *sql.DB, uid int64) []string {
 
 // userPhones 返回通知渠道里的手机号列表(免费用户无手机,会员功能)。
 func userPhones(db *sql.DB, uid int64) []string {
-	_, phones := loadChannels(db, uid)
-	return phones
+	return loadChannels(db, uid).phones
 }
 
-// notifyEscalation 按已跨过的档位分级通知(阶梯 4 档):
-// 档1(>=d1,<d2)系统通知;档2(>=d2,<d3)+邮件;档3(>=d3,<d4)+短信;
-// 档4(>=d4)触发继承由调用方(processEscalation)处理。
-// 每天一条:dedup key 带日期,当天重复扫描不重发。
+// notifyEscalation 按已跨过的档位分级通知(阶梯 2 级):
+// 一级(>=d1):系统通知+邮件+IM webhook;二级(>=d2):一级全部+短信。
+// 触发继承由调用方(processEscalation)处理(跨过最后一档即触发)。
+// 每天一条:dedup key 带日期,当天重复扫描不重发;IM webhook 不计配额。
 func notifyEscalation(db *sql.DB, uid int64, tier string, daysSince int, ladder []int) {
-	if len(ladder) != 4 {
+	if len(ladder) != 2 {
 		return
 	}
 	title := "长时间未登录提醒"
 	body := fmt.Sprintf("您已 %d 天未登录,资产安全提醒升级。", daysSince)
-	// 系统通知当天已插入则跳过邮件/短信(防刷屏)。
+	// 系统通知当天已插入则跳过邮件/短信/IM(防刷屏)。
 	if !insertReminder(db, uid, "escalation", nil, title, body,
 		fmt.Sprintf("esc:%d:%s", uid, time.Now().Format("2006-01-02"))) {
 		return
 	}
-	if daysSince < ladder[1] {
-		return // 未到邮件档
+	// 一级:IM webhook(不限 tier、不计配额)+ 邮件(配额控制)。
+	ch := loadChannels(db, uid)
+	for _, u := range ch.wecom {
+		sendIMWebhook(u, "wecom", title, body)
+	}
+	for _, u := range ch.dingtalk {
+		sendIMWebhook(u, "dingtalk", title, body)
+	}
+	for _, u := range ch.feishu {
+		sendIMWebhook(u, "feishu", title, body)
 	}
 	for _, to := range userEmails(db, uid) {
 		if quotaAllowed(db, uid, tier, "email") {
@@ -114,9 +121,10 @@ func notifyEscalation(db *sql.DB, uid int64, tier string, daysSince int, ladder 
 			log.Printf("notifyEscalation: email quota exceeded for user %d", uid)
 		}
 	}
-	if daysSince < ladder[2] {
-		return // 未到短信档
+	if daysSince < ladder[1] {
+		return // 未到二级
 	}
+	// 二级:+短信(仅会员,配额控制)。
 	if tier == "member" {
 		for _, phone := range userPhones(db, uid) {
 			if quotaAllowed(db, uid, tier, "sms") {

@@ -15,11 +15,11 @@ func TestLadderValidate(t *testing.T) {
 		days []int
 		ok   bool // true = 合法
 	}{
-		{[]int{30, 60, 90, 120}, true},
-		{[]int{30, 60, 90}, false},       // 3 个
-		{[]int{30, 60, 60, 120}, false},  // 非严格递增
-		{[]int{30, 60, 90, 0}, false},    // 含 0
-		{[]int{30, 60, 90, 5000}, false}, // 超 3650
+		{[]int{30, 90}, true},
+		{[]int{30, 90, 120}, false},      // 3 个
+		{[]int{30, 30}, false},           // 非严格递增
+		{[]int{30, 0}, false},            // 含 0
+		{[]int{30, 5000}, false},         // 超 3650
 	}
 	for _, c := range cases {
 		got := validateLadderDays(c.days)
@@ -38,7 +38,7 @@ func TestLadderCRUD(t *testing.T) {
 	token := registerUser(t, ts, "alice")
 
 	rr := doReq(t, ts, http.MethodPost, "/api/v1/trigger-ladders",
-		`{"name":"阶梯A","days":[10,20,30,40]}`, token)
+		`{"name":"阶梯A","days":[10,20]}`, token)
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("create ladder: status=%d body=%s", rr.Code, rr.Body.String())
 	}
@@ -46,7 +46,7 @@ func TestLadderCRUD(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
 		t.Fatalf("parse created ladder: %v", err)
 	}
-	if created.Name != "阶梯A" || created.IsGlobal != 0 || len(created.Days) != 4 {
+	if created.Name != "阶梯A" || created.IsGlobal != 0 || len(created.Days) != 2 {
 		t.Fatalf("unexpected created ladder: %+v", created)
 	}
 
@@ -71,7 +71,7 @@ func TestLadderCRUD(t *testing.T) {
 
 	// 修改
 	rr = doReq(t, ts, http.MethodPut, fmt.Sprintf("/api/v1/trigger-ladders/%d", created.ID),
-		`{"name":"阶梯B","days":[5,10,15,20]}`, token)
+		`{"name":"阶梯B","days":[5,10]}`, token)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("update ladder: status=%d body=%s", rr.Code, rr.Body.String())
 	}
@@ -105,7 +105,7 @@ func TestLadderDeleteRevertsBindings(t *testing.T) {
 
 	// 建阶梯A
 	rr := doReq(t, ts, http.MethodPost, "/api/v1/trigger-ladders",
-		`{"name":"阶梯A","days":[10,20,30,40]}`, token)
+		`{"name":"阶梯A","days":[10,20]}`, token)
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("create ladder: status=%d body=%s", rr.Code, rr.Body.String())
 	}

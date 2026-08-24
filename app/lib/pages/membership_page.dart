@@ -192,8 +192,8 @@ class _MembershipPageState extends State<MembershipPage> {
       ('继承交接', _mark(Entitlements.free.inheritance), _mark(Entitlements.member.inheritance)),
       (
         '通知渠道',
-        Text('${Entitlements.free.reminderChannels}(站内+邮件)'),
-        Text('${Entitlements.member.reminderChannels}(站内+邮件+短信+电话)'),
+        const Text('邮件+IM'),
+        const Text('邮件+IM+短信'),
       ),
       ('自定义提醒模板', _mark(false), _mark(true)),
       ('Excel 导出', _mark(false), _mark(true)),

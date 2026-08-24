@@ -256,15 +256,15 @@ func TestSchedulerEscalation(t *testing.T) {
 		t.Fatalf("40 days: stage=%s want inactive", stage)
 	}
 
-	// 130 days -> top tier: level 3, event created, stage triggered, reminders + audit
+	// 130 days -> 跨过二级(最后一档):level 封顶 1,事件创建,stage triggered,reminders + audit
 	setLastLogin(t, db, uid, "-130 days")
 	scan(db, time.Now().UTC())
 
 	if err := db.QueryRow(`SELECT escalation_level FROM users WHERE id=?`, uid).Scan(&level); err != nil {
 		t.Fatalf("query level 2: %v", err)
 	}
-	if level != 3 {
-		t.Fatalf("130 days: escalation_level=%d want 3", level)
+	if level != 1 {
+		t.Fatalf("130 days: escalation_level=%d want 1 (2 档阶梯封顶)", level)
 	}
 	if n := countRows(t, db, `SELECT COUNT(*) FROM inheritance_events WHERE user_id=?`, uid); n != 1 {
 		t.Fatalf("130 days: events=%d want 1", n)

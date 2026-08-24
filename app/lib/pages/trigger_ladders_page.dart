@@ -47,15 +47,15 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
     }
   }
 
-  /// 4 档语义标签(系统通知、邮件、短信、触发继承)。
-  static const _dayLabels = ['系统通知(天)', '邮件通知(天)', '短信通知(天)', '触发继承(天)'];
+  /// 2 档语义标签(一级:系统通知+IM+邮件;二级:一级+短信)。
+  static const _dayLabels = ['一级(天)', '二级(天)'];
 
-  /// 新增/修改阶梯对话框(名称 + 固定 4 档天数输入)。
+  /// 新增/修改阶梯对话框(名称 + 固定 2 档天数输入)。
   Future<void> _editLadder({TriggerLadder? ladder}) async {
     final nameController = TextEditingController(text: ladder?.name ?? '');
     final days = ladder?.days ?? const <int>[];
     final dayControllers = [
-      for (var i = 0; i < 4; i++)
+      for (var i = 0; i < 2; i++)
         TextEditingController(text: i < days.length ? '${days[i]}' : ''),
     ];
     final result = await showDialog<bool>(
@@ -76,7 +76,7 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                 ),
               ),
               const SizedBox(height: 8),
-              for (var i = 0; i < 4; i++) ...[
+              for (var i = 0; i < 2; i++) ...[
                 TextField(
                   controller: dayControllers[i],
                   keyboardType: TextInputType.number,
@@ -85,11 +85,11 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                     border: const OutlineInputBorder(),
                   ),
                 ),
-                if (i < 3) const SizedBox(height: 8),
+                if (i < 1) const SizedBox(height: 8),
               ],
               const SizedBox(height: 4),
               const Text(
-                '4 档依次递增:系统通知 < 邮件 < 短信 < 触发继承',
+                '一级:系统通知+IM+邮件;二级:一级+短信',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ],
@@ -114,10 +114,12 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                 }
                 days.add(v);
               }
-              for (var i = 1; i < 4; i++) {
+              for (var i = 1; i < 2; i++) {
                 if (days[i] <= days[i - 1]) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('需要 4 个依次递增的正整数')),
+                    const SnackBar(
+                      content: Text('需要 2 个依次递增的正整数(一级:IM+邮件, 二级:一级+短信)'),
+                    ),
                   );
                   return;
                 }
@@ -298,7 +300,11 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                           ],
                         ],
                       ),
-                      subtitle: Text('系统/邮件/短信/继承:${l.days.join('/')} 天'),
+                      subtitle: Text(
+                        l.days.length >= 2
+                            ? '一级 ${l.days[0]} 天 / 二级 ${l.days[1]} 天'
+                            : l.daysLabel,
+                      ),
                       onLongPress: l.isGlobal || _multiSelect
                           ? null
                           : () => setState(() {

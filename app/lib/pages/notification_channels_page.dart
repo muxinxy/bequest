@@ -5,8 +5,8 @@ import '../api/api_config.dart';
 import '../storage/secure_store.dart';
 import '../utils/validation.dart';
 
-/// 通知渠道:邮箱/手机号各最多 3 个,整体替换保存。
-/// 手机号为会员专属:免费用户输入框置灰禁用。
+/// 通知渠道:邮箱/手机号/IM webhook(企微/钉钉/飞书)各最多 3 个,整体替换保存。
+/// 手机号为会员专属:免费用户输入框置灰禁用;IM webhook 不限 tier。
 class NotificationChannelsPage extends StatefulWidget {
   const NotificationChannelsPage({super.key});
 
@@ -19,6 +19,9 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
   final _store = SecureStore();
   final List<TextEditingController> _emailControllers = [];
   final List<TextEditingController> _phoneControllers = [];
+  final List<TextEditingController> _wecomControllers = [];
+  final List<TextEditingController> _dingtalkControllers = [];
+  final List<TextEditingController> _feishuControllers = [];
 
   bool _loading = true;
   bool _saving = false;
@@ -40,6 +43,15 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
       c.dispose();
     }
     for (final c in _phoneControllers) {
+      c.dispose();
+    }
+    for (final c in _wecomControllers) {
+      c.dispose();
+    }
+    for (final c in _dingtalkControllers) {
+      c.dispose();
+    }
+    for (final c in _feishuControllers) {
       c.dispose();
     }
     super.dispose();
@@ -67,6 +79,24 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
           ..addAll([
             for (final p in (channels['phones'] as List? ?? const []))
               TextEditingController(text: p.toString()),
+          ]);
+        _wecomControllers
+          ..clear()
+          ..addAll([
+            for (final w in (channels['wecom'] as List? ?? const []))
+              TextEditingController(text: w.toString()),
+          ]);
+        _dingtalkControllers
+          ..clear()
+          ..addAll([
+            for (final d in (channels['dingtalk'] as List? ?? const []))
+              TextEditingController(text: d.toString()),
+          ]);
+        _feishuControllers
+          ..clear()
+          ..addAll([
+            for (final f in (channels['feishu'] as List? ?? const []))
+              TextEditingController(text: f.toString()),
           ]);
         _loading = false;
       });
@@ -97,6 +127,35 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
     setState(() => _phoneControllers.removeAt(index).dispose());
   }
 
+  /// IM webhook 通用增删(各 0-3 个)。
+  void _addOne(List<TextEditingController> list) {
+    if (list.length >= 3) return;
+    setState(() => list.add(TextEditingController()));
+  }
+
+  void _removeOne(List<TextEditingController> list, int index) {
+    setState(() => list.removeAt(index).dispose());
+  }
+
+  /// 校验并收集 IM webhook:https:// 开头且含对应平台域名。
+  List<String>? _validatedUrls(
+    List<TextEditingController> list,
+    String label,
+    List<String> domains,
+  ) {
+    final urls = list
+        .map((c) => c.text.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    for (final u in urls) {
+      if (!u.startsWith('https://') || !domains.any(u.contains)) {
+        _show('$label webhook 地址需为 https:// 开头且含平台域名');
+        return null;
+      }
+    }
+    return urls;
+  }
+
   Future<void> _save() async {
     final emails = _emailControllers
         .map((c) => c.text.trim())
@@ -122,6 +181,12 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
       _show('手机号功能为会员专属');
       return;
     }
+    final wecom = _validatedUrls(_wecomControllers, '企业微信', ['qyapi.weixin.qq.com']);
+    if (wecom == null) return;
+    final dingtalk = _validatedUrls(_dingtalkControllers, '钉钉', ['oapi.dingtalk.com']);
+    if (dingtalk == null) return;
+    final feishu = _validatedUrls(_feishuControllers, '飞书', ['open.feishu.cn', 'open.larksuite.com']);
+    if (feishu == null) return;
     setState(() => _saving = true);
     try {
       final jwt = await _store.readJwt();
@@ -130,6 +195,9 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
         jwt,
         emails: emails,
         phones: phones,
+        wecom: wecom,
+        dingtalk: dingtalk,
+        feishu: feishu,
       );
       _show('已保存');
     } on ApiException catch (e) {
@@ -186,6 +254,25 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
                     enabled: _isMember,
                     onDelete: _isMember ? () => _removePhone(i) : null,
                   ),
+                const SizedBox(height: 24),
+                _imSection(
+                  context,
+                  '企业微信群机器人',
+                  '在企业微信建群 → 群机器人 → 复制 webhook 地址',
+                  _wecomControllers,
+                ),
+                _imSection(
+                  context,
+                  '钉钉机器人',
+                  '在钉钉群添加自定义机器人 → 复制 webhook 地址',
+                  _dingtalkControllers,
+                ),
+                _imSection(
+                  context,
+                  '飞书机器人',
+                  '在飞书群添加自定义机器人 → 复制 webhook 地址',
+                  _feishuControllers,
+                ),
                 const SizedBox(height: 32),
                 FilledButton(
                   onPressed: _saving ? null : _save,
@@ -193,6 +280,34 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
                 ),
               ],
             ),
+    );
+  }
+
+  /// IM webhook 分区:标题 + 提示 + 0-3 个 URL 输入框(可增删),不限 tier。
+  Widget _imSection(
+    BuildContext context,
+    String title,
+    String hint,
+    List<TextEditingController> controllers,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          context,
+          title,
+          hint,
+          onAdd: controllers.length >= 3 ? null : () => _addOne(controllers),
+        ),
+        for (var i = 0; i < controllers.length; i++)
+          _channelField(
+            controller: controllers[i],
+            hint: 'https://...',
+            keyboardType: TextInputType.url,
+            onDelete: () => _removeOne(controllers, i),
+          ),
+        const SizedBox(height: 24),
+      ],
     );
   }
 

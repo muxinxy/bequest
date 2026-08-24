@@ -91,9 +91,10 @@ func processExpiryReminders(db *sql.DB, now time.Time) {
 
 // ---------- escalation & inheritance trigger ----------
 
+// 触发阶梯 2 级:一级 IM+邮件,二级 一级+短信。跨过最后一档触发继承。
 var escalationTiers = map[string][]int{
-	"free":   {30, 60, 90, 120},
-	"member": {7, 14, 30, 60},
+	"free":   {30, 90},
+	"member": {7, 30},
 }
 
 // userLadderDays 返回该用户全局触发阶梯的 days(JSON 解析);
