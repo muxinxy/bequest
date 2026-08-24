@@ -39,6 +39,9 @@ class _MembershipPageState extends State<MembershipPage> {
   String? _tier;
   String? _memberExpiresAt;
 
+  /// 本月通知用量;加载失败置 null → 静默隐藏区块。
+  Map<String, dynamic>? _usage;
+
   @override
   void initState() {
     super.initState();
@@ -67,6 +70,11 @@ class _MembershipPageState extends State<MembershipPage> {
         _memberExpiresAt = user['member_expires_at']?.toString();
         _loading = false;
       });
+      // 通知用量:失败静默忽略(区块不显示)。
+      try {
+        final usage = await api.getNotificationUsage(jwt);
+        if (mounted) setState(() => _usage = usage);
+      } catch (_) {}
     } catch (_) {
       // 网络失败:仍展示权益对比表,会员卡片按未知处理。
       if (!mounted) return;
@@ -265,6 +273,100 @@ class _MembershipPageState extends State<MembershipPage> {
     );
   }
 
+  /// 本月通知用量区块:邮件 + 短信(短信额度为 0 时隐藏,如免费用户)。
+  Widget _usageCard() {
+    final usage = _usage;
+    if (usage == null) return const SizedBox.shrink();
+    final emailUsed = (usage['email_used'] as num?)?.toInt() ?? 0;
+    final emailLimit = (usage['email_limit'] as num?)?.toInt() ?? 0;
+    final smsUsed = (usage['sms_used'] as num?)?.toInt() ?? 0;
+    final smsLimit = (usage['sms_limit'] as num?)?.toInt() ?? 0;
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.notifications_outlined, color: scheme.primary),
+                const SizedBox(width: 8),
+                const Text(
+                  '本月通知用量',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _usageRow(
+              icon: Icons.mail_outline,
+              label: '邮件',
+              used: emailUsed,
+              limit: emailLimit,
+            ),
+            // 短信额度为 0(免费用户)时不展示。
+            if (smsLimit > 0) ...[
+              const SizedBox(height: 12),
+              _usageRow(
+                icon: Icons.sms_outlined,
+                label: '短信',
+                used: smsUsed,
+                limit: smsLimit,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 单条用量:已用 X / 额度 Y + 进度条(额度为 0 时进度条 0)。
+  Widget _usageRow({
+    required IconData icon,
+    required String label,
+    required int used,
+    required int limit,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final ratio = limit > 0 ? (used / limit).clamp(0.0, 1.0) : 0.0;
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(label, style: const TextStyle(fontSize: 14)),
+                  const Spacer(),
+                  Text(
+                    '已用 $used / $limit',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: ratio,
+                  minHeight: 6,
+                  backgroundColor: scheme.surfaceContainerHighest,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<void> _showRedeemDialog() async {
     if (!_hasJwt) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -372,6 +474,11 @@ class _MembershipPageState extends State<MembershipPage> {
                   const SizedBox(height: 16),
                 ],
                 _benefitTable(),
+                // 通知用量:仅登录且有数据时展示,失败静默隐藏。
+                if (_hasJwt && _usage != null) ...[
+                  const SizedBox(height: 16),
+                  _usageCard(),
+                ],
               ],
             ),
     );

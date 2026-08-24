@@ -476,6 +476,16 @@ class ApiClient {
     return _get('/api/v1/inheritance/status', jwt);
   }
 
+  /// GET /api/v1/inheritance/preview:继承触发预览(阶梯/交接资产/继承人/说明)。
+  Future<Map<String, dynamic>> getInheritancePreview(String jwt) {
+    return _get('/api/v1/inheritance/preview', jwt);
+  }
+
+  /// GET /api/v1/notification-usage:本月通知用量(邮件/短信已用与额度)。
+  Future<Map<String, dynamic>> getNotificationUsage(String jwt) {
+    return _get('/api/v1/notification-usage', jwt);
+  }
+
   /// GET /api/v1/audit-log
   Future<List<Map<String, dynamic>>> listAuditLog(String jwt) {
     return _getList('/api/v1/audit-log', jwt);

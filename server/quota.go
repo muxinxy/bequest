@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"net/http"
 	"time"
 )
 
@@ -55,5 +56,40 @@ func quotaIncr(db *sql.DB, uid int64, typ string) {
 		ON CONFLICT(user_id, month) DO UPDATE SET `+col+` = `+col+` + 1`,
 		uid, time.Now().Format("2006-01")); err != nil {
 		log.Printf("quotaIncr: %v", err)
+	}
+}
+
+// handleNotificationUsage: GET /api/v1/notification-usage -> 200
+// 返回当月通知用量 vs 额度:{month, email_used, email_limit, sms_used, sms_limit, tier}。
+func handleNotificationUsage(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		var tier string
+		if err := db.QueryRow(`SELECT tier FROM users WHERE id = ?`, uid).Scan(&tier); err != nil {
+			log.Printf("usage tier: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		emailLimit, smsLimit := freeMonthlyEmails, 0
+		if tier == "member" {
+			emailLimit = memberMonthlyEmails
+			smsLimit = memberMonthlySms
+		}
+		month := time.Now().Format("2006-01")
+		var emailUsed, smsUsed int
+		if err := db.QueryRow(`SELECT email_cnt, sms_cnt FROM notification_quota WHERE user_id = ? AND month = ?`,
+			uid, month).Scan(&emailUsed, &smsUsed); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("usage query: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"month":       month,
+			"email_used":  emailUsed,
+			"email_limit": emailLimit,
+			"sms_used":    smsUsed,
+			"sms_limit":   smsLimit,
+			"tier":        tier,
+		})
 	}
 }

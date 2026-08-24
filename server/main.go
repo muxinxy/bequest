@@ -147,6 +147,8 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("PUT /api/v1/notification-channels", auth(handlePutNotificationChannels(db)))
 	mux.HandleFunc("POST /api/v1/inheritance/claim", handleClaim(db))
 	mux.Handle("GET /api/v1/inheritance/status", auth(handleInheritanceStatus(db)))
+	mux.Handle("GET /api/v1/inheritance/preview", auth(handleInheritancePreview(db)))
+	mux.Handle("GET /api/v1/notification-usage", auth(handleNotificationUsage(db)))
 	mux.Handle("GET /api/v1/audit-log", auth(handleAuditLog(db)))
 	// 日志(审计/应用):列表按年月筛选、导出 CSV、清除。
 	mux.Handle("GET /api/v1/logs", auth(handleListLogs(db)))

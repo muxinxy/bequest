@@ -15,6 +15,7 @@ import 'change_master_password_page.dart';
 import 'excel_export_page.dart';
 import 'export_page.dart';
 import 'import_page.dart';
+import 'inheritance_preview_page.dart';
 import 'inheritance_status_page.dart';
 import 'inheritor_assets_page.dart';
 import 'inheritors_page.dart';
@@ -276,6 +277,12 @@ class _SettingsPageState extends State<SettingsPage> {
             Icons.flag_outlined,
             '继承状态',
             () => _push(context, const InheritanceStatusPage()),
+            enabled: !_isLocal,
+          ),
+          _entry(
+            Icons.visibility_outlined,
+            '继承预览',
+            () => _push(context, const InheritancePreviewPage()),
             enabled: !_isLocal,
           ),
           // 全局继承开关:一键开启/关闭继承功能(关闭后不再升级提醒/触发交接)。
