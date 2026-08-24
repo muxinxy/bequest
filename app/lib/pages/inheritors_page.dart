@@ -26,6 +26,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
   final _store = SecureStore();
 
   List<Inheritor> _inheritors = const [];
+  String? _defaultInheritorName;
   bool _loading = true;
 
   @override
@@ -38,10 +39,17 @@ class _InheritorsPageState extends State<InheritorsPage> {
     try {
       final jwt = await _store.readJwt();
       if (jwt == null) throw ApiException('未登录');
-      final list = await (await _api).listInheritors(jwt);
+      final api = await _api;
+      final results = await Future.wait([
+        api.listInheritors(jwt),
+        api.getDefaultInheritor(jwt),
+      ]);
       if (!mounted) return;
+      final list = results[0] as List<Map<String, dynamic>>;
+      final def = results[1] as Map<String, dynamic>;
       setState(() {
         _inheritors = list.map(Inheritor.fromJson).toList(growable: false);
+        _defaultInheritorName = def['inheritor_name']?.toString();
         _loading = false;
       });
     } catch (_) {
@@ -431,6 +439,57 @@ class _InheritorsPageState extends State<InheritorsPage> {
     );
   }
 
+  /// 设置默认继承人:列出全部继承人,含"不指定(按第一顺位)"。
+  /// 返回值:-1 表示不指定,其它为正数继承人或 null 表示取消。
+  Future<void> _pickDefaultInheritor() async {
+    const int unspecified = -1;
+    final jwt = await _store.readJwt();
+    if (jwt == null || jwt.isEmpty) return;
+    final api = await _api;
+    if (!mounted) return;
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('设置默认继承人'),
+        children: [
+          for (final i in _inheritors)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(
+                int.tryParse(i.id) ?? 0,
+              ),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.person_outline),
+                title: Text(i.name),
+                subtitle: Text(
+                  '${i.categoryCount} 个分组 · ${i.assetCount} 个资产',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop(unspecified),
+            child: const ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.clear),
+              title: Text('不指定(按第一顺位)'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    final bodyId = picked == unspecified ? null : picked;
+    try {
+      await api.putDefaultInheritor(jwt, bodyId);
+      await _load();
+      if (!mounted) return;
+      _showError('默认继承人已保存');
+    } catch (_) {
+      _showError('保存失败,请检查网络后重试');
+    }
+  }
+
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -455,6 +514,31 @@ class _InheritorsPageState extends State<InheritorsPage> {
               '继承码用于触发继承后领取资产密钥,请线下告知继承人;'
               '列表仅显示掩码,查看/重置请在编辑中点击"生成"。',
               style: TextStyle(fontSize: 12),
+            ),
+          ),
+          // 默认继承人设置入口。
+          Container(
+            width: double.infinity,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              children: [
+                const Icon(Icons.star_outline, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _defaultInheritorName == null ||
+                            _defaultInheritorName!.isEmpty
+                        ? '默认继承人:未指定(按第一顺位)'
+                        : '默认继承人:$_defaultInheritorName',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _pickDefaultInheritor,
+                  child: const Text('设置'),
+                ),
+              ],
             ),
           ),
           Expanded(

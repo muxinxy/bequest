@@ -24,6 +24,7 @@ class _InheritancePageState extends State<InheritancePage> {
   Map<String, dynamic> _preview = const {};
   int? _defaultInheritorId;
   String? _defaultInheritorName;
+  bool _showAllAssets = false;
 
   @override
   void initState() {
@@ -262,7 +263,20 @@ class _InheritancePageState extends State<InheritancePage> {
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: EdgeInsets.zero,
                 title: Text('资产清单(${assets.length})'),
-                children: [for (final a in assets) _assetTile(a)],
+                // 资产 >20 条时默认只显示前 20,底部"展开全部 N 条"按钮。
+                children: [
+                  for (final a in _showAllAssets || assets.length <= 20
+                      ? assets
+                      : assets.take(20))
+                    _assetTile(a),
+                  if (assets.length > 20 && !_showAllAssets)
+                    Center(
+                      child: TextButton(
+                        onPressed: () => setState(() => _showAllAssets = true),
+                        child: Text('展开全部 ${assets.length} 条'),
+                      ),
+                    ),
+                ],
               ),
             ],
           ],
@@ -271,22 +285,41 @@ class _InheritancePageState extends State<InheritancePage> {
     );
   }
 
-  /// 单个资产:资产名 + 继承人(via=user 显示"用户级全量")。
+  /// 单个资产:资产名 + 继承人(via=user 显示"用户级全量 → 继承人名")。
   Widget _assetTile(Map<String, dynamic> asset) {
     final name = asset['name']?.toString() ?? '未命名资产';
     final via = asset['via']?.toString() ?? '';
-    final inheritorName = via == 'user'
-        ? '用户级全量'
-        : asset['inheritor_name']?.toString();
-    final subtitle = via == 'user'
-        ? '用户级全量交接'
-        : '继承人:${inheritorName == null || inheritorName.isEmpty ? '未指定' : inheritorName}';
+    if (via == 'user') {
+      // 具体继承人:已设默认继承人,否则取 user_level_inheritors 第一顺位。
+      final levelNames = (_preview['user_level_inheritors'] as List? ?? const [])
+          .whereType<String>()
+          .toList();
+      final levelName = _defaultInheritorName?.isNotEmpty == true
+          ? _defaultInheritorName
+          : levelNames.isEmpty
+              ? null
+              : levelNames.first;
+      final subtitle = levelName == null || levelName.isEmpty
+          ? '用户级全量'
+          : '用户级全量 → $levelName';
+      return ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.folder_outlined, size: 20),
+        title: Text(name),
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      );
+    }
+    final inheritorName = asset['inheritor_name']?.toString();
     return ListTile(
       dense: true,
       contentPadding: EdgeInsets.zero,
       leading: const Icon(Icons.folder_outlined, size: 20),
       title: Text(name),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      subtitle: Text(
+        '继承人:${inheritorName == null || inheritorName.isEmpty ? '未指定' : inheritorName}',
+        style: const TextStyle(fontSize: 12),
+      ),
     );
   }
 
@@ -429,15 +462,9 @@ class _InheritancePageState extends State<InheritancePage> {
     try {
       await api.putDefaultInheritor(jwt, bodyId);
       if (!mounted) return;
-      setState(() {
-        _defaultInheritorId = bodyId;
-        _defaultInheritorName = bodyId == null
-            ? null
-            : inheritors
-                .where((i) => i['id']?.toString() == '$bodyId')
-                .map((i) => i['name']?.toString() ?? '')
-                .firstOrNull;
-      });
+      // 重新拉取:刷新 preview 的 user_level_inheritors / 资产覆盖数。
+      await _load();
+      if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('默认继承人已保存')));
     } catch (_) {
