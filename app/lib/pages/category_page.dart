@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../api/api_client.dart';
 import '../models/category.dart';
 import '../repository/asset_repository.dart';
 import 'category_inheritors_page.dart';
@@ -35,8 +36,9 @@ class _CategoryPageState extends State<CategoryPage> {
       });
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
       Navigator.of(context).pop();
     }
   }
@@ -70,8 +72,9 @@ class _CategoryPageState extends State<CategoryPage> {
             onPressed: () {
               final value = controller.text.trim();
               if (value.isEmpty) {
-                ScaffoldMessenger.of(context)
-                    .showSnackBar(const SnackBar(content: Text('请输入分组名称')));
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('请输入分组名称')));
                 return;
               }
               Navigator.of(context).pop(value);
@@ -92,6 +95,8 @@ class _CategoryPageState extends State<CategoryPage> {
       // 分组类型走仓储默认(physical),UI 不再区分实体/虚拟。
       await widget.repository.createCategory(name);
       await _load();
+    } on ApiException catch (e) {
+      _showError(e.statusCode == 409 ? '分组已存在' : '新增失败,请检查网络后重试');
     } catch (_) {
       _showError('新增失败,请检查网络后重试');
     }
@@ -106,6 +111,8 @@ class _CategoryPageState extends State<CategoryPage> {
     try {
       await widget.repository.updateCategory(category.id, {'name': name});
       await _load();
+    } on ApiException catch (e) {
+      _showError(e.statusCode == 409 ? '分组已存在' : '保存失败,请检查网络后重试');
     } catch (_) {
       _showError('保存失败,请检查网络后重试');
     }
@@ -132,8 +139,7 @@ class _CategoryPageState extends State<CategoryPage> {
     list[index + delta] = tmp;
     setState(() => _categories = list);
     try {
-      await widget.repository
-          .reorderCategories(list.map((c) => c.id).toList());
+      await widget.repository.reorderCategories(list.map((c) => c.id).toList());
     } catch (_) {
       _showError('排序保存失败,请检查网络后重试');
       await _load();
@@ -146,29 +152,29 @@ class _CategoryPageState extends State<CategoryPage> {
     String? moveToId; // null = 未分类
     final confirmed = await showDialog<bool>(
       context: context,
-        builder: (context) => StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            title: const Text('删除分组'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('「${category.name}」含 ${category.assetCount} 个资产。'),
-                const SizedBox(height: 8),
-                Text(
-                  '删除后这些资产将移入所选分组(默认未分组)。',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-                const SizedBox(height: 12),
-                if (others.isNotEmpty)
-                  DropdownButtonFormField<String?>(
-                    initialValue: null,
-                    decoration: const InputDecoration(
-                      labelText: '资产移入',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('未分组')),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('删除分组'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('「${category.name}」含 ${category.assetCount} 个资产。'),
+              const SizedBox(height: 8),
+              Text(
+                '删除后这些资产将移入所选分组(默认未分组)。',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 12),
+              if (others.isNotEmpty)
+                DropdownButtonFormField<String?>(
+                  initialValue: null,
+                  decoration: const InputDecoration(
+                    labelText: '资产移入',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('未分组')),
                     ...others.map(
                       (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
                     ),
@@ -208,7 +214,9 @@ class _CategoryPageState extends State<CategoryPage> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -227,72 +235,72 @@ class _CategoryPageState extends State<CategoryPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _categories.isEmpty
-              ? const Center(child: Text('暂无分组,点击右上角 + 新增'))
-              : ListView.separated(
-                  itemCount: _categories.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final category = _categories[index];
-                    return ListTile(
-                      leading: Icon(
-                        Icons.category_outlined,
-                        color: Theme.of(context).colorScheme.primary,
+          ? const Center(child: Text('暂无分组,点击右上角 + 新增'))
+          : ListView.separated(
+              itemCount: _categories.length,
+              separatorBuilder: (_, _) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final category = _categories[index];
+                return ListTile(
+                  leading: Icon(
+                    Icons.category_outlined,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  title: Text(category.name),
+                  subtitle: Text('${category.assetCount} 个资产'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: '上移',
+                        icon: const Icon(Icons.arrow_upward),
+                        onPressed: index == 0 ? null : () => _move(index, -1),
                       ),
-                      title: Text(category.name),
-                      subtitle: Text('${category.assetCount} 个资产'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: '上移',
-                            icon: const Icon(Icons.arrow_upward),
-                            onPressed: index == 0
-                                ? null
-                                : () => _move(index, -1),
+                      IconButton(
+                        tooltip: '下移',
+                        icon: const Icon(Icons.arrow_downward),
+                        onPressed: index == _categories.length - 1
+                            ? null
+                            : () => _move(index, 1),
+                      ),
+                      if (category.isPreset)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
                           ),
-                          IconButton(
-                            tooltip: '下移',
-                            icon: const Icon(Icons.arrow_downward),
-                            onPressed: index == _categories.length - 1
-                                ? null
-                                : () => _move(index, 1),
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.secondaryContainer,
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          if (category.isPreset)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .secondaryContainer,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                '预设',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSecondaryContainer,
-                                ),
-                              ),
+                          child: Text(
+                            '预设',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSecondaryContainer,
                             ),
-                          IconButton(
-                            tooltip: '设置继承人',
-                            icon: const Icon(Icons.people_outline),
-                            onPressed: () => _openInheritors(category),
                           ),
-                          IconButton(
-                            tooltip: '删除',
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => _deleteCategory(category),
-                          ),
-                        ],
+                        ),
+                      IconButton(
+                        tooltip: '设置继承人',
+                        icon: const Icon(Icons.people_outline),
+                        onPressed: () => _openInheritors(category),
                       ),
-                      onTap: () => _editCategory(category),
-                    );
-                  },
-                ),
+                      IconButton(
+                        tooltip: '删除',
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => _deleteCategory(category),
+                      ),
+                    ],
+                  ),
+                  onTap: () => _editCategory(category),
+                );
+              },
+            ),
     );
   }
 }

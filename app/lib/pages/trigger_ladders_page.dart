@@ -16,16 +16,28 @@ class TriggerLaddersPage extends StatefulWidget {
 
 class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
   final _store = SecureStore();
+  final _searchController = TextEditingController();
 
   List<TriggerLadder> _ladders = const [];
   bool _loading = true;
   bool _multiSelect = false;
   final Set<int> _selected = {};
 
+  /// 本地分页:每页 20,列表底部"加载更多"。
+  static const _pageSize = 20;
+  int _visibleCount = _pageSize;
+  String _search = '';
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -36,13 +48,14 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
       if (!mounted) return;
       setState(() {
         _ladders = ladders;
+        _visibleCount = _pageSize;
         _loading = false;
       });
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('加载失败,请检查网络后重试')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
       Navigator.of(context).pop();
     }
   }
@@ -125,9 +138,9 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                 }
               }
               if (name.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('请输入阶梯名称')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('请输入阶梯名称')));
                 return;
               }
               Navigator.of(context).pop(true);
@@ -157,7 +170,12 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
       if (ladder == null) {
         await api.createTriggerLadder(jwt, name: name, days: days);
       } else {
-        await api.updateTriggerLadder(jwt, '${ladder.id}', name: name, days: days);
+        await api.updateTriggerLadder(
+          jwt,
+          '${ladder.id}',
+          name: name,
+          days: days,
+        );
       }
       await _load();
     } on ApiException catch (e) {
@@ -231,11 +249,19 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
+    // 本地过滤(按阶梯名)+ 分页截取。
+    final query = _search.trim().toLowerCase();
+    final filtered = query.isEmpty
+        ? _ladders
+        : _ladders.where((l) => l.name.toLowerCase().contains(query)).toList();
+    final shown = filtered.take(_visibleCount).toList();
     return Scaffold(
       appBar: AppBar(
         title: Text(_multiSelect ? '已选 ${_selected.length} 项' : '触发阶梯'),
@@ -266,103 +292,156 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
             ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _ladders.isEmpty
-              ? const Center(child: Text('暂无阶梯,点击右下角 + 新增'))
-              : ListView.separated(
-                  itemCount: _ladders.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final l = _ladders[index];
-                    final selected = _selected.contains(l.id);
-                    return ListTile(
-                      leading: _multiSelect
-                          ? Checkbox(
-                              value: selected,
-                              onChanged: (v) => setState(() {
-                                if (v == true) {
-                                  _selected.add(l.id);
-                                } else {
-                                  _selected.remove(l.id);
-                                }
-                              }),
-                            )
-                          : Icon(
-                              l.isGlobal
-                                  ? Icons.public
-                                  : Icons.format_list_numbered,
-                              color: l.isGlobal
-                                  ? Theme.of(context).colorScheme.primary
-                                  : null,
-                            ),
-                      title: Row(
-                        children: [
-                          Flexible(child: Text(l.name)),
-                          if (l.isGlobal) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.secondaryContainer,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '全局',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSecondaryContainer,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      subtitle: Text(
-                        l.days.length >= 2
-                            ? '一级 ${l.days[0]} 天 / 二级 ${l.days[1]} 天'
-                            : l.daysLabel,
-                      ),
-                      onLongPress: l.isGlobal || _multiSelect
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search),
+                      hintText: '搜索阶梯名称',
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                      suffixIcon: _search.isEmpty
                           ? null
-                          : () => setState(() {
-                                _multiSelect = true;
-                                _selected.add(l.id);
-                              }),
-                      onTap: _multiSelect
-                          ? l.isGlobal
-                              ? null
-                              : () => setState(() {
-                                    if (!_selected.remove(l.id)) {
-                                      _selected.add(l.id);
-                                    }
-                                  })
-                          : null,
-                      trailing: _multiSelect
-                          ? null
-                          : Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  tooltip: '查看绑定',
-                                  icon: const Icon(Icons.link),
-                                  onPressed: () => _openBindings(l),
-                                ),
-                                IconButton(
-                                  tooltip: '修改',
-                                  icon: const Icon(Icons.edit_outlined),
-                                  onPressed: () => _editLadder(ladder: l),
-                                ),
-                              ],
+                          : IconButton(
+                              tooltip: '清空',
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _search = '';
+                                  _visibleCount = _pageSize;
+                                });
+                              },
                             ),
-                    );
-                  },
+                    ),
+                    onChanged: (value) => setState(() {
+                      _search = value;
+                      _visibleCount = _pageSize;
+                    }),
+                  ),
                 ),
+                Expanded(
+                  child: _ladders.isEmpty
+                      ? const Center(child: Text('暂无阶梯,点击右下角 + 新增'))
+                      : filtered.isEmpty
+                      ? const Center(child: Text('没有匹配的阶梯'))
+                      : ListView.separated(
+                          itemCount:
+                              shown.length +
+                              (_visibleCount < filtered.length ? 1 : 0),
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            // 末尾"加载更多"按钮。
+                            if (index >= shown.length) {
+                              return Center(
+                                child: TextButton(
+                                  onPressed: () => setState(
+                                    () => _visibleCount += _pageSize,
+                                  ),
+                                  child: const Text('加载更多'),
+                                ),
+                              );
+                            }
+                            final l = shown[index];
+                            final selected = _selected.contains(l.id);
+                            return ListTile(
+                              leading: _multiSelect
+                                  ? Checkbox(
+                                      value: selected,
+                                      onChanged: (v) => setState(() {
+                                        if (v == true) {
+                                          _selected.add(l.id);
+                                        } else {
+                                          _selected.remove(l.id);
+                                        }
+                                      }),
+                                    )
+                                  : Icon(
+                                      l.isGlobal
+                                          ? Icons.public
+                                          : Icons.format_list_numbered,
+                                      color: l.isGlobal
+                                          ? Theme.of(
+                                              context,
+                                            ).colorScheme.primary
+                                          : null,
+                                    ),
+                              title: Row(
+                                children: [
+                                  Flexible(child: Text(l.name)),
+                                  if (l.isGlobal) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.secondaryContainer,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        '全局',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSecondaryContainer,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              subtitle: Text(
+                                l.days.length >= 2
+                                    ? '一级 ${l.days[0]} 天 / 二级 ${l.days[1]} 天'
+                                    : l.daysLabel,
+                              ),
+                              onLongPress: l.isGlobal || _multiSelect
+                                  ? null
+                                  : () => setState(() {
+                                      _multiSelect = true;
+                                      _selected.add(l.id);
+                                    }),
+                              onTap: _multiSelect
+                                  ? l.isGlobal
+                                        ? null
+                                        : () => setState(() {
+                                            if (!_selected.remove(l.id)) {
+                                              _selected.add(l.id);
+                                            }
+                                          })
+                                  : null,
+                              trailing: _multiSelect
+                                  ? null
+                                  : Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          tooltip: '查看绑定',
+                                          icon: const Icon(Icons.link),
+                                          onPressed: () => _openBindings(l),
+                                        ),
+                                        IconButton(
+                                          tooltip: '修改',
+                                          icon: const Icon(Icons.edit_outlined),
+                                          onPressed: () =>
+                                              _editLadder(ladder: l),
+                                        ),
+                                      ],
+                                    ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
     );
   }
 }
@@ -387,6 +466,20 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
   final Set<int> _selAssets = {};
   final Set<int> _selCategories = {};
 
+  /// 资产状态色标(与 group_detail 一致)。
+  static const _statusColors = {
+    'active': Colors.green,
+    'inactive': Colors.grey,
+    'pending': Colors.orange,
+    'expired': Colors.red,
+  };
+  static const _statusLabels = {
+    'active': '正常',
+    'inactive': '停用',
+    'pending': '待处理',
+    'expired': '已过期',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -397,8 +490,10 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
     try {
       final jwt = await _store.readJwt();
       if (jwt == null) throw ApiException('未登录');
-      final b = await (await ApiConfig.client())
-          .getLadderBindings(jwt, widget.ladder.id);
+      final b = await (await ApiConfig.client()).getLadderBindings(
+        jwt,
+        widget.ladder.id,
+      );
       if (!mounted) return;
       setState(() {
         _assets = (b['assets'] as List? ?? const [])
@@ -446,12 +541,19 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      // 后端可能返回 400(如全局阶梯无需解绑),展示其消息。
+      if (!mounted) return;
+      setState(() => _unbinding = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
       if (!mounted) return;
       setState(() => _unbinding = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('解绑失败,请检查网络后重试')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('解绑失败,请检查网络后重试')));
     }
   }
 
@@ -460,8 +562,10 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
     required String name,
     required String inheritorName,
     required bool selected,
-    required ValueChanged<bool?> onChanged,
+    ValueChanged<bool?>? onChanged,
+    String status = '',
   }) {
+    final color = _statusColors[status];
     return CheckboxListTile(
       dense: true,
       contentPadding: EdgeInsets.zero,
@@ -469,9 +573,30 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
       value: selected,
       onChanged: onChanged,
       title: Text(name),
-      subtitle: Text(
-        '继承人:${inheritorName.isEmpty ? '未指定' : inheritorName}',
-        style: const TextStyle(fontSize: 12),
+      subtitle: Row(
+        children: [
+          // 资产状态色标(active/inactive/pending/expired)。
+          if (color != null) ...[
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              _statusLabels[status] ?? status,
+              style: TextStyle(fontSize: 12, color: color),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: Text(
+              '继承人:${inheritorName.isEmpty ? '未指定' : inheritorName}',
+              style: const TextStyle(fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -479,6 +604,8 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
   @override
   Widget build(BuildContext context) {
     final selCount = _selAssets.length + _selCategories.length;
+    // 全局阶梯无需解绑:禁用勾选、不显示"解绑所选"。
+    final isGlobal = widget.ladder.isGlobal;
     return AlertDialog(
       title: Text('${widget.ladder.name} · 绑定管理'),
       content: SizedBox(
@@ -490,7 +617,10 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('资产', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text(
+                      '资产',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     if (_assets.isEmpty)
                       const Text('暂无绑定资产', style: TextStyle(fontSize: 13))
                     else
@@ -499,18 +629,26 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
                           id: (a['asset_id'] as num).toInt(),
                           name: a['name']?.toString() ?? '未命名',
                           inheritorName: a['inheritor_name']?.toString() ?? '',
-                          selected: _selAssets.contains((a['asset_id'] as num).toInt()),
-                          onChanged: (v) => setState(() {
-                            final id = (a['asset_id'] as num).toInt();
-                            if (v == true) {
-                              _selAssets.add(id);
-                            } else {
-                              _selAssets.remove(id);
-                            }
-                          }),
+                          status: a['status']?.toString() ?? '',
+                          selected: _selAssets.contains(
+                            (a['asset_id'] as num).toInt(),
+                          ),
+                          onChanged: isGlobal
+                              ? null
+                              : (v) => setState(() {
+                                  final id = (a['asset_id'] as num).toInt();
+                                  if (v == true) {
+                                    _selAssets.add(id);
+                                  } else {
+                                    _selAssets.remove(id);
+                                  }
+                                }),
                         ),
                     const Divider(height: 24),
-                    const Text('分组', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text(
+                      '分组',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     if (_categories.isEmpty)
                       const Text('暂无绑定分组', style: TextStyle(fontSize: 13))
                     else
@@ -519,20 +657,24 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
                           id: (c['category_id'] as num).toInt(),
                           name: c['name']?.toString() ?? '未命名',
                           inheritorName: c['inheritor_name']?.toString() ?? '',
-                          selected: _selCategories.contains((c['category_id'] as num).toInt()),
-                          onChanged: (v) => setState(() {
-                            final id = (c['category_id'] as num).toInt();
-                            if (v == true) {
-                              _selCategories.add(id);
-                            } else {
-                              _selCategories.remove(id);
-                            }
-                          }),
+                          selected: _selCategories.contains(
+                            (c['category_id'] as num).toInt(),
+                          ),
+                          onChanged: isGlobal
+                              ? null
+                              : (v) => setState(() {
+                                  final id = (c['category_id'] as num).toInt();
+                                  if (v == true) {
+                                    _selCategories.add(id);
+                                  } else {
+                                    _selCategories.remove(id);
+                                  }
+                                }),
                         ),
                     const SizedBox(height: 8),
-                    const Text(
-                      '解绑后该资产/分组使用全局阶梯',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    Text(
+                      isGlobal ? '全局阶梯无需解绑' : '解绑后该资产/分组使用全局阶梯',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                   ],
                 ),
@@ -543,10 +685,11 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
           onPressed: _unbinding ? null : () => Navigator.of(context).pop(false),
           child: const Text('关闭'),
         ),
-        FilledButton(
-          onPressed: selCount == 0 || _unbinding ? null : _unbind,
-          child: Text(_unbinding ? '解绑中...' : '解绑所选($selCount)'),
-        ),
+        if (!isGlobal)
+          FilledButton(
+            onPressed: selCount == 0 || _unbinding ? null : _unbind,
+            child: Text(_unbinding ? '解绑中...' : '解绑所选($selCount)'),
+          ),
       ],
     );
   }

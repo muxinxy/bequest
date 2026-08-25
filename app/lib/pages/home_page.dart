@@ -156,11 +156,9 @@ class _HomePageState extends State<HomePage> {
         return;
       }
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(
-        content: Text(isLocal ? '加载失败,本地数据读取异常' : '加载失败,请检查网络后重试'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(isLocal ? '加载失败,本地数据读取异常' : '加载失败,请检查网络后重试')),
+      );
       setState(() => _loading = false);
     } catch (_) {
       if (!mounted) return;
@@ -175,11 +173,9 @@ class _HomePageState extends State<HomePage> {
       }
       if (!mounted) return;
       // 本地模式读取加密库失败与网络无关,提示语要准确。
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(
-        content: Text(isLocal ? '加载失败,本地数据读取异常' : '加载失败,请检查网络后重试'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(isLocal ? '加载失败,本地数据读取异常' : '加载失败,请检查网络后重试')),
+      );
       setState(() => _loading = false);
     }
   }
@@ -191,8 +187,9 @@ class _HomePageState extends State<HomePage> {
       final repo = OfflineAssetRepository(masterKeyB64: masterKeyB64);
       // 有缓存数据(非空资产或分类)才视为可用。
       final assets = (await repo.listAssets()).map(Asset.fromJson).toList();
-      final categories =
-          (await repo.listCategories()).map(Category.fromJson).toList();
+      final categories = (await repo.listCategories())
+          .map(Category.fromJson)
+          .toList();
       if (assets.isEmpty && categories.isEmpty) return false;
       if (!mounted) return false;
       setState(() {
@@ -217,52 +214,51 @@ class _HomePageState extends State<HomePage> {
   /// 可达则静默重新加载最新数据并提示用户。
   void _startOfflineRecoveryCheck() {
     _offlineRecoveryTimer?.cancel();
-    _offlineRecoveryTimer = Timer.periodic(
-      const Duration(seconds: 10),
-      (_) async {
-        if (!mounted || !_offlineMode) {
-          _offlineRecoveryTimer?.cancel();
-          return;
+    _offlineRecoveryTimer = Timer.periodic(const Duration(seconds: 10), (
+      _,
+    ) async {
+      if (!mounted || !_offlineMode) {
+        _offlineRecoveryTimer?.cancel();
+        return;
+      }
+      try {
+        // 快速探测服务器可达性(3s 超时)。
+        final api = await ApiConfig.client();
+        final jwt = await _store.readJwt();
+        if (jwt == null || jwt.isEmpty) return;
+        await api.me(jwt).timeout(const Duration(seconds: 3));
+        // 服务器恢复:静默刷新数据。
+        if (!mounted) return;
+        _offlineRecoveryTimer?.cancel();
+        _offlineMode = false;
+        _refreshLocalVault(jwt, api);
+        // 重新加载完整数据(云端仓库)。
+        final repo = await RepositoryFactory.resolve(
+          jwt: jwt,
+          masterKeyB64: await _store.readMasterKey() ?? '',
+        );
+        if (!mounted) return;
+        _repo = repo;
+        final categories = (await repo.listCategories())
+            .map(Category.fromJson)
+            .toList(growable: false);
+        final assets = (await repo.listAssets())
+            .map(Asset.fromJson)
+            .toList(growable: false);
+        setState(() {
+          _categories = categories;
+          _assets = assets;
+          _loading = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('服务器已恢复,数据已更新为最新')));
         }
-        try {
-          // 快速探测服务器可达性(3s 超时)。
-          final api = await ApiConfig.client();
-          final jwt = await _store.readJwt();
-          if (jwt == null || jwt.isEmpty) return;
-          await api.me(jwt).timeout(const Duration(seconds: 3));
-          // 服务器恢复:静默刷新数据。
-          if (!mounted) return;
-          _offlineRecoveryTimer?.cancel();
-          _offlineMode = false;
-          _refreshLocalVault(jwt, api);
-          // 重新加载完整数据(云端仓库)。
-          final repo = await RepositoryFactory.resolve(
-            jwt: jwt,
-            masterKeyB64: await _store.readMasterKey() ?? '',
-          );
-          if (!mounted) return;
-          _repo = repo;
-          final categories = (await repo.listCategories())
-              .map(Category.fromJson)
-              .toList(growable: false);
-          final assets = (await repo.listAssets())
-              .map(Asset.fromJson)
-              .toList(growable: false);
-          setState(() {
-            _categories = categories;
-            _assets = assets;
-            _loading = false;
-          });
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('服务器已恢复,数据已更新为最新')),
-            );
-          }
-        } catch (_) {
-          // 服务器仍不可达,继续等待。
-        }
-      },
-    );
+      } catch (_) {
+        // 服务器仍不可达,继续等待。
+      }
+    });
   }
 
   /// 后台刷新本地加密快照(登录后数据加载成功时调用),失败不影响主页。
@@ -288,17 +284,16 @@ class _HomePageState extends State<HomePage> {
       if (jwt == null) {
         _offlineMode = true;
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('未登录,无法刷新')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('未登录,无法刷新')));
         return;
       }
       final mk = await _store.readMasterKey() ?? '';
       final repo = await RepositoryFactory.resolve(jwt: jwt, masterKeyB64: mk);
       final api = await ApiConfig.client();
       final me = await api.me(jwt);
-      final tier =
-          (me['user'] as Map<String, dynamic>?)?['tier'] as String?;
+      final tier = (me['user'] as Map<String, dynamic>?)?['tier'] as String?;
       final reminders = await api.listReminders(jwt);
       final unread = reminders
           .map(Reminder.fromJson)
@@ -320,16 +315,16 @@ class _HomePageState extends State<HomePage> {
         _offlineMode = false;
         _refreshing = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('数据已刷新为最新')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('数据已刷新为最新')));
     } catch (_) {
       _offlineMode = true;
       if (!mounted) return;
       setState(() => _refreshing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('刷新失败,服务器仍不可达')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('刷新失败,服务器仍不可达')));
     }
   }
 
@@ -341,7 +336,9 @@ class _HomePageState extends State<HomePage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('退出登录'),
-        content: const Text('是否保留本机加密密钥?\n\n保留:下次登录免恢复,本机加密数据仍可离线读取。\n清除:适用于公共电脑,下次登录需重新恢复密钥。'),
+        content: const Text(
+          '是否保留本机加密密钥?\n\n保留:下次登录免恢复,本机加密数据仍可离线读取。\n清除:适用于公共电脑,下次登录需重新恢复密钥。',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
@@ -407,7 +404,17 @@ class _HomePageState extends State<HomePage> {
     final query = _search.trim().toLowerCase();
     final filtered = query.isEmpty
         ? groups
-        : groups.where((g) => g.$2.toLowerCase().contains(query)).toList();
+        : groups.where((g) {
+            // 分组名命中,或该分组下任一资产名命中(资产已全量加载)。
+            if (g.$2.toLowerCase().contains(query)) return true;
+            final cid = g.$1;
+            return _assets.any((a) {
+              final inGroup = cid.isEmpty
+                  ? (a.categoryId == null || a.categoryId!.isEmpty)
+                  : a.categoryId == cid;
+              return inGroup && a.name.toLowerCase().contains(query);
+            });
+          }).toList();
     switch (_sort) {
       case _GroupSort.name:
         filtered.sort((a, b) => a.$2.compareTo(b.$2));
@@ -431,11 +438,8 @@ class _HomePageState extends State<HomePage> {
         : _categories.where((c) => c.id == id).firstOrNull;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => GroupDetailPage(
-          category: category,
-          repository: repo,
-          tier: _tier,
-        ),
+        builder: (_) =>
+            GroupDetailPage(category: category, repository: repo, tier: _tier),
       ),
     );
     if (mounted) _load();
@@ -512,9 +516,9 @@ class _HomePageState extends State<HomePage> {
             onPressed: () {
               final value = controller.text.trim();
               if (value.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('请输入分组名称')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('请输入分组名称')));
                 return;
               }
               Navigator.of(context).pop(value);
@@ -529,24 +533,31 @@ class _HomePageState extends State<HomePage> {
     try {
       await repo.createCategory(name);
       if (mounted) _load();
-    } catch (_) {
+    } on ApiException catch (e) {
+      // 后端重名返回 409:明确提示"分组已存在",其余才归为网络错误。
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('新增分组失败,请检查网络后重试')),
+        SnackBar(
+          content: Text(e.statusCode == 409 ? '分组已存在' : '新增分组失败,请检查网络后重试'),
+        ),
       );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('新增分组失败,请检查网络后重试')));
     }
   }
 
   /// 多选删除分组:先把分组内资产移入未分组,再软删分组。
   /// 后端软删分组不会改资产 category_id——不移除会让资产"消失"
   /// (原分组已排除、未分组也查不到),故前端先 moveAssets 再删。
-  Future<void> _deleteSelectedGroups() async {    final confirmed = await showDialog<bool>(
+  Future<void> _deleteSelectedGroups() async {
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除分组'),
-        content: Text(
-          '确定删除所选 ${_selectedGroupIds.length} 个分组?分组内资产将变为未分组。',
-        ),
+        content: Text('确定删除所选 ${_selectedGroupIds.length} 个分组?分组内资产将变为未分组。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -581,9 +592,9 @@ class _HomePageState extends State<HomePage> {
       await _load();
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('删除失败,请检查网络后重试')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('删除失败,请检查网络后重试')));
     }
   }
 
@@ -713,7 +724,9 @@ class _HomePageState extends State<HomePage> {
 
   void _showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// 打开子页面,返回后刷新数据。
@@ -847,7 +860,10 @@ class _HomePageState extends State<HomePage> {
                         const Expanded(
                           child: Text(
                             '离线模式:服务器不可达,已加载本地缓存,仅可查看与导出',
-                            style: TextStyle(fontSize: 12, color: Colors.orange),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange,
+                            ),
                           ),
                         ),
                         TextButton(
@@ -866,7 +882,7 @@ class _HomePageState extends State<HomePage> {
                           controller: _searchController,
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.search),
-                            hintText: '搜索分组名称',
+                            hintText: '搜索分组或资产名称',
                             isDense: true,
                             border: const OutlineInputBorder(),
                             suffixIcon: _search.isEmpty
@@ -940,14 +956,21 @@ class _HomePageState extends State<HomePage> {
       child: Row(
         children: [
           Icon(
-            _sort == value ? Icons.radio_button_checked : Icons.radio_button_off,
-            color: _sort == value ? Theme.of(context).colorScheme.primary : null,
+            _sort == value
+                ? Icons.radio_button_checked
+                : Icons.radio_button_off,
+            color: _sort == value
+                ? Theme.of(context).colorScheme.primary
+                : null,
           ),
           const SizedBox(width: 12),
           Text(label),
           if (_sort == value) ...[
             const Spacer(),
-            Text(currentLabel, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            Text(
+              currentLabel,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
           ],
         ],
       ),
@@ -970,13 +993,13 @@ class _HomePageState extends State<HomePage> {
         onLongPress: _offlineMode || isUngrouped
             ? null
             : () => setState(() {
-                  _multiSelect = true;
-                  _selectedGroupIds.add(id);
-                }),
+                _multiSelect = true;
+                _selectedGroupIds.add(id);
+              }),
         onTap: _multiSelect
             ? isUngrouped
-                ? null
-                : () => setState(() {
+                  ? null
+                  : () => setState(() {
                       if (!_selectedGroupIds.remove(id)) {
                         _selectedGroupIds.add(id);
                       }
@@ -1002,7 +1025,9 @@ class _HomePageState extends State<HomePage> {
           trailing: _multiSelect
               ? Icon(
                   selected ? Icons.check_circle : Icons.circle_outlined,
-                  color: selected ? Theme.of(context).colorScheme.primary : null,
+                  color: selected
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
                 )
               : const Icon(Icons.chevron_right),
         ),

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 )
 
@@ -42,6 +43,18 @@ func validTemplateType(t string) string {
 func validateTemplate(req templateRequest) string {
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.TitleTemplate) == "" || strings.TrimSpace(req.BodyTemplate) == "" {
 		return "名称、标题模板和正文模板均必填"
+	}
+	// 占位符白名单:{name}/{date}/{days};出现其他 {xxx} 一律拒绝。
+	// 不区分模板类型,所有类型均允许这 3 个变量(渲染时缺失变量替换为空)。
+	re := regexp.MustCompile(`\{[^}]+\}`)
+	for _, s := range []string{req.TitleTemplate, req.BodyTemplate} {
+		for _, ph := range re.FindAllString(s, -1) {
+			switch ph {
+			case "{name}", "{date}", "{days}":
+			default:
+				return "模板变量仅支持 {name}/{date}/{days}"
+			}
+		}
 	}
 	return ""
 }

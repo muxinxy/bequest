@@ -24,15 +24,37 @@ class InheritorsPage extends StatefulWidget {
 class _InheritorsPageState extends State<InheritorsPage> {
   late final Future<ApiClient> _api = ApiConfig.client();
   final _store = SecureStore();
+  final _searchController = TextEditingController();
+  final _scroll = ScrollController();
 
   List<Inheritor> _inheritors = const [];
   String? _defaultInheritorName;
   bool _loading = true;
 
+  /// 本地分页:每页 20,滚动到底自动加载更多。
+  static const _pageSize = 20;
+  int _visibleCount = _pageSize;
+  String _search = '';
+
   @override
   void initState() {
     super.initState();
+    _scroll.addListener(_onScroll);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// 滚动接近底部时加载下一页。
+  void _onScroll() {
+    if (_scroll.position.extentAfter < 200) {
+      setState(() => _visibleCount += _pageSize);
+    }
   }
 
   Future<void> _load() async {
@@ -50,12 +72,14 @@ class _InheritorsPageState extends State<InheritorsPage> {
       setState(() {
         _inheritors = list.map(Inheritor.fromJson).toList(growable: false);
         _defaultInheritorName = def['inheritor_name']?.toString();
+        _visibleCount = _pageSize;
         _loading = false;
       });
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
       Navigator.of(context).pop();
     }
   }
@@ -143,7 +167,9 @@ class _InheritorsPageState extends State<InheritorsPage> {
                   Text(
                     '请立即将访问码线下告知继承人,此码仅现在可见,'
                     '触发继承后凭此码领取密钥。',
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ],
               ],
@@ -161,20 +187,21 @@ class _InheritorsPageState extends State<InheritorsPage> {
                 final phone = phoneController.text.trim();
                 final code = codeController.text.trim();
                 if (name.isEmpty) {
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(const SnackBar(content: Text('请输入姓名')));
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('请输入姓名')));
                   return;
                 }
                 if (email.isEmpty && phone.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('邮箱或手机号至少填一个')),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('邮箱或手机号至少填一个')));
                   return;
                 }
                 if (email.isNotEmpty && !isValidEmail(email)) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('邮箱格式不正确')),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('邮箱格式不正确')));
                   return;
                 }
                 if (phone.isNotEmpty && !isValidPhone(phone)) {
@@ -184,8 +211,9 @@ class _InheritorsPageState extends State<InheritorsPage> {
                   return;
                 }
                 if (code.isEmpty) {
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(const SnackBar(content: Text('请输入或生成访问码')));
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('请输入或生成访问码')));
                   return;
                 }
                 Navigator.of(context).pop(
@@ -218,9 +246,9 @@ class _InheritorsPageState extends State<InheritorsPage> {
         'access_code': result.accessCode,
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已添加继承人,请将访问码线下告知对方')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已添加继承人,请将访问码线下告知对方')));
       await _load();
     } on ApiException catch (e) {
       _showError(e.message);
@@ -306,7 +334,9 @@ class _InheritorsPageState extends State<InheritorsPage> {
                   const SizedBox(height: 12),
                   Text(
                     '请立即将新的继承码线下告知继承人。',
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ],
               ],
@@ -323,21 +353,21 @@ class _InheritorsPageState extends State<InheritorsPage> {
                 final email = emailController.text.trim();
                 final phone = phoneController.text.trim();
                 if (name.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('请输入姓名')),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('请输入姓名')));
                   return;
                 }
                 if (email.isEmpty && phone.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('邮箱或手机号至少填一个')),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('邮箱或手机号至少填一个')));
                   return;
                 }
                 if (email.isNotEmpty && !isValidEmail(email)) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('邮箱格式不正确')),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('邮箱格式不正确')));
                   return;
                 }
                 if (phone.isNotEmpty && !isValidPhone(phone)) {
@@ -391,9 +421,9 @@ class _InheritorsPageState extends State<InheritorsPage> {
   Future<void> _copyAccessCode(Inheritor inheritor) async {
     await Clipboard.setData(ClipboardData(text: inheritor.accessCode));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('继承码已复制')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('继承码已复制')));
   }
 
   Future<void> _deleteInheritor(Inheritor inheritor) async {
@@ -454,9 +484,8 @@ class _InheritorsPageState extends State<InheritorsPage> {
         children: [
           for (final i in _inheritors)
             SimpleDialogOption(
-              onPressed: () => Navigator.of(context).pop(
-                int.tryParse(i.id) ?? 0,
-              ),
+              onPressed: () =>
+                  Navigator.of(context).pop(int.tryParse(i.id) ?? 0),
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.person_outline),
@@ -492,11 +521,25 @@ class _InheritorsPageState extends State<InheritorsPage> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
+    // 本地过滤(姓名/邮箱)+ 分页截取。
+    final query = _search.trim().toLowerCase();
+    final filtered = query.isEmpty
+        ? _inheritors
+        : _inheritors
+              .where(
+                (i) =>
+                    i.name.toLowerCase().contains(query) ||
+                    i.email.toLowerCase().contains(query),
+              )
+              .toList();
+    final shown = filtered.take(_visibleCount).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('继承人管理')),
       floatingActionButton: FloatingActionButton(
@@ -541,81 +584,113 @@ class _InheritorsPageState extends State<InheritorsPage> {
               ],
             ),
           ),
+          // 搜索框:按姓名/邮箱本地过滤。
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                hintText: '搜索姓名或邮箱',
+                isDense: true,
+                border: const OutlineInputBorder(),
+                suffixIcon: _search.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: '清空',
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _search = '';
+                            _visibleCount = _pageSize;
+                          });
+                        },
+                      ),
+              ),
+              onChanged: (value) => setState(() {
+                _search = value;
+                _visibleCount = _pageSize;
+              }),
+            ),
+          ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _inheritors.isEmpty
-                    ? const Center(child: Text('暂无继承人,点击右下角 + 添加'))
-                    : ListView.separated(
-                        itemCount: _inheritors.length,
-                        separatorBuilder: (_, _) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final inheritor = _inheritors[index];
-                          return ListTile(
-                            leading: const Icon(Icons.person_outline),
-                            title: Text(inheritor.name),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                ? const Center(child: Text('暂无继承人,点击右下角 + 添加'))
+                : filtered.isEmpty
+                ? const Center(child: Text('没有匹配的继承人'))
+                : ListView.separated(
+                    controller: _scroll,
+                    itemCount: shown.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final inheritor = shown[index];
+                      return ListTile(
+                        leading: const Icon(Icons.person_outline),
+                        title: Text(inheritor.name),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${inheritor.email.isEmpty ? '未填写邮箱' : inheritor.email}'
+                              '${inheritor.phone.isEmpty ? '' : ' · ${inheritor.phone}'}'
+                              '${inheritor.priority == null ? '' : ' · 优先级 ${inheritor.priority}'}'
+                              ' · ${inheritor.categoryCount} 个分组 · ${inheritor.assetCount} 个资产',
+                            ),
+                            Row(
                               children: [
-                                Text(
-                                  '${inheritor.email.isEmpty ? '未填写邮箱' : inheritor.email}'
-                                  '${inheritor.phone.isEmpty ? '' : ' · ${inheritor.phone}'}'
-                                  '${inheritor.priority == null ? '' : ' · 优先级 ${inheritor.priority}'}'
-                                  ' · ${inheritor.categoryCount} 个分组 · ${inheritor.assetCount} 个资产',
-                                ),
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        '继承码:${inheritor.accessCode.isEmpty ? '未设置' : inheritor.accessCode}',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey,
-                                          fontFamily: 'monospace',
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                Flexible(
+                                  child: Text(
+                                    '继承码:${inheritor.accessCode.isEmpty ? '未设置' : inheritor.accessCode}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                      fontFamily: 'monospace',
                                     ),
-                                    if (inheritor.accessCode.isNotEmpty &&
-                                        !inheritor.accessCode.contains('*'))
-                                      IconButton(
-                                        tooltip: '复制继承码',
-                                        visualDensity: VisualDensity.compact,
-                                        icon: const Icon(
-                                          Icons.copy_outlined,
-                                          size: 16,
-                                        ),
-                                        onPressed: () =>
-                                            _copyAccessCode(inheritor),
-                                      ),
-                                  ],
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
+                                if (inheritor.accessCode.isNotEmpty &&
+                                    !inheritor.accessCode.contains('*'))
+                                  IconButton(
+                                    tooltip: '复制继承码',
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(
+                                      Icons.copy_outlined,
+                                      size: 16,
+                                    ),
+                                    onPressed: () => _copyAccessCode(inheritor),
+                                  ),
                               ],
                             ),
-                            onTap: () => _openAssets(inheritor),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  tooltip: '查看绑定资产',
-                                  icon: const Icon(Icons.inventory_2_outlined),
-                                  onPressed: () => _openAssets(inheritor),
-                                ),
-                                IconButton(
-                                  tooltip: '编辑',
-                                  icon: const Icon(Icons.edit_outlined),
-                                  onPressed: () => _editInheritor(inheritor),
-                                ),
-                                IconButton(
-                                  tooltip: '删除',
-                                  icon: const Icon(Icons.delete_outline),
-                                  onPressed: () => _deleteInheritor(inheritor),
-                                ),
-                              ],
+                          ],
+                        ),
+                        onTap: () => _openAssets(inheritor),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: '查看绑定资产',
+                              icon: const Icon(Icons.inventory_2_outlined),
+                              onPressed: () => _openAssets(inheritor),
                             ),
-                          );
-                        },
-                      ),
+                            IconButton(
+                              tooltip: '编辑',
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () => _editInheritor(inheritor),
+                            ),
+                            IconButton(
+                              tooltip: '删除',
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () => _deleteInheritor(inheritor),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),

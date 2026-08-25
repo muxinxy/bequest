@@ -323,6 +323,8 @@ func triggerInheritance(db *sql.DB, uid int64, daysSince int) {
 
 // createInheritanceEvent inserts one event, snapshots the inheritor's access
 // code hash, sets stage, notifies owner and emails the inheritor.
+// 语义确认:无论资产级/分组级/用户级事件,这里统一把 inherit_stage 置为
+// 'triggered'——资产级事件同样会推进全局触发阶段(阶段是用户级状态,只进不退)。
 func createInheritanceEvent(db *sql.DB, uid, inID int64, inEmail, codeHash string, assetID *int64) {
 	keyBytes := make([]byte, 16)
 	if _, err := rand.Read(keyBytes); err != nil {

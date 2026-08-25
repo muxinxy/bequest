@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../models/asset.dart';
 import '../models/category.dart';
@@ -134,11 +135,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            _isLocal ? '加载失败,本地数据读取异常' : '加载失败,请检查网络后重试',
-          ),
-        ),
+        SnackBar(content: Text(_isLocal ? '加载失败,本地数据读取异常' : '加载失败,请检查网络后重试')),
       );
       Navigator.of(context).pop();
     }
@@ -147,17 +144,19 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
   /// 并行拉取各资产继承人(仅云端有数据;本地/离线返回空)。
   Future<Map<String, List<String>>> _fetchInheritors(List<Asset> assets) async {
     final inheritors = <String, List<String>>{};
-    await Future.wait(assets.map((a) async {
-      try {
-        final names = (await widget.repository.listAssetInheritors(a.id))
-            .map((m) => '${m['inheritor_name'] ?? ''}')
-            .where((n) => n.isNotEmpty)
-            .toList();
-        if (names.isNotEmpty) inheritors[a.id] = names;
-      } catch (_) {
-        // 单资产继承人拉取失败不影响列表。
-      }
-    }));
+    await Future.wait(
+      assets.map((a) async {
+        try {
+          final names = (await widget.repository.listAssetInheritors(a.id))
+              .map((m) => '${m['inheritor_name'] ?? ''}')
+              .where((n) => n.isNotEmpty)
+              .toList();
+          if (names.isNotEmpty) inheritors[a.id] = names;
+        } catch (_) {
+          // 单资产继承人拉取失败不影响列表。
+        }
+      }),
+    );
     return inheritors;
   }
 
@@ -199,24 +198,26 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       case _AssetSort.updated:
         sorted.sort((a, b) => (b.updatedAt ?? '').compareTo(a.updatedAt ?? ''));
       case _AssetSort.status:
-        sorted.sort((a, b) => _statusOrder(a.status).compareTo(_statusOrder(b.status)));
+        sorted.sort(
+          (a, b) => _statusOrder(a.status).compareTo(_statusOrder(b.status)),
+        );
     }
     return sorted;
   }
 
   static int _statusOrder(String s) => switch (s) {
-        'active' => 0,
-        'pending' => 1,
-        'inactive' => 2,
-        'expired' => 3,
-        _ => 4,
-      };
+    'active' => 0,
+    'pending' => 1,
+    'inactive' => 2,
+    'expired' => 3,
+    _ => 4,
+  };
 
   Future<void> _openEditor(Asset asset) async {
     if (_readOnly) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('离线模式仅可查看与导出,无法修改资产')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('离线模式仅可查看与导出,无法修改资产')));
       return;
     }
     await Navigator.of(context).push(
@@ -287,10 +288,9 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
         final copied = await widget.repository.copyAsset(id);
         final newId = copied['id']?.toString();
         if (newId == null || newId.isEmpty) continue;
-        await widget.repository.moveAssets(
-          [newId],
-          target.isEmpty ? null : target,
-        );
+        await widget.repository.moveAssets([
+          newId,
+        ], target.isEmpty ? null : target);
       }
       _exitMultiSelect();
       await _load();
@@ -495,9 +495,9 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
             onPressed: () {
               final value = controller.text.trim();
               if (value.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('请输入分组名称')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('请输入分组名称')));
                 return;
               }
               Navigator.of(context).pop(value);
@@ -512,13 +512,22 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     try {
       await widget.repository.updateCategory(_groupId, {'name': name});
       setState(() => _groupName = name);
+    } on ApiException catch (e) {
+      // 重名返回 409:明确提示"分组已存在"。
+      _showError(
+        e.statusCode == 409
+            ? '分组已存在'
+            : (_isLocal ? '保存失败,请重试' : '保存失败,请检查网络后重试'),
+      );
     } catch (_) {
       _showError(_isLocal ? '保存失败,请重试' : '保存失败,请检查网络后重试');
     }
   }
 
   Future<void> _editRemark() async {
-    final controller = TextEditingController(text: widget.category?.remark ?? '');
+    final controller = TextEditingController(
+      text: widget.category?.remark ?? '',
+    );
     final remark = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -556,7 +565,9 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// 排序菜单:按名称 / 修改时间 / 状态。
@@ -582,8 +593,12 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       child: Row(
         children: [
           Icon(
-            _sort == value ? Icons.radio_button_checked : Icons.radio_button_off,
-            color: _sort == value ? Theme.of(context).colorScheme.primary : null,
+            _sort == value
+                ? Icons.radio_button_checked
+                : Icons.radio_button_off,
+            color: _sort == value
+                ? Theme.of(context).colorScheme.primary
+                : null,
           ),
           const SizedBox(width: 12),
           Text(label),
@@ -615,7 +630,10 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                     onSelected: _onMenu,
                     itemBuilder: (_) => const [
                       PopupMenuItem(value: 'rename', child: Text('重命名')),
-                      PopupMenuItem(value: 'inheritors', child: Text('设置分组继承人')),
+                      PopupMenuItem(
+                        value: 'inheritors',
+                        child: Text('设置分组继承人'),
+                      ),
                       PopupMenuItem(value: 'remark', child: Text('编辑备注')),
                     ],
                   ),
@@ -663,9 +681,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                 Expanded(
                   child: _visibleAssets.isEmpty
                       ? Center(
-                          child: Text(
-                            _assets.isEmpty ? '分组内暂无资产' : '没有匹配的资产',
-                          ),
+                          child: Text(_assets.isEmpty ? '分组内暂无资产' : '没有匹配的资产'),
                         )
                       : RefreshIndicator(
                           onRefresh: _load,
@@ -673,7 +689,8 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                             controller: _scrollController,
                             physics: const AlwaysScrollableScrollPhysics(),
                             padding: const EdgeInsets.only(bottom: 88),
-                            itemCount: _visibleAssets.length +
+                            itemCount:
+                                _visibleAssets.length +
                                 (_hasMore && _search.isEmpty ? 1 : 0),
                             itemBuilder: (context, index) {
                               if (index >= _visibleAssets.length) {
@@ -757,13 +774,13 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
         onLongPress: _readOnly
             ? null
             : () => setState(() {
-                  _multiSelect = true;
-                  _selectedIds.add(a.id);
-                }),
+                _multiSelect = true;
+                _selectedIds.add(a.id);
+              }),
         onTap: _multiSelect
             ? () => setState(() {
-                  if (!_selectedIds.remove(a.id)) _selectedIds.add(a.id);
-                })
+                if (!_selectedIds.remove(a.id)) _selectedIds.add(a.id);
+              })
             : () => _openEditor(a),
         child: ListTile(
           leading: Icon(
@@ -774,15 +791,16 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (inheritors.isNotEmpty)
-                Text('继承人:${inheritors.join('、')}'),
+              if (inheritors.isNotEmpty) Text('继承人:${inheritors.join('、')}'),
               Text('修改 ${formatServerTime(a.updatedAt)}'),
             ],
           ),
           trailing: _multiSelect
               ? Icon(
                   selected ? Icons.check_circle : Icons.circle_outlined,
-                  color: selected ? Theme.of(context).colorScheme.primary : null,
+                  color: selected
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
                 )
               : Row(
                   mainAxisSize: MainAxisSize.min,
