@@ -121,6 +121,8 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("POST /api/v1/trigger-ladders", auth(handleCreateTriggerLadder(db)))
 	mux.Handle("PUT /api/v1/trigger-ladders/{id}", auth(handleUpdateTriggerLadder(db)))
 	mux.Handle("DELETE /api/v1/trigger-ladders", auth(handleDeleteTriggerLadders(db)))
+	mux.Handle("GET /api/v1/trigger-ladders/{id}/bindings", auth(handleListLadderBindings(db)))
+	mux.Handle("POST /api/v1/trigger-ladders/unbind", auth(handleUnbindLadder(db)))
 	mux.Handle("PUT /api/v1/categories/order", auth(handleReorderCategories(db)))
 	mux.Handle("POST /api/v1/assets/move", auth(handleBatchMoveAssets(db)))
 	mux.Handle("POST /api/v1/assets/batch-delete", auth(handleBatchDeleteAssets(db)))

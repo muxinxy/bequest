@@ -168,13 +168,30 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
   }
 
   /// 多选删除自定义阶梯;删除后引用它的继承自动回退全局。
+  /// 删除前先统计各阶梯绑定数,确认框提示"删除后使用全局阶梯"。
   Future<void> _deleteSelected() async {
+    final jwt = await _store.readJwt();
+    if (jwt == null) throw ApiException('未登录');
+    final api = await ApiConfig.client();
+    // 删除前统计绑定数(供确认框提示)。
+    var boundAssets = 0, boundCategories = 0;
+    try {
+      for (final id in _selected) {
+        final b = await api.getLadderBindings(jwt, id);
+        boundAssets += (b['assets'] as List? ?? const []).length;
+        boundCategories += (b['categories'] as List? ?? const []).length;
+      }
+    } catch (_) {
+      // 统计失败不阻塞删除。
+    }
+    if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除阶梯'),
         content: Text(
-          '确定删除所选 ${_selected.length} 个阶梯?\n使用这些阶梯的继承将自动变为全局阶梯。',
+          '确定删除所选 ${_selected.length} 个阶梯?\n'
+          '该阶梯绑定 $boundAssets 个资产、$boundCategories 个分组,删除后它们将使用全局阶梯。',
         ),
         actions: [
           TextButton(
@@ -190,10 +207,7 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      final jwt = await _store.readJwt();
-      if (jwt == null) throw ApiException('未登录');
-      await (await ApiConfig.client())
-          .deleteTriggerLadders(jwt, _selected.toList());
+      await api.deleteTriggerLadders(jwt, _selected.toList());
       setState(() {
         _multiSelect = false;
         _selected.clear();
@@ -204,6 +218,15 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
     } catch (_) {
       _showError('删除失败,请检查网络后重试');
     }
+  }
+
+  /// 打开绑定管理对话框;解绑成功后刷新列表。
+  Future<void> _openBindings(TriggerLadder l) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (context) => _LadderBindingsDialog(ladder: l),
+    );
+    if (changed == true) await _load();
   }
 
   void _showError(String message) {
@@ -322,14 +345,209 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                           : null,
                       trailing: _multiSelect
                           ? null
-                          : IconButton(
-                              tooltip: '修改',
-                              icon: const Icon(Icons.edit_outlined),
-                              onPressed: () => _editLadder(ladder: l),
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  tooltip: '查看绑定',
+                                  icon: const Icon(Icons.link),
+                                  onPressed: () => _openBindings(l),
+                                ),
+                                IconButton(
+                                  tooltip: '修改',
+                                  icon: const Icon(Icons.edit_outlined),
+                                  onPressed: () => _editLadder(ladder: l),
+                                ),
+                              ],
                             ),
                     );
                   },
                 ),
+    );
+  }
+}
+
+/// 阶梯绑定管理对话框:显示该阶梯绑定的资产/分组 + 继承人,可多选解绑。
+/// 全局阶梯显示所有未绑定阶梯(ladder_id IS NULL)的资产/分组。
+class _LadderBindingsDialog extends StatefulWidget {
+  const _LadderBindingsDialog({required this.ladder});
+
+  final TriggerLadder ladder;
+
+  @override
+  State<_LadderBindingsDialog> createState() => _LadderBindingsDialogState();
+}
+
+class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
+  final _store = SecureStore();
+  bool _loading = true;
+  bool _unbinding = false;
+  List<Map<String, dynamic>> _assets = const [];
+  List<Map<String, dynamic>> _categories = const [];
+  final Set<int> _selAssets = {};
+  final Set<int> _selCategories = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final jwt = await _store.readJwt();
+      if (jwt == null) throw ApiException('未登录');
+      final b = await (await ApiConfig.client())
+          .getLadderBindings(jwt, widget.ladder.id);
+      if (!mounted) return;
+      setState(() {
+        _assets = (b['assets'] as List? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+        _categories = (b['categories'] as List? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _unbind() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('解绑所选'),
+        content: const Text('解绑后该资产/分组使用全局阶梯,确定解绑?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('解绑'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _unbinding = true);
+    try {
+      final jwt = await _store.readJwt();
+      if (jwt == null) throw ApiException('未登录');
+      await (await ApiConfig.client()).unbindLadder(
+        jwt,
+        ladderId: widget.ladder.id,
+        assetIds: _selAssets.toList(),
+        categoryIds: _selCategories.toList(),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _unbinding = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('解绑失败,请检查网络后重试')),
+      );
+    }
+  }
+
+  Widget _bindingTile({
+    required int id,
+    required String name,
+    required String inheritorName,
+    required bool selected,
+    required ValueChanged<bool?> onChanged,
+  }) {
+    return CheckboxListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      controlAffinity: ListTileControlAffinity.leading,
+      value: selected,
+      onChanged: onChanged,
+      title: Text(name),
+      subtitle: Text(
+        '继承人:${inheritorName.isEmpty ? '未指定' : inheritorName}',
+        style: const TextStyle(fontSize: 12),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selCount = _selAssets.length + _selCategories.length;
+    return AlertDialog(
+      title: Text('${widget.ladder.name} · 绑定管理'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('资产', style: TextStyle(fontWeight: FontWeight.bold)),
+                    if (_assets.isEmpty)
+                      const Text('暂无绑定资产', style: TextStyle(fontSize: 13))
+                    else
+                      for (final a in _assets)
+                        _bindingTile(
+                          id: (a['asset_id'] as num).toInt(),
+                          name: a['name']?.toString() ?? '未命名',
+                          inheritorName: a['inheritor_name']?.toString() ?? '',
+                          selected: _selAssets.contains((a['asset_id'] as num).toInt()),
+                          onChanged: (v) => setState(() {
+                            final id = (a['asset_id'] as num).toInt();
+                            if (v == true) {
+                              _selAssets.add(id);
+                            } else {
+                              _selAssets.remove(id);
+                            }
+                          }),
+                        ),
+                    const Divider(height: 24),
+                    const Text('分组', style: TextStyle(fontWeight: FontWeight.bold)),
+                    if (_categories.isEmpty)
+                      const Text('暂无绑定分组', style: TextStyle(fontSize: 13))
+                    else
+                      for (final c in _categories)
+                        _bindingTile(
+                          id: (c['category_id'] as num).toInt(),
+                          name: c['name']?.toString() ?? '未命名',
+                          inheritorName: c['inheritor_name']?.toString() ?? '',
+                          selected: _selCategories.contains((c['category_id'] as num).toInt()),
+                          onChanged: (v) => setState(() {
+                            final id = (c['category_id'] as num).toInt();
+                            if (v == true) {
+                              _selCategories.add(id);
+                            } else {
+                              _selCategories.remove(id);
+                            }
+                          }),
+                        ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      '解绑后该资产/分组使用全局阶梯',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _unbinding ? null : () => Navigator.of(context).pop(false),
+          child: const Text('关闭'),
+        ),
+        FilledButton(
+          onPressed: selCount == 0 || _unbinding ? null : _unbind,
+          child: Text(_unbinding ? '解绑中...' : '解绑所选($selCount)'),
+        ),
+      ],
     );
   }
 }

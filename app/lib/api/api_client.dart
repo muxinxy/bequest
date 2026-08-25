@@ -388,6 +388,31 @@ class ApiClient {
     return _decode(response);
   }
 
+  /// GET /api/v1/trigger-ladders/{id}/bindings:该阶梯绑定的资产/分组及继承人。
+  /// 全局阶梯返回所有 ladder_id IS NULL 的绑定;自定义返回 ladder_id=该 id。
+  Future<Map<String, dynamic>> getLadderBindings(String jwt, int id) {
+    return _get('/api/v1/trigger-ladders/$id/bindings', jwt);
+  }
+
+  /// POST /api/v1/trigger-ladders/unbind {ladder_id, asset_ids, category_ids}
+  /// 解绑后对应资产/分组回退全局阶梯。
+  Future<Map<String, dynamic>> unbindLadder(
+    String jwt, {
+    required int ladderId,
+    required List<int> assetIds,
+    required List<int> categoryIds,
+  }) {
+    return _postAuth(
+      '/api/v1/trigger-ladders/unbind',
+      {
+        'ladder_id': ladderId,
+        'asset_ids': assetIds,
+        'category_ids': categoryIds,
+      },
+      jwt,
+    );
+  }
+
   /// PUT /api/v1/assets/{id}/inheritors/{iid} {ladder_id}:修改绑定阶梯(null=全局)。
   Future<Map<String, dynamic>> updateAssetInheritorLadder(
     String jwt,

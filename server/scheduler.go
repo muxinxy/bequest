@@ -190,7 +190,7 @@ func triggerInheritance(db *sql.DB, uid int64, daysSince int) {
 		FROM asset_inheritors ai
 		JOIN inheritors i ON i.id = ai.inheritor_id
 		JOIN assets a ON a.id = ai.asset_id
-		WHERE a.user_id = ? ORDER BY ai.priority ASC, ai.id ASC`, uid)
+		WHERE a.user_id = ? AND a.status = 'active' ORDER BY ai.priority ASC, ai.id ASC`, uid)
 	if err != nil {
 		log.Printf("query asset inheritors: %v", err)
 		return
@@ -240,7 +240,7 @@ func triggerInheritance(db *sql.DB, uid int64, daysSince int) {
 		FROM category_inheritors ci
 		JOIN inheritors i ON i.id = ci.inheritor_id
 		JOIN assets a ON a.category_id = ci.category_id
-		WHERE a.user_id = ? AND NOT EXISTS (
+		WHERE a.user_id = ? AND a.status = 'active' AND NOT EXISTS (
 			SELECT 1 FROM asset_inheritors ai WHERE ai.asset_id = a.id
 		) ORDER BY ci.priority ASC, ci.id ASC, a.id ASC`, uid)
 	if err != nil {
@@ -279,7 +279,7 @@ func triggerInheritance(db *sql.DB, uid int64, daysSince int) {
 	// 有资产级/分组级配置的资产已单独建事件,不再进全量。
 	configured := len(boundAssets)
 	var total int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM assets WHERE user_id = ?`, uid).Scan(&total); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM assets WHERE user_id = ? AND status = 'active'`, uid).Scan(&total); err != nil {
 		log.Printf("count assets: %v", err)
 		return
 	}

@@ -223,6 +223,7 @@ func handleDeleteTriggerLadders(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		deleted, skipped := 0, 0
+		boundAssets, boundCategories := 0, 0
 		var delIDs []int64
 		for _, id := range req.IDs {
 			var isGlobal int
@@ -235,11 +236,17 @@ func handleDeleteTriggerLadders(db *sql.DB) http.HandlerFunc {
 				skipped++
 				continue
 			}
+			// 删除前统计受影响绑定数(供前端提示"将解绑 N 个资产、M 个分组")。
+			var na, nc int
+			db.QueryRow(`SELECT COUNT(*) FROM asset_inheritors WHERE ladder_id = ?`, id).Scan(&na)
+			db.QueryRow(`SELECT COUNT(*) FROM category_inheritors WHERE ladder_id = ?`, id).Scan(&nc)
 			if _, err := db.Exec(`DELETE FROM trigger_ladders WHERE id = ? AND user_id = ?`, id, uid); err != nil {
 				log.Printf("delete ladder: %v", err)
 				continue
 			}
 			deleted++
+			boundAssets += na
+			boundCategories += nc
 			delIDs = append(delIDs, id)
 		}
 		if len(delIDs) > 0 {
@@ -256,6 +263,160 @@ func handleDeleteTriggerLadders(db *sql.DB) http.HandlerFunc {
 			}
 		}
 		logAudit(db, uid, fmt.Sprintf("删除触发阶梯(共 %d 个)", deleted), map[string]any{"deleted": deleted, "skipped": skipped})
-		writeJSON(w, http.StatusOK, map[string]int{"deleted": deleted, "skipped": skipped})
+		writeJSON(w, http.StatusOK, map[string]int{"deleted": deleted, "skipped": skipped, "bound_assets": boundAssets, "bound_categories": boundCategories})
 	}
+}
+
+// ---------- 阶梯绑定管理 ----------
+
+type ladderBindingAsset struct {
+	AssetID       int64  `json:"asset_id"`
+	Name          string `json:"name"`
+	InheritorID   int64  `json:"inheritor_id"`
+	InheritorName string `json:"inheritor_name"`
+}
+
+type ladderBindingCategory struct {
+	CategoryID    int64  `json:"category_id"`
+	Name          string `json:"name"`
+	InheritorID   int64  `json:"inheritor_id"`
+	InheritorName string `json:"inheritor_name"`
+}
+
+// handleListLadderBindings: GET /api/v1/trigger-ladders/{id}/bindings -> 200
+// 返回该阶梯绑定的资产/分组及各自继承人。
+// 全局阶梯(is_global=1)返回所有 ladder_id IS NULL 的绑定(默认=全局);
+// 自定义阶梯返回 ladder_id=该 id 的绑定。
+func handleListLadderBindings(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "无效的 ID")
+			return
+		}
+		var isGlobal int
+		if err := db.QueryRow(`SELECT is_global FROM trigger_ladders WHERE id = ? AND user_id = ?`, id, uid).Scan(&isGlobal); err != nil {
+			writeError(w, http.StatusNotFound, "触发阶梯不存在")
+			return
+		}
+		// 全局阶梯:ladder_id IS NULL;自定义:ladder_id = id。
+		ladderCond := "ai.ladder_id IS NULL"
+		catCond := "ci.ladder_id IS NULL"
+		if isGlobal == 0 {
+			ladderCond = "ai.ladder_id = ?"
+			catCond = "ci.ladder_id = ?"
+		}
+		assets := []ladderBindingAsset{}
+		arows, err := db.Query(`SELECT ai.asset_id, a.name, ai.inheritor_id, i.name
+			FROM asset_inheritors ai
+			JOIN assets a ON a.id = ai.asset_id
+			JOIN inheritors i ON i.id = ai.inheritor_id
+			WHERE a.user_id = ? AND `+ladderCond+` ORDER BY ai.asset_id, ai.priority, ai.id`, uid)
+		if err != nil {
+			log.Printf("list ladder asset bindings: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		for arows.Next() {
+			var b ladderBindingAsset
+			if err := arows.Scan(&b.AssetID, &b.Name, &b.InheritorID, &b.InheritorName); err != nil {
+				log.Printf("scan ladder asset binding: %v", err)
+				arows.Close()
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
+				return
+			}
+			assets = append(assets, b)
+		}
+		arows.Close()
+
+		categories := []ladderBindingCategory{}
+		crows, err := db.Query(`SELECT ci.category_id, c.name, ci.inheritor_id, i.name
+			FROM category_inheritors ci
+			JOIN categories c ON c.id = ci.category_id
+			JOIN inheritors i ON i.id = ci.inheritor_id
+			WHERE c.user_id = ? AND `+catCond+` ORDER BY ci.category_id, ci.priority, ci.id`, uid)
+		if err != nil {
+			log.Printf("list ladder category bindings: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		for crows.Next() {
+			var b ladderBindingCategory
+			if err := crows.Scan(&b.CategoryID, &b.Name, &b.InheritorID, &b.InheritorName); err != nil {
+				log.Printf("scan ladder category binding: %v", err)
+				crows.Close()
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
+				return
+			}
+			categories = append(categories, b)
+		}
+		crows.Close()
+
+		writeJSON(w, http.StatusOK, map[string]any{"assets": assets, "categories": categories})
+	}
+}
+
+// handleUnbindLadder: POST /api/v1/trigger-ladders/unbind
+// body {"ladder_id":5,"asset_ids":[1,2],"category_ids":[3]} -> 200
+// 解绑 = 把对应 asset_inheritors/category_inheritors 的 ladder_id 置 NULL(回全局)。
+func handleUnbindLadder(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid := userID(r)
+		var req struct {
+			LadderID    int64   `json:"ladder_id"`
+			AssetIDs    []int64 `json:"asset_ids"`
+			CategoryIDs []int64 `json:"category_ids"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
+			return
+		}
+		if !ladderOwnedBy(db, req.LadderID, uid) {
+			writeError(w, http.StatusNotFound, "触发阶梯不存在")
+			return
+		}
+		unboundAssets, unboundCategories := 0, 0
+		if len(req.AssetIDs) > 0 {
+			// 仅解绑属于该用户的资产绑定。
+			res, err := db.Exec(`UPDATE asset_inheritors SET ladder_id = NULL
+				WHERE ladder_id = ? AND asset_id IN (SELECT id FROM assets WHERE user_id = ? AND id IN (`+
+				placeholders(len(req.AssetIDs))+`))`, append([]any{req.LadderID, uid}, toAny(req.AssetIDs)...)...)
+			if err != nil {
+				log.Printf("unbind assets: %v", err)
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
+				return
+			}
+			n, _ := res.RowsAffected()
+			unboundAssets = int(n)
+		}
+		if len(req.CategoryIDs) > 0 {
+			res, err := db.Exec(`UPDATE category_inheritors SET ladder_id = NULL
+				WHERE ladder_id = ? AND category_id IN (SELECT id FROM categories WHERE user_id = ? AND id IN (`+
+				placeholders(len(req.CategoryIDs))+`))`, append([]any{req.LadderID, uid}, toAny(req.CategoryIDs)...)...)
+			if err != nil {
+				log.Printf("unbind categories: %v", err)
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
+				return
+			}
+			n, _ := res.RowsAffected()
+			unboundCategories = int(n)
+		}
+		logAudit(db, uid, "解绑触发阶梯绑定", map[string]any{"ladder_id": req.LadderID, "assets": unboundAssets, "categories": unboundCategories})
+		writeJSON(w, http.StatusOK, map[string]int{"unbound_assets": unboundAssets, "unbound_categories": unboundCategories})
+	}
+}
+
+// placeholders 生成 n 个 "?" 占位符(逗号分隔)。
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
+// toAny 把 []int64 转为 []any。
+func toAny(ids []int64) []any {
+	out := make([]any, len(ids))
+	for i, id := range ids {
+		out[i] = id
+	}
+	return out
 }

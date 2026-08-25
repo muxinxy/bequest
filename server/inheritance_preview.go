@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 )
@@ -55,7 +54,7 @@ func handleInheritancePreview(db *sql.DB) http.HandlerFunc {
 		triggerDays := ladder.Days[len(ladder.Days)-1]
 
 		// 全部资产。
-		rows, err := db.Query(`SELECT id, name, category_id FROM assets WHERE user_id = ? ORDER BY id`, uid)
+		rows, err := db.Query(`SELECT id, name, category_id FROM assets WHERE user_id = ? AND status = 'active' ORDER BY id`, uid)
 		if err != nil {
 			log.Printf("preview assets: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -204,7 +203,7 @@ func handleInheritancePreview(db *sql.DB) http.HandlerFunc {
 			inheritors = append(inheritors, p)
 		}
 
-		note := "失联超过 " + itoa(triggerDays) + " 天后将触发继承:资产级绑定的资产交接给指定继承人,其余资产按用户级全量事件交接。继承人凭继承码领取密钥,原主登录可在 72 小时内撤销。"
+		note := "失联超过触发阶梯末档后将触发继承:资产级绑定的资产交接给指定继承人,其余资产按用户级全量事件交接。继承人凭继承码领取密钥,原主登录可在 72 小时内撤销。"
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ladder":                 ladder,
@@ -219,12 +218,7 @@ func handleInheritancePreview(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-func itoa(n int) string {
-	return fmt.Sprintf("%d", n)
-}
-
-// handleGetDefaultInheritor: GET /api/v1/inheritance/default-inheritor -> 200
-// 返回默认继承人;未设置时 inheritor_id 为 null。
+// handleGetDefaultInheritor: GET /api/v1/inheritance/default-inheritor -> 200// 返回默认继承人;未设置时 inheritor_id 为 null。
 func handleGetDefaultInheritor(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uid := userID(r)

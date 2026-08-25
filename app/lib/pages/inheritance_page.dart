@@ -6,8 +6,7 @@ import '../models/inheritance_status.dart';
 import '../storage/secure_store.dart';
 import '../utils/time_format.dart';
 
-/// 继承:合并原 继承开关 + 继承状态 + 继承预览 为单页。
-/// 自上而下:开关 → 状态 → 触发条件 → 交接范围(资产/继承人/默认继承人)→ 说明。
+/// 继承:开关 → 状态 → 默认继承人 → 说明。
 class InheritancePage extends StatefulWidget {
   const InheritancePage({super.key});
 
@@ -21,10 +20,8 @@ class _InheritancePageState extends State<InheritancePage> {
   bool _loading = true;
   bool _inheritanceEnabled = true;
   InheritanceStatus? _status;
-  Map<String, dynamic> _preview = const {};
   int? _defaultInheritorId;
   String? _defaultInheritorName;
-  bool _showAllAssets = false;
 
   @override
   void initState() {
@@ -37,20 +34,18 @@ class _InheritancePageState extends State<InheritancePage> {
       final jwt = await _store.readJwt();
       if (jwt == null || jwt.isEmpty) throw ApiException('未登录');
       final api = await ApiConfig.client();
-      // 并行拉取:开关 / 状态 / 预览 / 默认继承人。
+      // 并行拉取:开关 / 状态 / 默认继承人。
       final results = await Future.wait([
         api.getInheritanceToggle(jwt),
         api.getInheritanceStatus(jwt),
-        api.getInheritancePreview(jwt),
         api.getDefaultInheritor(jwt),
       ]);
       if (!mounted) return;
       setState(() {
         _inheritanceEnabled = results[0]['enabled'] == true;
         _status = InheritanceStatus.fromJson(results[1]);
-        _preview = results[2];
-        _defaultInheritorId = (results[3]['inheritor_id'] as num?)?.toInt();
-        _defaultInheritorName = results[3]['inheritor_name']?.toString();
+        _defaultInheritorId = (results[2]['inheritor_id'] as num?)?.toInt();
+        _defaultInheritorName = results[2]['inheritor_name']?.toString();
         _loading = false;
       });
     } catch (_) {
@@ -180,239 +175,37 @@ class _InheritancePageState extends State<InheritancePage> {
     );
   }
 
-  /// 触发条件卡片:阶梯 2 档 + 大字提示。
-  Widget _triggerCard() {
-    final ladder = _preview['ladder'] as Map<String, dynamic>? ?? const {};
-    final days = (ladder['days'] as List? ?? const []).whereType<num>().toList();
-    final name = ladder['name']?.toString() ?? '';
-    final triggerDays = (_preview['trigger_days'] as num?)?.toInt() ?? 0;
+  /// 默认继承人卡片:显示当前默认继承人 + 设置按钮。
+  Widget _defaultInheritorCard() {
     final scheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Row(
-              children: [
-                Icon(Icons.timelapse, color: scheme.primary),
-                const SizedBox(width: 8),
-                const Text('触发条件', style: TextStyle(fontWeight: FontWeight.bold)),
-                const Spacer(),
-                Text(
-                  name.isEmpty ? '' : '阶梯:$name',
-                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              days.length >= 2
-                  ? '一级 ${days[0].toInt()} 天  →  二级 ${days[1].toInt()} 天'
-                  : '',
-              style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '失联超过 $triggerDays 天将触发继承',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: scheme.primary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 交接范围卡片:资产总数 + 可展开资产清单。
-  Widget _handoverCard() {
-    final total = (_preview['total_assets'] as num?)?.toInt() ?? 0;
-    final inherited = (_preview['inherited_assets'] as num?)?.toInt() ?? 0;
-    final assets = (_preview['assets'] as List? ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .toList();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.inventory_2_outlined,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                const Text('交接范围', style: TextStyle(fontWeight: FontWeight.bold)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              total == inherited
-                  ? '共 $total 个资产,全部将交接'
-                  : '共 $total 个资产,其中 $inherited 个将交接',
-              style: const TextStyle(fontSize: 14),
-            ),
-            if (assets.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                childrenPadding: EdgeInsets.zero,
-                title: Text('资产清单(${assets.length})'),
-                // 资产 >20 条时默认只显示前 20,底部"展开全部 N 条"按钮。
+            Icon(Icons.person_pin_outlined, color: scheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final a in _showAllAssets || assets.length <= 20
-                      ? assets
-                      : assets.take(20))
-                    _assetTile(a),
-                  if (assets.length > 20 && !_showAllAssets)
-                    Center(
-                      child: TextButton(
-                        onPressed: () => setState(() => _showAllAssets = true),
-                        child: Text('展开全部 ${assets.length} 条'),
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 单个资产:资产名 + 继承人(via=user 显示"用户级全量 → 继承人名")。
-  Widget _assetTile(Map<String, dynamic> asset) {
-    final name = asset['name']?.toString() ?? '未命名资产';
-    final via = asset['via']?.toString() ?? '';
-    if (via == 'user') {
-      // 具体继承人:已设默认继承人,否则取 user_level_inheritors 第一顺位。
-      final levelNames = (_preview['user_level_inheritors'] as List? ?? const [])
-          .whereType<String>()
-          .toList();
-      final levelName = _defaultInheritorName?.isNotEmpty == true
-          ? _defaultInheritorName
-          : levelNames.isEmpty
-              ? null
-              : levelNames.first;
-      final subtitle = levelName == null || levelName.isEmpty
-          ? '用户级全量'
-          : '用户级全量 → $levelName';
-      return ListTile(
-        dense: true,
-        contentPadding: EdgeInsets.zero,
-        leading: const Icon(Icons.folder_outlined, size: 20),
-        title: Text(name),
-        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
-      );
-    }
-    final inheritorName = asset['inheritor_name']?.toString();
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.folder_outlined, size: 20),
-      title: Text(name),
-      subtitle: Text(
-        '继承人:${inheritorName == null || inheritorName.isEmpty ? '未指定' : inheritorName}',
-        style: const TextStyle(fontSize: 12),
-      ),
-    );
-  }
-
-  /// 继承人卡片:名单 + 用户级全量标注 + 默认继承人设置。
-  Widget _inheritorsCard() {
-    final inheritors = (_preview['inheritors'] as List? ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .toList();
-    final levelNames = (_preview['user_level_inheritors'] as List? ?? const [])
-        .whereType<String>()
-        .toSet();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.people_outline,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                const Text('继承人', style: TextStyle(fontWeight: FontWeight.bold)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (inheritors.isEmpty)
-              const Text('暂无继承人', style: TextStyle(fontSize: 14))
-            else
-              for (final inh in inheritors) _inheritorTile(inh, levelNames),
-            const Divider(height: 24),
-            const Text('默认继承人', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
+                  const Text('默认继承人', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text(
                     _defaultInheritorName == null || _defaultInheritorName!.isEmpty
                         ? '未指定(继承触发时按第一顺位分配)'
                         : '$_defaultInheritorName(ID $_defaultInheritorId)',
                     style: const TextStyle(fontSize: 14),
                   ),
-                ),
-                TextButton(
-                  onPressed: _pickDefaultInheritor,
-                  child: const Text('设置'),
-                ),
-              ],
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: _pickDefaultInheritor,
+              child: const Text('设置'),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _inheritorTile(Map<String, dynamic> inh, Set<String> levelNames) {
-    final name = inh['name']?.toString() ?? '未命名';
-    final email = inh['email']?.toString() ?? '';
-    final phone = inh['phone']?.toString() ?? '';
-    final count = (inh['asset_count'] as num?)?.toInt() ?? 0;
-    final isLevel = levelNames.contains(name);
-    final contact = [if (email.isNotEmpty) email, if (phone.isNotEmpty) phone]
-        .join(' · ');
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const CircleAvatar(radius: 16, child: Icon(Icons.person, size: 18)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                if (contact.isNotEmpty)
-                  Text(contact, style: const TextStyle(fontSize: 12)),
-                Text('覆盖 $count 个资产', style: const TextStyle(fontSize: 12)),
-                if (isLevel)
-                  Text(
-                    '将接收用户级全量交接',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -462,7 +255,6 @@ class _InheritancePageState extends State<InheritancePage> {
     try {
       await api.putDefaultInheritor(jwt, bodyId);
       if (!mounted) return;
-      // 重新拉取:刷新 preview 的 user_level_inheritors / 资产覆盖数。
       await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -474,9 +266,8 @@ class _InheritancePageState extends State<InheritancePage> {
     }
   }
 
-  /// 交接说明卡片。
+  /// 交接说明卡片(通用文案,不含具体天数)。
   Widget _noteCard() {
-    final note = _preview['note']?.toString() ?? '';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -494,12 +285,9 @@ class _InheritancePageState extends State<InheritancePage> {
               ],
             ),
             const SizedBox(height: 8),
-            if (note.isNotEmpty)
-              Text(note, style: const TextStyle(fontSize: 14)),
-            const SizedBox(height: 8),
             const Text(
-              '登录即可取消继承;继承人领取密钥后 72 小时内可撤销。',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              '失联超过触发阶梯末档将触发继承,继承人凭继承码领取密钥,原主登录可在 72 小时内撤销。',
+              style: TextStyle(fontSize: 14),
             ),
           ],
         ),
@@ -520,11 +308,7 @@ class _InheritancePageState extends State<InheritancePage> {
                 const SizedBox(height: 16),
                 _statusCard(),
                 const SizedBox(height: 16),
-                _triggerCard(),
-                const SizedBox(height: 16),
-                _handoverCard(),
-                const SizedBox(height: 16),
-                _inheritorsCard(),
+                _defaultInheritorCard(),
                 const SizedBox(height: 16),
                 _noteCard(),
               ],
