@@ -77,12 +77,14 @@ class _BequestAppState extends State<BequestApp> {
       title: '托孤',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        fontFamily: 'NotoSansSC',
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.deepPurple,
           brightness: Brightness.dark,
         ),
+        fontFamily: 'NotoSansSC',
       ),
       themeMode: _themeMode,
       builder: (context, child) =>

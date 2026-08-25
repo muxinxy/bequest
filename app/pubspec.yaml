@@ -104,3 +104,10 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+  # 中文字体本地打包:避免 CanvasKit 运行时从外部(Google Fonts)加载慢/被墙。
+  # 用 scripts/font_subset.py 从源码+3500常用字生成子集(woff2,~1.2MB)。
+  fonts:
+    - family: NotoSansSC
+      fonts:
+        - asset: assets/fonts/noto.woff2
