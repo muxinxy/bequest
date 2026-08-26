@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -78,7 +77,8 @@ func doReq(t *testing.T, ts *httptest.Server, method, path, body, token string) 
 }
 
 // fetchCaptcha gets a fresh captcha and solves it (test helper).
-// Returns the JSON object to merge into the request body.
+// 先请求 HTTP 端点确认 SVG 结构,再用内部 generateCaptcha 拿明文答案
+// (答案只存哈希,无法从响应取回)。
 func fetchCaptcha(t *testing.T, ts *httptest.Server) map[string]string {
 	t.Helper()
 	rr := doReqRaw(t, ts, http.MethodGet, "/api/v1/auth/captcha", "", "")
@@ -87,19 +87,33 @@ func fetchCaptcha(t *testing.T, ts *httptest.Server) map[string]string {
 	}
 	var c struct {
 		CaptchaID string `json:"captcha_id"`
-		Question  string `json:"question"`
+		ImageSVG  string `json:"image_svg"`
+		Format    string `json:"format"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &c); err != nil {
 		t.Fatalf("parse captcha: %v", err)
 	}
-	// "3 + 7 = ?" -> answer 10。
-	var a, b int
-	if _, err := fmt.Sscanf(c.Question, "%d + %d = ?", &a, &b); err != nil {
-		t.Fatalf("parse question %q: %v", c.Question, err)
+	if c.CaptchaID == "" || !strings.HasPrefix(c.ImageSVG, "<svg") || c.Format != "svg" {
+		t.Fatalf("captcha shape: %+v", c)
 	}
+	id, answer, _ := generateCaptcha()
 	return map[string]string{
-		"captcha_id": c.CaptchaID,
-		"captcha":    fmt.Sprintf("%d", a+b),
+		"captcha_id": id,
+		"captcha":    answer,
+	}
+}
+
+// TestCaptchaSVG: SVG 结构 + 大小写不敏感 + 一次性消费。
+func TestCaptchaSVG(t *testing.T) {
+	id, answer, svg := generateCaptcha()
+	if len(answer) != 4 || !strings.HasPrefix(svg, "<svg") || !strings.Contains(svg, "</svg>") {
+		t.Fatalf("bad captcha: answer=%q svg=%q", answer, svg)
+	}
+	if !verifyCaptcha(id, strings.ToLower(answer)) { // 小写提交也应通过
+		t.Fatalf("verify lowercase failed")
+	}
+	if verifyCaptcha(id, answer) { // 一次性:已消费
+		t.Fatalf("verify reused entry")
 	}
 }
 

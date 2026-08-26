@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
@@ -33,7 +34,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
   bool _submitting = false;
   String _captchaId = '';
-  String _captchaQuestion = '';
+  String _captchaSvg = '';
   bool _captchaFailed = false;
 
   /// 实时查重结果:null = 未查/检查中;false = 已被占用。
@@ -50,15 +51,15 @@ class _RegisterPageState extends State<RegisterPage> {
     _refreshCaptcha();
   }
 
-  /// 获取算术验证码(失败显示重试,服务端校验兜底)。
+  /// 获取图形验证码(失败显示重试,服务端校验兜底)。
   Future<void> _refreshCaptcha() async {
     try {
       final c = await (await _api).getCaptcha();
       if (mounted) {
         setState(() {
           _captchaId = c['captcha_id']?.toString() ?? '';
-          _captchaQuestion = c['question']?.toString() ?? '';
-          _captchaFailed = _captchaQuestion.isEmpty;
+          _captchaSvg = c['image_svg']?.toString() ?? '';
+          _captchaFailed = _captchaSvg.isEmpty;
           _captchaController.clear();
         });
       }
@@ -66,7 +67,7 @@ class _RegisterPageState extends State<RegisterPage> {
       if (mounted) {
         setState(() {
           _captchaId = '';
-          _captchaQuestion = '';
+          _captchaSvg = '';
           _captchaFailed = true;
         });
       }
@@ -157,7 +158,8 @@ class _RegisterPageState extends State<RegisterPage> {
         masterKeyWrapped: wrapped,
         masterSalt: salt,
         captchaId: _captchaId,
-        captcha: _captchaController.text.trim(),
+        // 后端大小写不敏感:统一转大写提交。
+        captcha: _captchaController.text.trim().toUpperCase(),
       );
 
       await _store.saveJwt(_extractJwt(response));
@@ -326,10 +328,9 @@ class _RegisterPageState extends State<RegisterPage> {
                   Expanded(
                     child: TextFormField(
                       controller: _captchaController,
-                      keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
                         labelText: '验证码',
-                        hintText: '输入算式答案',
+                        hintText: '输入图形验证码',
                         border: OutlineInputBorder(),
                       ),
                       validator: (value) =>
@@ -339,24 +340,37 @@ class _RegisterPageState extends State<RegisterPage> {
                     ),
                   ),
                   const SizedBox(width: 12),
+                  // 点击图片刷新验证码。
                   InkWell(
                     onTap: _refreshCaptcha,
+                    borderRadius: BorderRadius.circular(8),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 14),
+                      width: 110,
+                      height: 48,
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
                         border: Border.all(
                           color: Theme.of(context).colorScheme.outline,
                         ),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text(
-                        _captchaQuestion.isEmpty
-                      ? (_captchaFailed ? '加载失败,点此重试' : '加载中')
-                      : _captchaQuestion,
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
+                      child: _captchaSvg.isEmpty
+                          ? Text(
+                              _captchaFailed ? '加载失败,点此重试' : '加载中',
+                              style: const TextStyle(fontSize: 13),
+                            )
+                          : SvgPicture.string(
+                              _captchaSvg,
+                              width: 100,
+                              height: 40,
+                              placeholderBuilder: (_) => const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
                     ),
                   ),
                 ],

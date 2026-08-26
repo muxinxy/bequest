@@ -32,6 +32,14 @@ class CloudAssetRepository implements AssetRepository {
       _api.listCategories(jwt, q: q);
 
   @override
+  Future<(List<Map<String, dynamic>>, int)> listCategoriesPaged({
+    String q = '',
+    int limit = 50,
+    int offset = 0,
+  }) =>
+      _api.listCategoriesPaged(jwt, q: q, limit: limit, offset: offset);
+
+  @override
   Future<Map<String, dynamic>> createCategory(String name, {String assetType = 'physical'}) =>
       _api.createCategory(jwt, name, assetType: assetType);
 

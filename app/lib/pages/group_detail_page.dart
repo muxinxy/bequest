@@ -168,12 +168,14 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
   }
 
   /// 懒加载下一页:offset 按已加载条数推进,追加到 _assets。
+  /// 搜索时也带 q 继续分页(不再跳过,避免搜索结果被 200 条上限截断)。
   Future<void> _loadMore() async {
-    if (_loadingMore || !_hasMore || _search.isNotEmpty) return;
+    if (_loadingMore || !_hasMore) return;
     _loadingMore = true;
     try {
       final (items, total) = await widget.repository.listAssetsPaged(
         categoryId: _groupId.isEmpty ? '0' : _groupId,
+        q: _search,
         limit: _pageSize,
         offset: _assets.length,
       );
@@ -699,21 +701,17 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                 const SizedBox(height: 8),
                 Expanded(
                   child: _visibleAssets.isEmpty
-                      ? Center(
-                          child: Text(_assets.isEmpty ? '分组内暂无资产' : '没有匹配的资产'),
-                        )
+                      ? _buildEmptyState()
                       : RefreshIndicator(
                           onRefresh: _load,
                           child: ListView.builder(
                             controller: _scrollController,
                             physics: const AlwaysScrollableScrollPhysics(),
                             padding: const EdgeInsets.only(bottom: 88),
-                            itemCount:
-                                _visibleAssets.length +
-                                (_hasMore && _search.isEmpty ? 1 : 0),
+                            itemCount: _visibleAssets.length + (_hasMore ? 1 : 0),
                             itemBuilder: (context, index) {
                               if (index >= _visibleAssets.length) {
-                                // 底部加载中指示(仅未搜索时显示)。
+                                // 底部加载中指示(搜索时同样分页加载)。
                                 return const Padding(
                                   padding: EdgeInsets.all(16),
                                   child: Center(
@@ -736,6 +734,43 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
               onPressed: _addAsset,
               child: const Icon(Icons.add),
             ),
+    );
+  }
+
+  /// 空态引导:分组内无资产(且未搜索)时提示点击右下角 + 添加;
+  /// 搜索无结果时仅提示无匹配。
+  Widget _buildEmptyState() {
+    final noSearch = _search.trim().isEmpty;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              noSearch ? Icons.inventory_2_outlined : Icons.search_off,
+              size: 56,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              noSearch ? '该分组暂无资产' : '没有匹配的资产',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            if (noSearch) ...[
+              const SizedBox(height: 8),
+              Text(
+                '点击右下角 + 添加',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 

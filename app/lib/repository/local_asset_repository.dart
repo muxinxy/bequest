@@ -76,6 +76,17 @@ class LocalAssetRepository implements AssetRepository {
   }
 
   @override
+  Future<(List<Map<String, dynamic>>, int)> listCategoriesPaged({
+    String q = '',
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    // 本地数据量小:忽略分页参数,全量返回。
+    final items = await listCategories(q: q);
+    return (items, items.length);
+  }
+
+  @override
   Future<Map<String, dynamic>> createCategory(
     String name, {
     String assetType = 'physical',

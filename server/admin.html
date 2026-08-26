@@ -81,7 +81,7 @@
     <div class="form-row"><label>账号</label><input id="lg-user" autocomplete="username"></div>
     <div class="form-row"><label>密码</label><input id="lg-pass" type="password" autocomplete="current-password"></div>
     <div class="form-row"><label>验证码</label><span id="lg-question" class="muted"></span></div>
-    <div class="form-row"><label></label><input id="lg-captcha" placeholder="输入算式结果" style="width:140px"></div>
+    <div class="form-row"><label></label><input id="lg-captcha" placeholder="输入图中字符" style="width:140px"></div>
     <button class="primary" id="lg-btn">登 录</button>
   </div>
   <div id="lg-2fa" class="hidden">
@@ -244,11 +244,11 @@ function logout() {
 }
 
 /* ---------- login ---------- */
-var captcha = { captcha_id: '', question: '' };
+var captcha = { captcha_id: '', image_svg: '' };
 function loadCaptcha() {
   return fetch('/api/v1/auth/captcha').then(function (r) { return r.json(); }).then(function (d) {
     captcha = d;
-    document.getElementById('lg-question').textContent = d.question;
+    document.getElementById('lg-question').innerHTML = d.image_svg;
     document.getElementById('lg-captcha').value = '';
   }).catch(function () {
     document.getElementById('lg-question').textContent = '验证码加载失败,请刷新页面';
@@ -271,7 +271,7 @@ function doLogin() {
     method: 'POST',
     body: JSON.stringify({
       username: u, password: p,
-      captcha_id: captcha.captcha_id, captcha: document.getElementById('lg-captcha').value.trim()
+      captcha_id: captcha.captcha_id, captcha: document.getElementById('lg-captcha').value.trim().toUpperCase()
     })
   })
     .then(function (d) {

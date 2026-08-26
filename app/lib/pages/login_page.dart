@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
@@ -33,7 +34,7 @@ class _LoginPageState extends State<LoginPage> {
 
   bool _submitting = false;
   String _captchaId = '';
-  String _captchaQuestion = '';
+  String _captchaSvg = '';
   bool _captchaFailed = false;
 
   @override
@@ -82,15 +83,15 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  /// 获取算术验证码(注册/登录共用;失败显示重试,服务端校验兜底)。
+  /// 获取图形验证码(注册/登录共用;失败显示重试,服务端校验兜底)。
   Future<void> _refreshCaptcha() async {
     try {
       final c = await (await _api).getCaptcha();
       if (mounted) {
         setState(() {
           _captchaId = c['captcha_id']?.toString() ?? '';
-          _captchaQuestion = c['question']?.toString() ?? '';
-          _captchaFailed = _captchaQuestion.isEmpty;
+          _captchaSvg = c['image_svg']?.toString() ?? '';
+          _captchaFailed = _captchaSvg.isEmpty;
           _captchaController.clear();
         });
       }
@@ -99,7 +100,7 @@ class _LoginPageState extends State<LoginPage> {
       if (mounted) {
         setState(() {
           _captchaId = '';
-          _captchaQuestion = '';
+          _captchaSvg = '';
           _captchaFailed = true;
         });
       }
@@ -121,7 +122,8 @@ class _LoginPageState extends State<LoginPage> {
         username: _usernameController.text.trim(),
         password: _passwordController.text,
         captchaId: _captchaId,
-        captcha: _captchaController.text.trim(),
+        // 后端大小写不敏感:统一转大写提交。
+        captcha: _captchaController.text.trim().toUpperCase(),
       );
       final token = _extractJwt(response);
       await _store.saveJwt(token);
@@ -303,10 +305,9 @@ class _LoginPageState extends State<LoginPage> {
                   Expanded(
                     child: TextFormField(
                       controller: _captchaController,
-                      keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
                         labelText: '验证码',
-                        hintText: '输入算式答案',
+                        hintText: '输入图形验证码',
                         border: OutlineInputBorder(),
                       ),
                       validator: (value) =>
@@ -316,24 +317,37 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                   const SizedBox(width: 12),
+                  // 点击图片刷新验证码。
                   InkWell(
                     onTap: _refreshCaptcha,
+                    borderRadius: BorderRadius.circular(8),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 14),
+                      width: 110,
+                      height: 48,
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
                         border: Border.all(
                           color: Theme.of(context).colorScheme.outline,
                         ),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text(
-                        _captchaQuestion.isEmpty
-                            ? (_captchaFailed ? '加载失败,点此重试' : '加载中')
-                            : _captchaQuestion,
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
+                      child: _captchaSvg.isEmpty
+                          ? Text(
+                              _captchaFailed ? '加载失败,点此重试' : '加载中',
+                              style: const TextStyle(fontSize: 13),
+                            )
+                          : SvgPicture.string(
+                              _captchaSvg,
+                              width: 100,
+                              height: 40,
+                              placeholderBuilder: (_) => const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
                     ),
                   ),
                 ],

@@ -50,6 +50,7 @@ dependencies:
   ftpconnect: ^2.0.10
   device_info_plus: ^12.4.0
   excel: ^4.0.6
+  flutter_svg: ^2.2.1
 
 dev_dependencies:
   flutter_test:

@@ -25,7 +25,7 @@ class ApiClient {
     return response.statusCode == 200;
   }
 
-  /// GET /api/v1/auth/captcha -> {"captcha_id","question"}
+  /// GET /api/v1/auth/captcha -> {"captcha_id","image_svg","format"}
   Future<Map<String, dynamic>> getCaptcha() async {
     final response = await _client.get(
       Uri.parse('$baseUrl/api/v1/auth/captcha'),
@@ -138,6 +138,40 @@ class ApiClient {
         ? '/api/v1/categories'
         : '/api/v1/categories?q=${Uri.encodeQueryComponent(q)}';
     return _getList(path, jwt);
+  }
+
+  /// GET /api/v1/categories 分页版:带 limit/offset 返回 {items, total}。
+  /// q: 按分组名 LIKE 搜索(空串 = 不过滤)。
+  /// 兼容旧响应(无参数返回数组)时按数组长度计 total。
+  Future<(List<Map<String, dynamic>>, int)> listCategoriesPaged(
+    String jwt, {
+    String q = '',
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final query = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      if (q.isNotEmpty) 'q': q,
+    };
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/v1/categories?${Uri(queryParameters: query).query}'),
+      headers: _authHeaders(jwt),
+    );
+    _ensureSuccess(response);
+    final dynamic decoded =
+        response.body.isEmpty ? null : jsonDecode(response.body);
+    if (decoded is List) {
+      final items = decoded.whereType<Map<String, dynamic>>().toList();
+      return (items, items.length);
+    }
+    final map =
+        decoded is Map<String, dynamic> ? decoded : const <String, dynamic>{};
+    final items = (map['items'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    final total = (map['total'] as num?)?.toInt() ?? items.length;
+    return (items, total);
   }
 
   /// POST /api/v1/categories

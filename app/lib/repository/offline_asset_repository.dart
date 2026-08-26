@@ -42,6 +42,17 @@ class OfflineAssetRepository implements AssetRepository {
         .where((c) => '${c['name']}'.toLowerCase().contains(query))
         .toList();
   }
+
+  @override
+  Future<(List<Map<String, dynamic>>, int)> listCategoriesPaged({
+    String q = '',
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    // 离线数据量小:忽略分页参数,全量返回。
+    final items = await listCategories(q: q);
+    return (items, items.length);
+  }
   @override
   Future<List<Map<String, dynamic>>> listAssets() async =>
       ((await _load())['assets'] as List? ?? const [])

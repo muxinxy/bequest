@@ -56,6 +56,8 @@ func scanCategory(scanner interface{ Scan(...any) error }) (*categoryJSON, error
 
 // handleListCategories: GET /api/v1/categories -> 200 [] (按 sort_order 排序,排除回收站)
 // 每个分组带 asset_count 与绑定的继承人名字(inheritor_names)。可选 ?q= 按名称模糊过滤。
+// 可选 ?limit=(默认 100,最大 200)&offset=(默认 0)分页:带参数时返回
+// {"items":[...],"total":n};不带参数保持数组(兼容旧调用)。
 func handleListCategories(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		where := "c.user_id = ? AND c.deleted_at IS NULL"
@@ -64,13 +66,37 @@ func handleListCategories(db *sql.DB) http.HandlerFunc {
 			where += " AND c.name LIKE ?"
 			args = append(args, "%"+search+"%")
 		}
-		rows, err := db.Query(`SELECT c.id, c.name, c.asset_type, c.is_preset, c.created_at, c.sort_order,
+		// 分页:仅当显式传 limit/offset 时启用。
+		paged := false
+		limit, offset := 100, 0
+		if v := r.URL.Query().Get("limit"); v != "" {
+			paged = true
+			limit, _ = strconv.Atoi(v)
+			if limit <= 0 {
+				limit = 100
+			}
+			if limit > 200 {
+				limit = 200
+			}
+		}
+		if v := r.URL.Query().Get("offset"); v != "" {
+			paged = true
+			offset, _ = strconv.Atoi(v)
+			if offset < 0 {
+				offset = 0
+			}
+		}
+		sqlStr := `SELECT c.id, c.name, c.asset_type, c.is_preset, c.created_at, c.sort_order,
 				(SELECT COUNT(*) FROM assets a WHERE a.category_id = c.id AND a.deleted_at IS NULL) AS asset_count,
 				c.remark,
 				(SELECT GROUP_CONCAT(i.name, '、') FROM category_inheritors ci
 					JOIN inheritors i ON i.id = ci.inheritor_id
 					WHERE ci.category_id = c.id) AS inheritor_names
-			FROM categories c WHERE `+where+` ORDER BY c.sort_order, c.id`, args...)
+			FROM categories c WHERE ` + where + ` ORDER BY c.sort_order, c.id`
+		if paged {
+			sqlStr += fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+		}
+		rows, err := db.Query(sqlStr, args...)
 		if err != nil {
 			log.Printf("list categories: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -94,6 +120,16 @@ func handleListCategories(db *sql.DB) http.HandlerFunc {
 				c.InheritorNames = strings.Split(names.String, "、")
 			}
 			cats = append(cats, c)
+		}
+		if paged {
+			var total int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM categories c WHERE `+where, args...).Scan(&total); err != nil {
+				log.Printf("count categories: %v", err)
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"items": cats, "total": total})
+			return
 		}
 		writeJSON(w, http.StatusOK, cats)
 	}

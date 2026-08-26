@@ -3,6 +3,13 @@
 abstract class AssetRepository {
   /// q 非空时按分组名 LIKE 搜索(云端走 API;本地/离线本地过滤)。
   Future<List<Map<String, dynamic>>> listCategories({String q = ''});
+  /// 分页拉取分组(云端按 limit/offset 分页;本地/离线忽略分页参数,全量返回)。
+  /// q: 按分组名 LIKE 搜索(空串 = 不过滤)。返回 (items, total)。
+  Future<(List<Map<String, dynamic>>, int)> listCategoriesPaged({
+    String q = '',
+    int limit = 50,
+    int offset = 0,
+  });
   Future<Map<String, dynamic>> createCategory(String name, {String assetType = 'physical'});
   Future<Map<String, dynamic>> updateCategory(String id, Map<String, dynamic> body);
   Future<void> deleteCategory(String id, {String? moveTo});

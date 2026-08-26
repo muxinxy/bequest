@@ -235,6 +235,55 @@ func TestListCategoriesSearch(t *testing.T) {
 	}
 }
 
+// TestListCategoriesPagination: limit/offset 分页返回 {items,total},与 q 组合。
+func TestListCategoriesPagination(t *testing.T) {
+	ts, _ := newTestServer(t)
+	token := registerUser(t, ts, "cat-page-user")
+
+	// limit=3 -> items 3 条,total 10(预设全量)。
+	rr := doReq(t, ts, http.MethodGet, "/api/v1/categories?limit=3", "", token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("paged status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var page struct {
+		Items []presetCat `json:"items"`
+		Total int         `json:"total"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &page); err != nil {
+		t.Fatalf("paged parse: %v body=%s", err, rr.Body.String())
+	}
+	if len(page.Items) != 3 || page.Total != 10 {
+		t.Fatalf("limit=3 items=%d total=%d, want 3/10", len(page.Items), page.Total)
+	}
+
+	// offset=8 -> 剩 2 条,total 仍 10。
+	rr = doReq(t, ts, http.MethodGet, "/api/v1/categories?limit=10&offset=8", "", token)
+	if err := json.Unmarshal(rr.Body.Bytes(), &page); err != nil {
+		t.Fatalf("offset parse: %v body=%s", err, rr.Body.String())
+	}
+	if len(page.Items) != 2 || page.Total != 10 {
+		t.Fatalf("offset=8 items=%d total=%d, want 2/10", len(page.Items), page.Total)
+	}
+
+	// 与 q 组合:q=银行 + limit=1 -> 1 条,total 1。
+	rr = doReq(t, ts, http.MethodGet, "/api/v1/categories?q="+url.QueryEscape("银行")+"&limit=1", "", token)
+	if err := json.Unmarshal(rr.Body.Bytes(), &page); err != nil {
+		t.Fatalf("q+limit parse: %v body=%s", err, rr.Body.String())
+	}
+	if len(page.Items) != 1 || page.Total != 1 || page.Items[0].Name != "银行账户" {
+		t.Fatalf("q+limit items=%d total=%d, want 1/1 银行账户", len(page.Items), page.Total)
+	}
+
+	// limit 超上限 -> 钳到 200;limit=0 -> 回退默认 100(全量 10)。
+	rr = doReq(t, ts, http.MethodGet, "/api/v1/categories?limit=999", "", token)
+	if err := json.Unmarshal(rr.Body.Bytes(), &page); err != nil {
+		t.Fatalf("limit clamp parse: %v body=%s", err, rr.Body.String())
+	}
+	if len(page.Items) != 10 || page.Total != 10 {
+		t.Fatalf("limit=999 items=%d, want 10", len(page.Items))
+	}
+}
+
 func TestDeletePresetCategory(t *testing.T) {
 	ts, _ := newTestServer(t)
 	token := registerUser(t, ts, "del-user")

@@ -41,17 +41,22 @@ enum _GroupSort { name, count, created }
 class _HomePageState extends State<HomePage> {
   final _store = SecureStore();
   final _searchController = TextEditingController();
+  final _groupScrollController = ScrollController();
 
   /// 搜索防抖:输入停顿 300ms 后调 API 搜索分组。
   Timer? _searchDebounce;
 
-  /// API 搜索命中的分组 id 集合;null = 未搜索/搜索失败(回退本地过滤)。
-  Set<String>? _searchHits;
+  /// 分组分页大小(云端按 limit/offset 分页;本地/离线忽略分页参数,全量返回)。
+  static const _groupPageSize = 50;
 
   AssetRepository? _repo;
   List<Asset> _assets = const [];
   List<Category> _categories = const [];
   int _unreadReminders = 0;
+
+  /// 服务端统计的分组总数(懒加载判断用)。
+  int _groupTotal = 0;
+  bool _loadingMoreGroups = false;
 
   String _search = '';
   _GroupSort _sort = _GroupSort.name;
@@ -81,6 +86,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _groupScrollController.addListener(_onGroupScroll);
     _load();
   }
 
@@ -88,6 +94,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _searchDebounce?.cancel();
     _searchController.dispose();
+    _groupScrollController.dispose();
     _offlineRecoveryTimer?.cancel();
     super.dispose();
   }
@@ -118,7 +125,11 @@ class _HomePageState extends State<HomePage> {
         masterKeyB64: mk ?? '',
       );
       _repo = repo;
-      final categories = await repo.listCategories();
+      // 分组分页拉取第一页(云端);本地/离线忽略分页,全量返回。
+      final (cats, catTotal) = await repo.listCategoriesPaged(
+        limit: _groupPageSize,
+        offset: 0,
+      );
       final assets = await repo.listAssets();
       final lockEnabled = await _store.readLockEnabled();
       var unread = 0;
@@ -137,7 +148,8 @@ class _HomePageState extends State<HomePage> {
       }
       if (!mounted) return;
       setState(() {
-        _categories = categories.map(Category.fromJson).toList(growable: false);
+        _categories = cats.map(Category.fromJson).toList(growable: false);
+        _groupTotal = catTotal;
         _assets = assets.map(Asset.fromJson).toList(growable: false);
         _unreadReminders = unread;
         _isLocal = isLocal;
@@ -145,6 +157,7 @@ class _HomePageState extends State<HomePage> {
         _tier = tier;
         _lockEnabled = lockEnabled;
         _loading = false;
+        _loadingMoreGroups = false;
       });
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -202,6 +215,7 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _repo = repo;
         _categories = categories;
+        _groupTotal = categories.length;
         _assets = assets;
         _unreadReminders = 0;
         _isLocal = false;
@@ -254,6 +268,7 @@ class _HomePageState extends State<HomePage> {
             .toList(growable: false);
         setState(() {
           _categories = categories;
+          _groupTotal = categories.length;
           _assets = assets;
           _loading = false;
         });
@@ -316,6 +331,7 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       setState(() {
         _categories = categories;
+        _groupTotal = categories.length;
         _assets = assets;
         _unreadReminders = unread;
         _tier = tier;
@@ -385,7 +401,7 @@ class _HomePageState extends State<HomePage> {
   /// 分组列表:(id, 名称, 资产数)。云端分组计数用服务端 asset_count
   /// (后端已统计,免全量资产);本地/离线无该字段,仍按资产列表统计。
   /// 未分组无对应 category,始终从资产列表统计。
-  /// 搜索:API 按分组名过滤(_searchHits 命中集合)+ 本地辅助资产名匹配;
+  /// 搜索:云端 _categories 已是 API 按分组名过滤的结果;本地/离线仍按名称 + 资产名过滤;
   /// 排序(名称/数量/创建时间),未分组固定排最后。
   List<(String, String, int)> get _groups {
     final useServerCount = !_isLocal && !_offlineMode;
@@ -413,12 +429,9 @@ class _HomePageState extends State<HomePage> {
     final filtered = query.isEmpty
         ? groups
         : groups.where((g) {
-            // API 命中分组名;搜索失败(null)时回退本地分组名匹配。
-            if (_searchHits?.contains(g.$1) ??
-                g.$2.toLowerCase().contains(query)) {
-              return true;
-            }
-            // 本地辅助:该分组下任一资产名命中(资产已全量加载)。
+            // 云端搜索时 _categories 已是 API 按分组名过滤的结果,这里仅兜底;
+            // 本地/离线 _categories 为全量,仍按名称 + 资产名本地过滤。
+            if (g.$2.toLowerCase().contains(query)) return true;
             final cid = g.$1;
             return _assets.any((a) {
               final inGroup = cid.isEmpty
@@ -441,26 +454,70 @@ class _HomePageState extends State<HomePage> {
     return [...rest, ...uncat].map((g) => (g.$1, g.$2, g.$3)).toList();
   }
 
-  /// 搜索分组:调 API listCategories(q) 拿命中分组 id 集合;
-  /// 空搜索清空命中(显示全部分组);失败回退本地过滤。
+  /// 搜索分组:调 API listCategoriesPaged(q) 拿第一页命中分组并重置分页;
+  /// 空搜索重载全量第一页;失败保留已加载分组(本地过滤兜底)。
   Future<void> _searchGroups(String q) async {
     final repo = _repo;
     if (repo == null) return;
     final query = q.trim();
     if (query.isEmpty) {
-      if (mounted) setState(() => _searchHits = null);
+      await _load();
       return;
     }
     try {
-      final hits = await repo.listCategories(q: query);
+      final (items, total) = await repo.listCategoriesPaged(
+        q: query,
+        limit: _groupPageSize,
+        offset: 0,
+      );
       // 防抖期间用户又输入了新词:丢弃过期响应。
       if (!mounted || _search.trim() != query) return;
       setState(() {
-        _searchHits = {for (final c in hits) '${c['id']}'};
+        _categories = items.map(Category.fromJson).toList(growable: false);
+        _groupTotal = total;
+        _loadingMoreGroups = false;
       });
     } catch (_) {
       if (!mounted || _search.trim() != query) return;
-      setState(() => _searchHits = null);
+      // 搜索失败:保留已加载分组,由 _groups 本地过滤兜底。
+    }
+  }
+
+  /// 滚动接近底部时加载下一页分组。
+  void _onGroupScroll() {
+    if (_groupScrollController.position.pixels >=
+        _groupScrollController.position.maxScrollExtent - 200) {
+      _loadMoreGroups();
+    }
+  }
+
+  bool get _hasMoreGroups => _categories.length < _groupTotal;
+
+  /// 懒加载下一页分组:offset 按已加载条数推进,追加到 _categories。
+  /// 搜索时也带 q 继续分页(避免搜索结果被截断)。
+  Future<void> _loadMoreGroups() async {
+    if (_loadingMoreGroups || !_hasMoreGroups) return;
+    final repo = _repo;
+    if (repo == null) return;
+    _loadingMoreGroups = true;
+    try {
+      final (items, total) = await repo.listCategoriesPaged(
+        q: _search.trim(),
+        limit: _groupPageSize,
+        offset: _categories.length,
+      );
+      if (!mounted) return;
+      setState(() {
+        _categories = [
+          ..._categories,
+          ...items.map(Category.fromJson),
+        ];
+        _groupTotal = total;
+        _loadingMoreGroups = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingMoreGroups = false);
     }
   }
 
@@ -928,10 +985,8 @@ class _HomePageState extends State<HomePage> {
                                     onPressed: () {
                                       _searchController.clear();
                                       _searchDebounce?.cancel();
-                                      setState(() {
-                                        _search = '';
-                                        _searchHits = null;
-                                      });
+                                      setState(() => _search = '');
+                                      _load();
                                     },
                                   ),
                           ),
@@ -956,22 +1011,27 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(height: 8),
                 Expanded(
-                  child: groups.isEmpty
-                      ? Center(
-                          child: Text(
-                            _categories.isEmpty && _assets.isEmpty
-                                ? '暂无分组,点击右下角 + 新增资产'
-                                : '没有匹配的分组',
-                          ),
-                        )
+                  child: _showEmptyState(groups)
+                      ? _buildEmptyState()
                       : RefreshIndicator(
                           onRefresh: _load,
                           child: ListView.builder(
+                            controller: _groupScrollController,
                             physics: const AlwaysScrollableScrollPhysics(),
                             padding: const EdgeInsets.only(bottom: 88),
-                            itemCount: groups.length,
-                            itemBuilder: (context, index) =>
-                                _groupCard(groups[index]),
+                            itemCount: groups.length + (_hasMoreGroups ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (index >= groups.length) {
+                                // 底部加载中指示(搜索时同样分页加载)。
+                                return const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                );
+                              }
+                              return _groupCard(groups[index]);
+                            },
                           ),
                         ),
                 ),
@@ -980,9 +1040,53 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// 是否显示空态引导:搜索无结果,或首次使用(无分组且无资产且未搜索)。
+  bool _showEmptyState(List<(String, String, int)> groups) {
+    if (groups.isEmpty) return true;
+    return _search.trim().isEmpty && _categories.isEmpty && _assets.isEmpty;
+  }
+
+  /// 空态引导:首次使用提示创建分组/添加资产;搜索无结果提示无匹配。
+  Widget _buildEmptyState() {
+    final noSearch = _search.trim().isEmpty;
+    final firstTime = _categories.isEmpty && _assets.isEmpty;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              noSearch ? Icons.folder_open : Icons.search_off,
+              size: 56,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              noSearch ? '欢迎使用托孤' : '没有匹配的分组',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            if (noSearch) ...[
+              const SizedBox(height: 8),
+              Text(
+                firstTime
+                    ? '点击右下角 + 创建你的第一个分组,或直接添加资产'
+                    : '点击右下角 + 新增分组',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   /// 排序菜单:按名称 / 数量 / 创建时间。
-  Future<void> _pickSort() async {
-    final choice = await showDialog<_GroupSort>(
+  Future<void> _pickSort() async {    final choice = await showDialog<_GroupSort>(
       context: context,
       builder: (context) => SimpleDialog(
         title: const Text('分组排序'),
