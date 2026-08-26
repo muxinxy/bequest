@@ -181,14 +181,14 @@ func fetchAsset(db *sql.DB, id, uid int64) (*assetJSON, error) {
 }
 
 // handleListAssets: GET /api/v1/assets -> 200 metadata only (排除回收站)。
-// 无任何查询参数时返回数组(兼容旧前端/离线缓存);带 category_id/limit/offset
+// 无任何查询参数时返回数组(兼容旧前端/离线缓存);带 category_id/limit/offset/q
 // 任一参数时返回分页对象 {"items":[...], "total":n}(数组元素结构不变)。
 func handleListAssets(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		// 无参 -> 旧行为:全量数组
 		if len(q) == 0 {
-			writeJSON(w, http.StatusOK, listAssets(db, userID(r), "", 0, 0))
+			writeJSON(w, http.StatusOK, listAssets(db, userID(r), "", "", 0, 0))
 			return
 		}
 		// 有参 -> 分页对象
@@ -214,14 +214,16 @@ func handleListAssets(db *sql.DB) http.HandlerFunc {
 			offset = n
 		}
 		cat := q.Get("category_id")
-		items := listAssets(db, userID(r), cat, limit, offset)
-		total := countAssets(db, userID(r), cat)
+		search := q.Get("q")
+		items := listAssets(db, userID(r), cat, search, limit, offset)
+		total := countAssets(db, userID(r), cat, search)
 		writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
 	}
 }
 
-// listAssets 查询资产列表;cat 为空=全部,否则过滤该分组(cat=="0" 或 "-1" 表示未分组)。
-func listAssets(db *sql.DB, uid int64, cat string, limit, offset int) []assetListJSON {
+// listAssets 查询资产列表;cat 为空=全部,否则过滤该分组(cat=="0" 或 "-1" 表示未分组);
+// search 非空时按名称模糊匹配。
+func listAssets(db *sql.DB, uid int64, cat, search string, limit, offset int) []assetListJSON {
 	where := "user_id = ? AND deleted_at IS NULL"
 	args := []any{uid}
 	if cat != "" {
@@ -231,6 +233,10 @@ func listAssets(db *sql.DB, uid int64, cat string, limit, offset int) []assetLis
 			where += " AND category_id = ?"
 			args = append(args, cat)
 		}
+	}
+	if search != "" {
+		where += " AND name LIKE ?"
+		args = append(args, "%"+search+"%")
 	}
 	query := `SELECT id, name, asset_type, category_id, expiry_date, status, updated_at
 		FROM assets WHERE ` + where + ` ORDER BY id`
@@ -264,7 +270,7 @@ func listAssets(db *sql.DB, uid int64, cat string, limit, offset int) []assetLis
 }
 
 // countAssets 统计筛选条件下的资产总数(不含 limit/offset)。
-func countAssets(db *sql.DB, uid int64, cat string) int {
+func countAssets(db *sql.DB, uid int64, cat, search string) int {
 	where := "user_id = ? AND deleted_at IS NULL"
 	args := []any{uid}
 	if cat != "" {
@@ -274,6 +280,10 @@ func countAssets(db *sql.DB, uid int64, cat string) int {
 			where += " AND category_id = ?"
 			args = append(args, cat)
 		}
+	}
+	if search != "" {
+		where += " AND name LIKE ?"
+		args = append(args, "%"+search+"%")
 	}
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM assets WHERE `+where, args...).Scan(&n); err != nil {

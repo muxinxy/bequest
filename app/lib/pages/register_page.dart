@@ -345,7 +345,9 @@ class _RegisterPageState extends State<RegisterPage> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 14),
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade400),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(

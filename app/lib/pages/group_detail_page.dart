@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
@@ -39,6 +41,9 @@ enum _AssetSort { name, updated, status }
 class _GroupDetailPageState extends State<GroupDetailPage> {
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
+
+  /// 搜索防抖:输入停顿 300ms 后调 API 搜索。
+  Timer? _searchDebounce;
 
   /// 分页大小(云端按分组分页;本地/离线忽略分页参数,全量返回)。
   static const _pageSize = 200;
@@ -95,6 +100,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -112,9 +118,10 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
 
   Future<void> _load() async {
     try {
-      // 云端按分组分页拉取;本地/离线忽略分页参数,全量返回。
+      // 云端按分组分页拉取(q 非空时按资产名搜索);本地/离线忽略分页参数,全量返回。
       final (items, total) = await widget.repository.listAssetsPaged(
         categoryId: _groupId.isEmpty ? '0' : _groupId,
+        q: _search,
         limit: _pageSize,
         offset: 0,
       );
@@ -186,7 +193,8 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
   }
 
   /// 搜索 + 排序后的可见资产。
-  /// API 未提供 q 参数,本地过滤;规模大时后端加分页搜索。
+  /// 搜索时 _assets 已是 API 按 q 过滤的结果,这里仅做排序;
+  /// 本地/离线模式 _assets 为全量,仍按名称本地过滤。
   List<Asset> get _visibleAssets {
     final query = _search.trim().toLowerCase();
     final list = query.isEmpty
@@ -663,11 +671,21 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                                     icon: const Icon(Icons.clear),
                                     onPressed: () {
                                       _searchController.clear();
+                                      _searchDebounce?.cancel();
                                       setState(() => _search = '');
+                                      _load();
                                     },
                                   ),
                           ),
-                          onChanged: (value) => setState(() => _search = value),
+                          onChanged: (value) {
+                            setState(() => _search = value);
+                            // 防抖 300ms 后调 API 搜索(清空时立即重载全量)。
+                            _searchDebounce?.cancel();
+                            _searchDebounce = Timer(
+                              const Duration(milliseconds: 300),
+                              _load,
+                            );
+                          },
                         ),
                       ),
                       IconButton(

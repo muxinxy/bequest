@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 )
 
@@ -195,6 +196,42 @@ func TestUpdateCategory(t *testing.T) {
 		`{"name":"nope","asset_type":"physical"}`, tokenA)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("put missing id: status=%d want 404 body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestListCategoriesSearch: q 按名称模糊过滤,无 q 时行为不变(全量数组)。
+func TestListCategoriesSearch(t *testing.T) {
+	ts, _ := newTestServer(t)
+	token := registerUser(t, ts, "cat-search-user")
+
+	// 无 q -> 全量(10 个预设)
+	if cats := listCategories(t, ts, token); len(cats) != 10 {
+		t.Fatalf("no-q categories = %d, want 10", len(cats))
+	}
+
+	// q=银行 -> 命中预设「银行账户」
+	rr := doReq(t, ts, http.MethodGet, "/api/v1/categories?q="+url.QueryEscape("银行"), "", token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("q search status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var cats []presetCat
+	if err := json.Unmarshal(rr.Body.Bytes(), &cats); err != nil {
+		t.Fatalf("q search parse: %v body=%s", err, rr.Body.String())
+	}
+	if len(cats) != 1 || cats[0].Name != "银行账户" {
+		t.Fatalf("q search cats=%+v, want 1×银行账户", cats)
+	}
+
+	// q 无命中 -> 空数组
+	rr = doReq(t, ts, http.MethodGet, "/api/v1/categories?q="+url.QueryEscape("不存在"), "", token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("q miss status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &cats); err != nil {
+		t.Fatalf("q miss parse: %v body=%s", err, rr.Body.String())
+	}
+	if len(cats) != 0 {
+		t.Fatalf("q miss cats=%+v, want empty", cats)
 	}
 }
 

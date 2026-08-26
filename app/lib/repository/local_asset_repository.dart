@@ -66,8 +66,14 @@ class LocalAssetRepository implements AssetRepository {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> listCategories() async =>
-      _asMaps((await _load())['categories']);
+  Future<List<Map<String, dynamic>>> listCategories({String q = ''}) async {
+    final all = _asMaps((await _load())['categories']);
+    if (q.isEmpty) return all;
+    final query = q.toLowerCase();
+    return all
+        .where((c) => '${c['name']}'.toLowerCase().contains(query))
+        .toList();
+  }
 
   @override
   Future<Map<String, dynamic>> createCategory(
@@ -140,11 +146,18 @@ class LocalAssetRepository implements AssetRepository {
   @override
   Future<(List<Map<String, dynamic>>, int)> listAssetsPaged({
     String? categoryId,
+    String q = '',
     int limit = 50,
     int offset = 0,
   }) async {
-    // 本地数据量小:忽略分页参数,全量拉取后按分组过滤。
-    final items = filterAssetsByCategory(await listAssets(), categoryId);
+    // 本地数据量小:忽略分页参数,全量拉取后按分组过滤 + 名称搜索。
+    var items = filterAssetsByCategory(await listAssets(), categoryId);
+    if (q.isNotEmpty) {
+      final query = q.toLowerCase();
+      items = items
+          .where((a) => '${a['name']}'.toLowerCase().contains(query))
+          .toList();
+    }
     return (items, items.length);
   }
 

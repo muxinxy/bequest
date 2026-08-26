@@ -1,7 +1,8 @@
 /// 资产/分类数据源抽象:云端与本地模式共用同一接口。
 /// 所有方法返回服务器形状的 map;id 一律为 String。
 abstract class AssetRepository {
-  Future<List<Map<String, dynamic>>> listCategories();
+  /// q 非空时按分组名 LIKE 搜索(云端走 API;本地/离线本地过滤)。
+  Future<List<Map<String, dynamic>>> listCategories({String q = ''});
   Future<Map<String, dynamic>> createCategory(String name, {String assetType = 'physical'});
   Future<Map<String, dynamic>> updateCategory(String id, Map<String, dynamic> body);
   Future<void> deleteCategory(String id, {String? moveTo});
@@ -11,9 +12,11 @@ abstract class AssetRepository {
   Future<List<Map<String, dynamic>>> listAssets(); // metadata only
   /// 分页拉取资产(云端按分组分页;本地/离线忽略分页参数,全量返回)。
   /// categoryId: 分组 id;'0'/'-1' = 未分组;null = 全部。
+  /// q: 按资产名 LIKE 搜索(空串 = 不过滤)。
   /// 返回 (items, total)。
   Future<(List<Map<String, dynamic>>, int)> listAssetsPaged({
     String? categoryId,
+    String q = '',
     int limit = 50,
     int offset = 0,
   });

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
 	dysmsapi "github.com/alibabacloud-go/dysmsapi-20170525/v5/client"
@@ -164,6 +165,7 @@ func enabledSMSProviders(db *sql.DB) []smsProviderRow {
 var smsRR int // round-robin cursor over enabled sms providers
 
 // sendSMS 轮询所有 enabled 提供商逐个尝试,成功即返回;无配置则打日志跳过。
+// 单个 provider 发送失败重试 2 次(共 3 次尝试),间隔 1 秒,仍失败换下一个。
 func sendSMS(db *sql.DB, phone, body string) {
 	providers := enabledSMSProviders(db)
 	if len(providers) == 0 {
@@ -179,8 +181,17 @@ func sendSMS(db *sql.DB, phone, body string) {
 			log.Printf("sms provider %s: %v", p.name, err)
 			continue
 		}
-		if err := sender.Send(phone, body); err != nil {
-			log.Printf("sms via %s: %v", p.name, err)
+		var sendErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			if sendErr = sender.Send(phone, body); sendErr == nil {
+				break
+			}
+			if attempt < 2 {
+				time.Sleep(time.Second)
+			}
+		}
+		if sendErr != nil {
+			log.Printf("sms via %s: %v", p.name, sendErr)
 			continue
 		}
 		smsRR = (start + i + 1) % n

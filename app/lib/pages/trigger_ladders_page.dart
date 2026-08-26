@@ -101,9 +101,12 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                 if (i < 1) const SizedBox(height: 8),
               ],
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 '一级:系统通知+IM+邮件;二级:一级+短信',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -676,7 +679,10 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
                     const SizedBox(height: 8),
                     Text(
                       isGlobal ? '全局阶梯无需解绑' : '解绑后该资产/分组使用全局阶梯',
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),

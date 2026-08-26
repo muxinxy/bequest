@@ -367,7 +367,10 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
                 const SizedBox(height: 2),
                 Text(
                   hint,
-                  style: TextStyle(fontSize: 12, color: color ?? Colors.grey),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: color ?? Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),

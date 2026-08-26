@@ -28,8 +28,8 @@ class CloudAssetRepository implements AssetRepository {
   final ApiClient _api;
 
   @override
-  Future<List<Map<String, dynamic>>> listCategories() =>
-      _api.listCategories(jwt);
+  Future<List<Map<String, dynamic>>> listCategories({String q = ''}) =>
+      _api.listCategories(jwt, q: q);
 
   @override
   Future<Map<String, dynamic>> createCategory(String name, {String assetType = 'physical'}) =>
@@ -58,12 +58,14 @@ class CloudAssetRepository implements AssetRepository {
   @override
   Future<(List<Map<String, dynamic>>, int)> listAssetsPaged({
     String? categoryId,
+    String q = '',
     int limit = 50,
     int offset = 0,
   }) =>
       _api.listAssetsPaged(
         jwt,
         categoryId: int.tryParse(categoryId ?? ''),
+        q: q,
         limit: limit,
         offset: offset,
       );

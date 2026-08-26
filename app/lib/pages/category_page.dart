@@ -163,7 +163,10 @@ class _CategoryPageState extends State<CategoryPage> {
               const SizedBox(height: 8),
               Text(
                 '删除后这些资产将移入所选分组(默认未分组)。',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 12),
               if (others.isNotEmpty)
@@ -184,7 +187,10 @@ class _CategoryPageState extends State<CategoryPage> {
               else
                 Text(
                   '无可移入的分组,资产将变为未分组。',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
             ],
           ),

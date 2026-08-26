@@ -370,14 +370,19 @@ class _AppLockScreenState extends State<AppLockScreen> {
                       ? '请绘制图案解锁'
                       : (_hasPin ? '请输入 PIN 码解锁' : '请输入主密码解锁'),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.grey),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 if (_masterHint.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
                     '主密码提示: $_masterHint',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
                 if (_lockSeconds > 0) ...[
@@ -495,7 +500,9 @@ class _AppLockScreenState extends State<AppLockScreen> {
                         },
                   child: Text(
                     _hasJwt ? '跳过(退出登录)' : '跳过(退出本地模式)',
-                    style: const TextStyle(color: Colors.grey),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],

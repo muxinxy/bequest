@@ -136,7 +136,10 @@ class _MasterPasswordDialogState extends State<_MasterPasswordDialog> {
               alignment: Alignment.centerLeft,
               child: Text(
                 '主密码提示: $hint',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ],

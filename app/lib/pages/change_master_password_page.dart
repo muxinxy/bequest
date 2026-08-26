@@ -263,9 +263,12 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
                       : null,
                 ),
               ] else ...[
-                const Text(
+                Text(
                   '未登录,云端继承密钥不会更新',
-                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 13,
+                  ),
                 ),
               ],
               const SizedBox(height: 24),

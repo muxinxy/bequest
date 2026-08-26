@@ -42,6 +42,12 @@ class _HomePageState extends State<HomePage> {
   final _store = SecureStore();
   final _searchController = TextEditingController();
 
+  /// 搜索防抖:输入停顿 300ms 后调 API 搜索分组。
+  Timer? _searchDebounce;
+
+  /// API 搜索命中的分组 id 集合;null = 未搜索/搜索失败(回退本地过滤)。
+  Set<String>? _searchHits;
+
   AssetRepository? _repo;
   List<Asset> _assets = const [];
   List<Category> _categories = const [];
@@ -80,6 +86,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     _offlineRecoveryTimer?.cancel();
     super.dispose();
@@ -378,8 +385,8 @@ class _HomePageState extends State<HomePage> {
   /// 分组列表:(id, 名称, 资产数)。云端分组计数用服务端 asset_count
   /// (后端已统计,免全量资产);本地/离线无该字段,仍按资产列表统计。
   /// 未分组无对应 category,始终从资产列表统计。
-  /// 支持搜索(分组名)与排序(名称/数量/创建时间),未分组固定排最后。
-  /// API 未提供 q 参数,本地过滤;规模大时后端加分页搜索。
+  /// 搜索:API 按分组名过滤(_searchHits 命中集合)+ 本地辅助资产名匹配;
+  /// 排序(名称/数量/创建时间),未分组固定排最后。
   List<(String, String, int)> get _groups {
     final useServerCount = !_isLocal && !_offlineMode;
     final counts = <String, int>{};
@@ -406,8 +413,12 @@ class _HomePageState extends State<HomePage> {
     final filtered = query.isEmpty
         ? groups
         : groups.where((g) {
-            // 分组名命中,或该分组下任一资产名命中(资产已全量加载)。
-            if (g.$2.toLowerCase().contains(query)) return true;
+            // API 命中分组名;搜索失败(null)时回退本地分组名匹配。
+            if (_searchHits?.contains(g.$1) ??
+                g.$2.toLowerCase().contains(query)) {
+              return true;
+            }
+            // 本地辅助:该分组下任一资产名命中(资产已全量加载)。
             final cid = g.$1;
             return _assets.any((a) {
               final inGroup = cid.isEmpty
@@ -428,6 +439,29 @@ class _HomePageState extends State<HomePage> {
     final rest = filtered.where((g) => g.$1.isNotEmpty).toList();
     final uncat = filtered.where((g) => g.$1.isEmpty).toList();
     return [...rest, ...uncat].map((g) => (g.$1, g.$2, g.$3)).toList();
+  }
+
+  /// 搜索分组:调 API listCategories(q) 拿命中分组 id 集合;
+  /// 空搜索清空命中(显示全部分组);失败回退本地过滤。
+  Future<void> _searchGroups(String q) async {
+    final repo = _repo;
+    if (repo == null) return;
+    final query = q.trim();
+    if (query.isEmpty) {
+      if (mounted) setState(() => _searchHits = null);
+      return;
+    }
+    try {
+      final hits = await repo.listCategories(q: query);
+      // 防抖期间用户又输入了新词:丢弃过期响应。
+      if (!mounted || _search.trim() != query) return;
+      setState(() {
+        _searchHits = {for (final c in hits) '${c['id']}'};
+      });
+    } catch (_) {
+      if (!mounted || _search.trim() != query) return;
+      setState(() => _searchHits = null);
+    }
   }
 
   /// 打开分组详情页;返回后刷新(分组内可能发生增删改)。
@@ -851,7 +885,7 @@ class _HomePageState extends State<HomePage> {
                 if (_offlineMode)
                   Container(
                     width: double.infinity,
-                    color: Colors.orange.shade50,
+                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 6,
@@ -893,11 +927,23 @@ class _HomePageState extends State<HomePage> {
                                     icon: const Icon(Icons.clear),
                                     onPressed: () {
                                       _searchController.clear();
-                                      setState(() => _search = '');
+                                      _searchDebounce?.cancel();
+                                      setState(() {
+                                        _search = '';
+                                        _searchHits = null;
+                                      });
                                     },
                                   ),
                           ),
-                          onChanged: (value) => setState(() => _search = value),
+                          onChanged: (value) {
+                            setState(() => _search = value);
+                            // 防抖 300ms 后调 API 搜索分组。
+                            _searchDebounce?.cancel();
+                            _searchDebounce = Timer(
+                              const Duration(milliseconds: 300),
+                              () => _searchGroups(value),
+                            );
+                          },
                         ),
                       ),
                       IconButton(
@@ -970,7 +1016,10 @@ class _HomePageState extends State<HomePage> {
             const Spacer(),
             Text(
               currentLabel,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ],

@@ -553,11 +553,14 @@ class _AssetEditPageState extends State<AssetEditPage> {
                     for (var i = 0; i < _credentialFields.length; i++)
                       _credentialRow(i),
                     if (_credentialFields.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 8),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
                         child: Text(
                           '添加账号、密码、恢复码等(可选)',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                     const SizedBox(height: 16),

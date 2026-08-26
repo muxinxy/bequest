@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"testing"
 )
 
@@ -70,5 +71,58 @@ func TestListAssetsPaging(t *testing.T) {
 	}
 	if page.Total != 3 || len(page.Items) != 3 {
 		t.Fatalf("limit=200 total=%d items=%d, want 3/3", page.Total, len(page.Items))
+	}
+}
+
+// TestListAssetsSearch: q 按名称模糊搜索,与分组筛选组合,total 同样受 q 影响。
+func TestListAssetsSearch(t *testing.T) {
+	ts, _ := newTestServer(t)
+	token := registerUser(t, ts, "search-user")
+
+	gid := makeCat(t, ts, token, "搜索分组").ID
+	createAssetInCat(t, ts, token, gid, "比特币钱包")
+	createAssetInCat(t, ts, token, gid, "以太坊钱包")
+	createAssetInCat(t, ts, token, 0, "房产证")
+
+	// q=钱包 -> 命中 2 条
+	rr := doReq(t, ts, http.MethodGet, "/api/v1/assets?q="+url.QueryEscape("钱包"), "", token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("q search status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var page struct {
+		Items []assetListJSON `json:"items"`
+		Total int             `json:"total"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &page); err != nil {
+		t.Fatalf("q search parse: %v body=%s", err, rr.Body.String())
+	}
+	if page.Total != 2 || len(page.Items) != 2 {
+		t.Fatalf("q search total=%d items=%d, want 2/2", page.Total, len(page.Items))
+	}
+
+	// q + category_id 组合 -> 只命中该分组内的 1 条
+	rr = doReq(t, ts, http.MethodGet,
+		fmt.Sprintf("/api/v1/assets?q=%s&category_id=%d", url.QueryEscape("以太坊"), gid), "", token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("q+cat status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &page); err != nil {
+		t.Fatalf("q+cat parse: %v body=%s", err, rr.Body.String())
+	}
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].Name != "以太坊钱包" {
+		t.Fatalf("q+cat total=%d items=%d name=%q, want 1/1/以太坊钱包",
+			page.Total, len(page.Items), page.Items[0].Name)
+	}
+
+	// q 无命中 -> total=0
+	rr = doReq(t, ts, http.MethodGet, "/api/v1/assets?q="+url.QueryEscape("不存在"), "", token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("q miss status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &page); err != nil {
+		t.Fatalf("q miss parse: %v body=%s", err, rr.Body.String())
+	}
+	if page.Total != 0 || len(page.Items) != 0 {
+		t.Fatalf("q miss total=%d items=%d, want 0/0", page.Total, len(page.Items))
 	}
 }

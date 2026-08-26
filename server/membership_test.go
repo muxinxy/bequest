@@ -164,20 +164,24 @@ func TestAdminRedemptionCRUD(t *testing.T) {
 		}
 	}
 
-	// 列表包含生成的码
+	// 列表包含生成的码(分页对象 items 结构)
 	rr = doReq(t, ts, http.MethodGet, "/api/v1/admin/redemption-codes", "", admTok)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("list codes: status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	var list []redemptionCodeJSON
+	var list struct {
+		Items []redemptionCodeJSON `json:"items"`
+		Total int                  `json:"total"`
+		Page  int                  `json:"page"`
+	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &list); err != nil {
 		t.Fatalf("parse list: %v", err)
 	}
-	if len(list) != 3 {
-		t.Fatalf("list count = %d, want 3", len(list))
+	if len(list.Items) != 3 || list.Total != 3 || list.Page != 1 {
+		t.Fatalf("list items=%d total=%d page=%d, want 3/3/1", len(list.Items), list.Total, list.Page)
 	}
 	found := false
-	for _, c := range list {
+	for _, c := range list.Items {
 		if c.Code == gen.Codes[0] {
 			found = true
 		}
@@ -187,7 +191,7 @@ func TestAdminRedemptionCRUD(t *testing.T) {
 	}
 
 	// 删除未用码 -> 204
-	rr = doReq(t, ts, http.MethodDelete, fmt.Sprintf("/api/v1/admin/redemption-codes/%d", list[0].ID), "", admTok)
+	rr = doReq(t, ts, http.MethodDelete, fmt.Sprintf("/api/v1/admin/redemption-codes/%d", list.Items[0].ID), "", admTok)
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("delete unused: status=%d want 204 body=%s", rr.Code, rr.Body.String())
 	}
@@ -200,12 +204,14 @@ func TestAdminRedemptionCRUD(t *testing.T) {
 		t.Fatalf("redeem for delete test: status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	rr = doReq(t, ts, http.MethodGet, "/api/v1/admin/redemption-codes", "", admTok)
-	var list2 []redemptionCodeJSON
+	var list2 struct {
+		Items []redemptionCodeJSON `json:"items"`
+	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &list2); err != nil {
 		t.Fatalf("parse list 2: %v", err)
 	}
 	var usedID int64
-	for _, c := range list2 {
+	for _, c := range list2.Items {
 		if c.Code == gen.Codes[1] {
 			usedID = c.ID
 		}

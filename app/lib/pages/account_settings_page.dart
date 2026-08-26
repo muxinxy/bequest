@@ -172,9 +172,12 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     '修改后所有已登录设备将退出,需重新登录',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Form(

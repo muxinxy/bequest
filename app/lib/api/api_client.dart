@@ -132,9 +132,12 @@ class ApiClient {
     return _postAuth('/api/v1/membership/redeem', {'code': code}, jwt);
   }
 
-  /// GET /api/v1/categories
-  Future<List<Map<String, dynamic>>> listCategories(String jwt) {
-    return _getList('/api/v1/categories', jwt);
+  /// GET /api/v1/categories;q 非空时按分组名 LIKE 搜索。
+  Future<List<Map<String, dynamic>>> listCategories(String jwt, {String q = ''}) {
+    final path = q.isEmpty
+        ? '/api/v1/categories'
+        : '/api/v1/categories?q=${Uri.encodeQueryComponent(q)}';
+    return _getList(path, jwt);
   }
 
   /// POST /api/v1/categories
@@ -221,20 +224,23 @@ class ApiClient {
 
   /// GET /api/v1/assets 分页版:带查询参数返回 {items, total}。
   /// categoryId: 分组 id;0/-1 = 未分组;null = 全部。
+  /// q: 按资产名 LIKE 搜索(空串 = 不过滤)。
   /// 兼容旧响应(无参数返回数组)时按数组长度计 total。
   Future<(List<Map<String, dynamic>>, int)> listAssetsPaged(
     String jwt, {
     int? categoryId,
+    String q = '',
     int limit = 50,
     int offset = 0,
   }) async {
-    final q = <String, String>{
+    final query = <String, String>{
       'limit': '$limit',
       'offset': '$offset',
       if (categoryId != null) 'category_id': '$categoryId',
+      if (q.isNotEmpty) 'q': q,
     };
     final response = await _client.get(
-      Uri.parse('$baseUrl/api/v1/assets?${Uri(queryParameters: q).query}'),
+      Uri.parse('$baseUrl/api/v1/assets?${Uri(queryParameters: query).query}'),
       headers: _authHeaders(jwt),
     );
     _ensureSuccess(response);

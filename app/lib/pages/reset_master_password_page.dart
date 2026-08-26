@@ -132,7 +132,7 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
             children: [
               // 还记得主密码 → 用非破坏的「修改」。
               Card(
-                color: Colors.orange.shade50,
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Row(
@@ -159,13 +159,14 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 '忘记主密码时,用账户密码重置。'
                 '端到端加密意味着旧数据不可恢复:重置后资产保留名称/分组,'
                 '凭据与备注清空,需重新填写。',
-                style: TextStyle(color: Colors.grey),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
-              const SizedBox(height: 16),
               TextFormField(
                 controller: _accountPasswordController,
                 obscureText: true,

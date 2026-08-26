@@ -156,10 +156,13 @@ class _AboutPageState extends State<AboutPage> {
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
           ),
-          const Text(
+          Text(
             'bequest',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey),
+            style: TextStyle(
+              fontSize: 14,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 16),
           _infoRow('应用版本', _productVersion),
@@ -171,9 +174,12 @@ class _AboutPageState extends State<AboutPage> {
             trailing: SelectableText(_packageName),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             '简介',
-            style: TextStyle(fontSize: 13, color: Colors.grey),
+            style: TextStyle(
+              fontSize: 13,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 4),
           const Text(

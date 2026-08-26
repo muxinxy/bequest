@@ -299,9 +299,11 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
         const SizedBox(height: 4),
         TextButton(
           onPressed: _goRestore,
-          child: const Text(
+          child: Text(
             '从备份恢复(需主密码)',
-            style: TextStyle(color: Colors.grey),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
       ],
@@ -322,17 +324,22 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             '本地数据由主密码加密,验证后进入',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           if (_verifyHint.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
               '主密码提示: $_verifyHint',
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
           const SizedBox(height: 24),
@@ -361,7 +368,12 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
           const SizedBox(height: 8),
           TextButton(
             onPressed: () => setState(() => _step = LocalUnlockStep.pick),
-            child: const Text('返回账户列表', style: TextStyle(color: Colors.grey)),
+            child: Text(
+                  '返回账户列表',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
           ),
         ],
       ),
@@ -384,10 +396,12 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               '本地模式无需登录,数据加密保存在本机;可创建多个账户',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 24),
             TextFormField(
@@ -450,7 +464,12 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => setState(() => _step = LocalUnlockStep.pick),
-                child: const Text('返回账户列表', style: TextStyle(color: Colors.grey)),
+child: Text(
+              '返回账户列表',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
               ),
             ],
           ],

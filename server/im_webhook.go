@@ -13,8 +13,9 @@ import (
 // imClient:webhook 失败不阻塞主流程,超时 10s 后放弃。
 var imClient = &http.Client{Timeout: 10 * time.Second}
 
-// sendIMWebhook 向指定平台 webhook POST 一条消息;错误只 log 不返回。
-// 签名/加签参数由用户在配置 webhook URL 时自行拼好,这里按原样发送。
+// sendIMWebhook 向指定平台 webhook POST 一条消息;发送失败重试 2 次(共 3 次
+// 尝试,间隔 1 秒),仍失败只 log 不返回。签名/加签参数由用户在配置 webhook URL
+// 时自行拼好,这里按原样发送。
 func sendIMWebhook(url, platform, title, body string) {
 	var payload []byte
 	switch platform {
@@ -34,13 +35,19 @@ func sendIMWebhook(url, platform, title, body string) {
 			"content":  map[string]string{"text": title + "\n" + body},
 		})
 	}
-	resp, err := imClient.Post(url, "application/json", bytes.NewReader(payload))
-	if err != nil {
-		log.Printf("im webhook (%s): %v", platform, err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		log.Printf("im webhook (%s): status=%d", platform, resp.StatusCode)
+	for attempt := 0; attempt < 3; attempt++ {
+		resp, err := imClient.Post(url, "application/json", bytes.NewReader(payload))
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode < 300 {
+				return
+			}
+			log.Printf("im webhook (%s): status=%d", platform, resp.StatusCode)
+		} else {
+			log.Printf("im webhook (%s): %v", platform, err)
+		}
+		if attempt < 2 {
+			time.Sleep(time.Second)
+		}
 	}
 }

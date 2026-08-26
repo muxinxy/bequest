@@ -156,10 +156,13 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                const Text(
+                Text(
                   '提醒邮件将优先使用您自己的邮箱发送,不经过托孤服务端'
                   '(服务端仅加密保存凭据)。',
-                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 _field(_host, '服务器', hint: 'smtp.example.com'),

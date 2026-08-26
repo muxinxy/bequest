@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -45,8 +46,20 @@ func requireAuth(db *sql.DB, next http.Handler) http.Handler {
 			writeError(w, http.StatusForbidden, "账号已被禁用")
 			return
 		}
+		// 活跃心跳:已认证请求周期性刷新 last_login_at,避免活跃用户被误判失联。
+		touchLastLogin(db, c.UserID)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxUserIDKey, c.UserID)))
 	})
+}
+
+// touchLastLogin 活跃心跳:距上次登录超过 12 小时才写库(带时间门槛,避免每次
+// 请求都 UPDATE)。只刷新 last_login_at,不重置 inherit_stage/escalation_level
+// —— 只有登录才重置那些(见 auth.go 登录成功逻辑)。
+func touchLastLogin(db *sql.DB, uid int64) {
+	if _, err := db.Exec(`UPDATE users SET last_login_at = datetime('now')
+		WHERE id = ? AND (last_login_at IS NULL OR last_login_at < datetime('now','-12 hours'))`, uid); err != nil {
+		log.Printf("touch last_login: %v", err)
+	}
 }
 
 // cors enables browser access from other origins (Flutter dev server, separate

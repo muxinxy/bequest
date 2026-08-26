@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -165,11 +166,39 @@ type redemptionCodeJSON struct {
 	CreatedAt    string `json:"created_at"`
 }
 
-// handleListRedemptionCodes: GET /api/v1/admin/redemption-codes -> 最新在前,limit 200
+// handleListRedemptionCodes: GET /api/v1/admin/redemption-codes -> 最新在前,
+// 分页 {"items":[...], "total":n, "page":p}。page 默认 1,page_size 默认 20 最大 100。
 func handleListRedemptionCodes(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		page := 1
+		if v := r.URL.Query().Get("page"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 1 {
+				writeError(w, http.StatusBadRequest, "无效的 page")
+				return
+			}
+			page = n
+		}
+		pageSize := 20
+		if v := r.URL.Query().Get("page_size"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 1 {
+				writeError(w, http.StatusBadRequest, "无效的 page_size")
+				return
+			}
+			if n > 100 {
+				n = 100
+			}
+			pageSize = n
+		}
+		var total int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM redemption_codes`).Scan(&total); err != nil {
+			log.Printf("count redemption codes: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
 		rows, err := db.Query(`SELECT id, code, duration_days, used_by, used_at, created_at
-			FROM redemption_codes ORDER BY id DESC LIMIT 200`)
+			FROM redemption_codes ORDER BY id DESC LIMIT ? OFFSET ?`, pageSize, (page-1)*pageSize)
 		if err != nil {
 			log.Printf("list redemption codes: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -190,7 +219,7 @@ func handleListRedemptionCodes(db *sql.DB) http.HandlerFunc {
 			c.UsedAt = nullableStr(usedAt)
 			codes = append(codes, c)
 		}
-		writeJSON(w, http.StatusOK, codes)
+		writeJSON(w, http.StatusOK, map[string]any{"items": codes, "total": total, "page": page})
 	}
 }
 

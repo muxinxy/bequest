@@ -223,11 +223,14 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
               ),
               const Divider(),
               if (!_lockEnabled)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 8),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
                     '开启后需设置至少一种解锁方式(PIN 或图案)。',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               if (_lockEnabled) ...[
@@ -287,14 +290,20 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   '系统弹窗由设备统一管理,会自动选择可用的人脸或指纹验证方式',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   _supportText(),
-                  style: const TextStyle(fontSize: 13, color: Colors.grey),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
               if (_biometricEnabled && _availableBiometrics.isEmpty)

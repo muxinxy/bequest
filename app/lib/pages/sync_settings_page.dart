@@ -497,10 +497,13 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                const Text(
+                Text(
                   '无需登录:备份与恢复均在本地完成,数据只存在您的存储中;'
                   '同步配置仅保存在本机,不会发送到托孤服务端,备份使用主密钥加密。',
-                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Wrap(
@@ -532,9 +535,12 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                 ),
                 if (kIsWeb) ...[
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'FTP/SFTP 为 socket 协议,仅桌面/移动端支持;Web 端仅可用 WebDAV/S3。',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 16),
@@ -590,15 +596,21 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
                       '最近备份: $_lastBackupName',
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 const SizedBox(height: 8),
                 const Divider(),
                 _sectionTitle('自动备份'),
-                const Text(
+                Text(
                   '按间隔自动备份到上述存储;备份文件名自动生成(bequest_用户名_设备名_时间戳)。',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(

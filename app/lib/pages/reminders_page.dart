@@ -89,7 +89,10 @@ class _RemindersPageState extends State<RemindersPage> {
                 const SizedBox(height: 12),
                 Text(
                   formatServerTime(reminder.createdAt),
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ],

@@ -175,6 +175,9 @@
       <thead><tr><th>ID</th><th>兑换码</th><th>时长(天)</th><th>使用人</th><th>使用时间</th><th>创建时间</th><th>操作</th></tr></thead>
       <tbody id="rc-body"></tbody>
     </table>
+    <div class="pager">
+      <button id="rc-prev">上一页</button><span id="rc-info"></span><button id="rc-next">下一页</button>
+    </div>
   </section>
 
   <section id="tab-audit" class="card hidden">
@@ -196,7 +199,7 @@
 <script>
 'use strict';
 var TOKEN_KEY = 'bequest_admin_token';
-var state = { users: { page: 1, q: '', role: '', tier: '' }, audit: { page: 1, uid: '' }, pendingToken: '' };
+var state = { users: { page: 1, q: '', role: '', tier: '' }, audit: { page: 1, uid: '' }, codes: { page: 1 }, pendingToken: '' };
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -568,9 +571,12 @@ function load2FA() {
 }
 
 /* ---------- 兑换码 ---------- */
-function loadCodes() {
-  api('/admin/redemption-codes').then(function (d) {
-    var rows = d.map(function (c) {
+var RC_PAGE_SIZE = 20;
+function loadCodes(page) {
+  if (page) state.codes.page = page;
+  var p = state.codes.page;
+  api('/admin/redemption-codes?page=' + p + '&page_size=' + RC_PAGE_SIZE).then(function (d) {
+    var rows = d.items.map(function (c) {
       var stB = c.used_by ? '<span class="badge off">已用</span>' : '<span class="badge on">未用</span>';
       var del = c.used_by ? '' : '<button class="danger" data-del="' + c.id + '">删除</button>';
       return '<tr><td>' + c.id + '</td><td><code>' + esc(c.code) + '</code></td><td>' + c.duration_days + '</td>' +
@@ -578,8 +584,13 @@ function loadCodes() {
         '<td>' + stB + ' ' + del + '</td></tr>';
     }).join('');
     document.getElementById('rc-body').innerHTML = rows || '<tr><td colspan="7" class="muted">暂无兑换码</td></tr>';
+    document.getElementById('rc-info').textContent = '共 ' + d.total + ' 条 · 第 ' + d.page + ' 页';
+    document.getElementById('rc-prev').disabled = d.page <= 1;
+    document.getElementById('rc-next').disabled = d.page * RC_PAGE_SIZE >= d.total;
   }).catch(function (e) { toast(e.message, false); });
 }
+document.getElementById('rc-prev').addEventListener('click', function () { loadCodes(state.codes.page - 1); });
+document.getElementById('rc-next').addEventListener('click', function () { loadCodes(state.codes.page + 1); });
 document.getElementById('rc-gen').addEventListener('click', function () {
   var count = parseInt(document.getElementById('rc-count').value, 10) || 0;
   var days = parseInt(document.getElementById('rc-days').value, 10) || 0;

@@ -121,7 +121,10 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
                     if (a['expiry_date'] != null)
                       Text(
                         '到期 ${a['expiry_date']}',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                   ],
                 ),
@@ -203,9 +206,11 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   )
                 : _inheritors.isEmpty
-                    ? const Text(
+                    ? Text(
                         '暂无继承人,请先在「继承人」中创建',
-                        style: TextStyle(color: Colors.grey),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       )
                     : DropdownButtonFormField<String>(
                     initialValue: _selectedId,
@@ -227,9 +232,11 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
                               ),
                               Text(
                                 '${i['category_count'] ?? 0} 个分组 · ${i['asset_count'] ?? 0} 个资产',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  color: Colors.grey,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ],

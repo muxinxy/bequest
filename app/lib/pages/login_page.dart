@@ -267,10 +267,12 @@ class _LoginPageState extends State<LoginPage> {
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 '数字资产安全传承',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 40),
               TextFormField(
@@ -320,7 +322,9 @@ class _LoginPageState extends State<LoginPage> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 14),
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade400),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
@@ -368,7 +372,12 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         );
                       },
-                child: const Text('忘记密码', style: TextStyle(color: Colors.grey)),
+                child: Text(
+                  '忘记密码',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ),
               const SizedBox(height: 8),
               FilledButton.tonal(
@@ -396,9 +405,11 @@ class _LoginPageState extends State<LoginPage> {
                         // 返回后地址可能已变更:刷新验证码走新地址。
                         await _refreshCaptcha();
                       },
-                child: const Text(
+                child: Text(
                   '服务器设置',
-                  style: TextStyle(color: Colors.grey),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ],
@@ -471,7 +482,12 @@ class _RecoveryDialogState extends State<_RecoveryDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop((master: '', account: '', reset: true)),
-          child: const Text('忘记主密码?去重置', style: TextStyle(color: Colors.grey)),
+          child: Text(
+                  '忘记主密码?去重置',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
         ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),

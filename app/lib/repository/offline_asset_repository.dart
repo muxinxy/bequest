@@ -32,10 +32,16 @@ class OfflineAssetRepository implements AssetRepository {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> listCategories() async =>
-      ((await _load())['categories'] as List? ?? const [])
-          .whereType<Map<String, dynamic>>()
-          .toList();
+  Future<List<Map<String, dynamic>>> listCategories({String q = ''}) async {
+    final all = ((await _load())['categories'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    if (q.isEmpty) return all;
+    final query = q.toLowerCase();
+    return all
+        .where((c) => '${c['name']}'.toLowerCase().contains(query))
+        .toList();
+  }
   @override
   Future<List<Map<String, dynamic>>> listAssets() async =>
       ((await _load())['assets'] as List? ?? const [])
@@ -45,11 +51,18 @@ class OfflineAssetRepository implements AssetRepository {
   @override
   Future<(List<Map<String, dynamic>>, int)> listAssetsPaged({
     String? categoryId,
+    String q = '',
     int limit = 50,
     int offset = 0,
   }) async {
-    // 离线数据量小:忽略分页参数,全量拉取后按分组过滤。
-    final items = filterAssetsByCategory(await listAssets(), categoryId);
+    // 离线数据量小:忽略分页参数,全量拉取后按分组过滤 + 名称搜索。
+    var items = filterAssetsByCategory(await listAssets(), categoryId);
+    if (q.isNotEmpty) {
+      final query = q.toLowerCase();
+      items = items
+          .where((a) => '${a['name']}'.toLowerCase().contains(query))
+          .toList();
+    }
     return (items, items.length);
   }
 

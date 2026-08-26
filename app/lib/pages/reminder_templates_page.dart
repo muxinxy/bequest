@@ -277,7 +277,9 @@ class _TypeSection extends StatelessWidget {
             child: Center(
               child: Text(
                 '该类型暂无自定义模板',
-                style: TextStyle(color: Colors.grey[600]),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           )
@@ -285,11 +287,14 @@ class _TypeSection extends StatelessWidget {
           for (final template in custom)
             _templateTile(context, template),
         if (templates.any((t) => t.isPreset)) ...[
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
               '系统预设(只读)',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           for (final template in templates.where((t) => t.isPreset))
@@ -472,7 +477,10 @@ class _TemplateDialogState extends State<_TemplateDialog> {
               alignment: Alignment.centerLeft,
               child: Text(
                 '可用变量:${_typeInfo.hint}',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ],

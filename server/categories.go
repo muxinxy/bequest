@@ -55,16 +55,22 @@ func scanCategory(scanner interface{ Scan(...any) error }) (*categoryJSON, error
 }
 
 // handleListCategories: GET /api/v1/categories -> 200 [] (按 sort_order 排序,排除回收站)
-// 每个分组带 asset_count 与绑定的继承人名字(inheritor_names)。
+// 每个分组带 asset_count 与绑定的继承人名字(inheritor_names)。可选 ?q= 按名称模糊过滤。
 func handleListCategories(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		where := "c.user_id = ? AND c.deleted_at IS NULL"
+		args := []any{userID(r)}
+		if search := r.URL.Query().Get("q"); search != "" {
+			where += " AND c.name LIKE ?"
+			args = append(args, "%"+search+"%")
+		}
 		rows, err := db.Query(`SELECT c.id, c.name, c.asset_type, c.is_preset, c.created_at, c.sort_order,
 				(SELECT COUNT(*) FROM assets a WHERE a.category_id = c.id AND a.deleted_at IS NULL) AS asset_count,
 				c.remark,
 				(SELECT GROUP_CONCAT(i.name, '、') FROM category_inheritors ci
 					JOIN inheritors i ON i.id = ci.inheritor_id
 					WHERE ci.category_id = c.id) AS inheritor_names
-			FROM categories c WHERE c.user_id = ? AND c.deleted_at IS NULL ORDER BY c.sort_order, c.id`, userID(r))
+			FROM categories c WHERE `+where+` ORDER BY c.sort_order, c.id`, args...)
 		if err != nil {
 			log.Printf("list categories: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
