@@ -257,6 +257,7 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
   @override
   Widget build(BuildContext context) {
     // 本地过滤(按阶梯名)+ 分页截取。
+    // API 未提供 q 参数,本地过滤;规模大时后端加分页搜索。
     final query = _search.trim().toLowerCase();
     final filtered = query.isEmpty
         ? _ladders
@@ -463,6 +464,7 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
   bool _unbinding = false;
   List<Map<String, dynamic>> _assets = const [];
   List<Map<String, dynamic>> _categories = const [];
+  // 选中项存绑定行 id(binding_id),解绑按绑定行粒度。
   final Set<int> _selAssets = {};
   final Set<int> _selCategories = {};
 
@@ -536,8 +538,8 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
       await (await ApiConfig.client()).unbindLadder(
         jwt,
         ladderId: widget.ladder.id,
-        assetIds: _selAssets.toList(),
-        categoryIds: _selCategories.toList(),
+        assetBindings: _selAssets.toList(),
+        categoryBindings: _selCategories.toList(),
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -626,17 +628,17 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
                     else
                       for (final a in _assets)
                         _bindingTile(
-                          id: (a['asset_id'] as num).toInt(),
+                          id: (a['binding_id'] as num).toInt(),
                           name: a['name']?.toString() ?? '未命名',
                           inheritorName: a['inheritor_name']?.toString() ?? '',
                           status: a['status']?.toString() ?? '',
                           selected: _selAssets.contains(
-                            (a['asset_id'] as num).toInt(),
+                            (a['binding_id'] as num).toInt(),
                           ),
                           onChanged: isGlobal
                               ? null
                               : (v) => setState(() {
-                                  final id = (a['asset_id'] as num).toInt();
+                                  final id = (a['binding_id'] as num).toInt();
                                   if (v == true) {
                                     _selAssets.add(id);
                                   } else {
@@ -654,16 +656,16 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
                     else
                       for (final c in _categories)
                         _bindingTile(
-                          id: (c['category_id'] as num).toInt(),
+                          id: (c['binding_id'] as num).toInt(),
                           name: c['name']?.toString() ?? '未命名',
                           inheritorName: c['inheritor_name']?.toString() ?? '',
                           selected: _selCategories.contains(
-                            (c['category_id'] as num).toInt(),
+                            (c['binding_id'] as num).toInt(),
                           ),
                           onChanged: isGlobal
                               ? null
                               : (v) => setState(() {
-                                  final id = (c['category_id'] as num).toInt();
+                                  final id = (c['binding_id'] as num).toInt();
                                   if (v == true) {
                                     _selCategories.add(id);
                                   } else {

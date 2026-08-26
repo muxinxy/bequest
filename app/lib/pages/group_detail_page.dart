@@ -186,6 +186,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
   }
 
   /// 搜索 + 排序后的可见资产。
+  /// API 未提供 q 参数,本地过滤;规模大时后端加分页搜索。
   List<Asset> get _visibleAssets {
     final query = _search.trim().toLowerCase();
     final list = query.isEmpty

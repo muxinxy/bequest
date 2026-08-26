@@ -394,20 +394,20 @@ class ApiClient {
     return _get('/api/v1/trigger-ladders/$id/bindings', jwt);
   }
 
-  /// POST /api/v1/trigger-ladders/unbind {ladder_id, asset_ids, category_ids}
-  /// 解绑后对应资产/分组回退全局阶梯。
+  /// POST /api/v1/trigger-ladders/unbind {ladder_id, asset_bindings, category_bindings}
+  /// 按绑定行粒度解绑(binding_id 列表);解绑后对应资产/分组回退全局阶梯。
   Future<Map<String, dynamic>> unbindLadder(
     String jwt, {
     required int ladderId,
-    required List<int> assetIds,
-    required List<int> categoryIds,
+    required List<int> assetBindings,
+    required List<int> categoryBindings,
   }) {
     return _postAuth(
       '/api/v1/trigger-ladders/unbind',
       {
         'ladder_id': ladderId,
-        'asset_ids': assetIds,
-        'category_ids': categoryIds,
+        'asset_bindings': assetBindings,
+        'category_bindings': categoryBindings,
       },
       jwt,
     );
@@ -499,6 +499,59 @@ class ApiClient {
   /// GET /api/v1/inheritance/status
   Future<Map<String, dynamic>> getInheritanceStatus(String jwt) {
     return _get('/api/v1/inheritance/status', jwt);
+  }
+
+  /// GET /api/v1/inheritance/events?month=&q=&limit=&offset= -> {items, total}
+  /// month 形如 '2026-08';q 搜资产名/继承人名;limit 默认 50,最大 200。
+  Future<(List<Map<String, dynamic>>, int)> getInheritanceEvents(
+    String jwt, {
+    String month = '',
+    String q = '',
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final query = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      if (month.isNotEmpty) 'month': month,
+      if (q.isNotEmpty) 'q': q,
+    };
+    final response = await _client.get(
+      Uri.parse(
+        '$baseUrl/api/v1/inheritance/events?${Uri(queryParameters: query).query}',
+      ),
+      headers: _authHeaders(jwt),
+    );
+    _ensureSuccess(response);
+    final dynamic decoded =
+        response.body.isEmpty ? null : jsonDecode(response.body);
+    final map =
+        decoded is Map<String, dynamic> ? decoded : const <String, dynamic>{};
+    final items = (map['items'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    final total = (map['total'] as num?)?.toInt() ?? items.length;
+    return (items, total);
+  }
+
+  /// GET /api/v1/inheritance/events/export?month=&q= -> CSV 文本(浏览器下载/分享用)。
+  Future<String> exportInheritanceEvents(
+    String jwt, {
+    String month = '',
+    String q = '',
+  }) async {
+    final query = <String, String>{
+      if (month.isNotEmpty) 'month': month,
+      if (q.isNotEmpty) 'q': q,
+    };
+    final response = await _client.get(
+      Uri.parse(
+        '$baseUrl/api/v1/inheritance/events/export?${Uri(queryParameters: query).query}',
+      ),
+      headers: _authHeaders(jwt),
+    );
+    _ensureSuccess(response);
+    return response.body;
   }
 
   /// GET /api/v1/inheritance/preview:继承触发预览(阶梯/交接资产/继承人/说明)。

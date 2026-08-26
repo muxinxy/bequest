@@ -28,7 +28,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
   final _scroll = ScrollController();
 
   List<Inheritor> _inheritors = const [];
-  String? _defaultInheritorName;
+  int? _defaultInheritorId;
   bool _loading = true;
 
   /// 本地分页:每页 20,滚动到底自动加载更多。
@@ -71,7 +71,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
       final def = results[1] as Map<String, dynamic>;
       setState(() {
         _inheritors = list.map(Inheritor.fromJson).toList(growable: false);
-        _defaultInheritorName = def['inheritor_name']?.toString();
+        _defaultInheritorId = (def['inheritor_id'] as num?)?.toInt();
         _visibleCount = _pageSize;
         _loading = false;
       });
@@ -469,51 +469,34 @@ class _InheritorsPageState extends State<InheritorsPage> {
     );
   }
 
-  /// 设置默认继承人:列出全部继承人,含"不指定(按第一顺位)"。
-  /// 返回值:-1 表示不指定,其它为正数继承人或 null 表示取消。
-  Future<void> _pickDefaultInheritor() async {
-    const int unspecified = -1;
-    final jwt = await _store.readJwt();
-    if (jwt == null || jwt.isEmpty) return;
-    final api = await _api;
-    if (!mounted) return;
-    final picked = await showDialog<int>(
+  /// 设为默认继承人:确认后 PUT default-inheritor,刷新 + SnackBar。
+  Future<void> _setDefaultInheritor(Inheritor inheritor) async {
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('设置默认继承人'),
-        children: [
-          for (final i in _inheritors)
-            SimpleDialogOption(
-              onPressed: () =>
-                  Navigator.of(context).pop(int.tryParse(i.id) ?? 0),
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.person_outline),
-                title: Text(i.name),
-                subtitle: Text(
-                  '${i.categoryCount} 个分组 · ${i.assetCount} 个资产',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-            ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.of(context).pop(unspecified),
-            child: const ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.clear),
-              title: Text('不指定(按第一顺位)'),
-            ),
+      builder: (context) => AlertDialog(
+        title: const Text('设为默认继承人'),
+        content: Text('确定将「${inheritor.name}」设为默认继承人吗?\n'
+            '继承触发时未指定继承人的资产将优先交接给 TA。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('设为默认'),
           ),
         ],
       ),
     );
-    if (picked == null) return;
-    final bodyId = picked == unspecified ? null : picked;
+    if (confirmed != true || !mounted) return;
     try {
-      await api.putDefaultInheritor(jwt, bodyId);
+      final jwt = await _store.readJwt();
+      if (jwt == null) throw ApiException('未登录');
+      await (await _api).putDefaultInheritor(jwt, int.tryParse(inheritor.id));
       await _load();
       if (!mounted) return;
-      _showError('默认继承人已保存');
+      _showError('已设为默认继承人');
     } catch (_) {
       _showError('保存失败,请检查网络后重试');
     }
@@ -529,6 +512,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
   @override
   Widget build(BuildContext context) {
     // 本地过滤(姓名/邮箱)+ 分页截取。
+    // API 未提供 q 参数,本地过滤;规模大时后端加分页搜索。
     final query = _search.trim().toLowerCase();
     final filtered = query.isEmpty
         ? _inheritors
@@ -539,7 +523,14 @@ class _InheritorsPageState extends State<InheritorsPage> {
                     i.email.toLowerCase().contains(query),
               )
               .toList();
-    final shown = filtered.take(_visibleCount).toList();
+    // 默认继承人置顶,其余按 priority 升序(第一顺位在前)。
+    final sorted = [...filtered]..sort((a, b) {
+        final aDef = a.id == '$_defaultInheritorId' ? 0 : 1;
+        final bDef = b.id == '$_defaultInheritorId' ? 0 : 1;
+        if (aDef != bDef) return aDef - bDef;
+        return (a.priority ?? 1 << 30).compareTo(b.priority ?? 1 << 30);
+      });
+    final shown = sorted.take(_visibleCount).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('继承人管理')),
       floatingActionButton: FloatingActionButton(
@@ -557,31 +548,6 @@ class _InheritorsPageState extends State<InheritorsPage> {
               '继承码用于触发继承后领取资产密钥,请线下告知继承人;'
               '列表仅显示掩码,查看/重置请在编辑中点击"生成"。',
               style: TextStyle(fontSize: 12),
-            ),
-          ),
-          // 默认继承人设置入口。
-          Container(
-            width: double.infinity,
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Row(
-              children: [
-                const Icon(Icons.star_outline, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _defaultInheritorName == null ||
-                            _defaultInheritorName!.isEmpty
-                        ? '默认继承人:未指定(按第一顺位)'
-                        : '默认继承人:$_defaultInheritorName',
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ),
-                TextButton(
-                  onPressed: _pickDefaultInheritor,
-                  child: const Text('设置'),
-                ),
-              ],
             ),
           ),
           // 搜索框:按姓名/邮箱本地过滤。
@@ -627,9 +593,39 @@ class _InheritorsPageState extends State<InheritorsPage> {
                     separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final inheritor = shown[index];
+                      final isDefault =
+                          inheritor.id == '$_defaultInheritorId';
                       return ListTile(
                         leading: const Icon(Icons.person_outline),
-                        title: Text(inheritor.name),
+                        title: Row(
+                          children: [
+                            Flexible(child: Text(inheritor.name)),
+                            if (isDefault) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '默认',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSecondaryContainer,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -671,6 +667,20 @@ class _InheritorsPageState extends State<InheritorsPage> {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            IconButton(
+                              tooltip: isDefault ? '当前默认继承人' : '设为默认继承人',
+                              icon: Icon(
+                                isDefault
+                                    ? Icons.star
+                                    : Icons.star_outline,
+                                color: isDefault
+                                    ? Colors.amber
+                                    : null,
+                              ),
+                              onPressed: isDefault
+                                  ? null
+                                  : () => _setDefaultInheritor(inheritor),
+                            ),
                             IconButton(
                               tooltip: '查看绑定资产',
                               icon: const Icon(Icons.inventory_2_outlined),

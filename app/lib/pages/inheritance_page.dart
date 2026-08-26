@@ -5,6 +5,7 @@ import '../api/api_config.dart';
 import '../models/inheritance_status.dart';
 import '../storage/secure_store.dart';
 import '../utils/time_format.dart';
+import 'inheritance_events_page.dart';
 
 /// 继承:开关 → 状态 → 默认继承人 → 说明。
 class InheritancePage extends StatefulWidget {
@@ -89,13 +90,6 @@ class _InheritancePageState extends State<InheritancePage> {
         _ => Icons.help_outline,
       };
 
-  static String _eventStatusLabel(String status) => switch (status) {
-        'created' => '已创建',
-        'claimed' => '已领取',
-        'reversed' => '已撤销',
-        _ => status,
-      };
-
   /// 开关卡片:一键开启/关闭继承。
   Widget _toggleCard() {
     final scheme = Theme.of(context).colorScheme;
@@ -110,66 +104,50 @@ class _InheritancePageState extends State<InheritancePage> {
     );
   }
 
-  /// 状态卡片:当前阶段/升级等级/最近登录 + 继承事件列表。
+  /// 状态卡片:当前阶段/升级等级/最近登录。
   Widget _statusCard() {
     final status = _status;
     if (status == null) return const SizedBox.shrink();
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Row(
-              children: [
-                Icon(_stageIcon(status.stage), size: 32),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '当前阶段:${_stageLabel(status.stage)}',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '升级等级:${status.escalationLevel ?? 0}'
-                        '${status.lastLoginAt == null ? '' : ' · 最近登录 ${formatServerTime(status.lastLoginAt)}'}',
-                      ),
-                    ],
+            Icon(_stageIcon(status.stage), size: 32),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '当前阶段:${_stageLabel(status.stage)}',
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Text(
+                    '升级等级:${status.escalationLevel ?? 0}'
+                    '${status.lastLoginAt == null ? '' : ' · 最近登录 ${formatServerTime(status.lastLoginAt)}'}',
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            const Text('继承事件', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            if (status.events.isEmpty)
-              const Text('暂无继承事件', style: TextStyle(fontSize: 14))
-            else
-              for (final e in status.events)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('${_eventStatusLabel(e.status)}'
-                          '${e.createdAt == null ? '' : ' · 创建 ${formatServerTime(e.createdAt)}'}'
-                          '${e.claimedAt == null ? '' : ' · 领取 ${formatServerTime(e.claimedAt)}'}'
-                          '${e.reversedAt == null ? '' : ' · 撤销 ${formatServerTime(e.reversedAt)}'}'),
-                      if (e.status == 'claimed' && e.reversableUntil != null)
-                        Text(
-                          '反悔截止:${formatServerTime(e.reversableUntil)}(过期后交接最终完成)',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 继承事件记录入口:跳转独立事件页(年月筛选/搜索/导出)。
+  Widget _eventsEntryCard() {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: ListTile(
+        leading: Icon(Icons.history, color: scheme.primary),
+        title: const Text('查看事件记录'),
+        subtitle: const Text('继承事件永久保留,支持年月筛选与 CSV 导出', style: TextStyle(fontSize: 12)),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const InheritanceEventsPage()),
         ),
       ),
     );
@@ -307,6 +285,8 @@ class _InheritancePageState extends State<InheritancePage> {
                 _toggleCard(),
                 const SizedBox(height: 16),
                 _statusCard(),
+                const SizedBox(height: 16),
+                _eventsEntryCard(),
                 const SizedBox(height: 16),
                 _defaultInheritorCard(),
                 const SizedBox(height: 16),

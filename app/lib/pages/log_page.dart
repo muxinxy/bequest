@@ -8,8 +8,8 @@ import '../repository/offline_asset_repository.dart';
 import '../storage/secure_store.dart';
 import '../utils/time_format.dart';
 
-/// 操作记录页:全部日志(审计+应用,含 detail)查看、CSV 导出、按月清除。
-/// 云端优先走 API;断网/未登录/本地模式回退读缓存或本地记录。
+/// 操作记录页:全部日志(审计+应用,含 detail)查看、CSV 导出、年月筛选。
+/// 日志永久保留,无清除入口。云端优先走 API;断网/未登录/本地模式回退读缓存或本地记录。
 class LogPage extends StatefulWidget {
   const LogPage({super.key});
 
@@ -190,45 +190,6 @@ class _LogPageState extends State<LogPage> {
     );
   }
 
-  Future<void> _clear() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('清除操作记录'),
-        content: const Text('确定清除操作记录吗?此操作不可恢复。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('清除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    try {
-      final jwt = await _store.readJwt();
-      if (jwt == null) throw ApiException('未登录');
-      final res = await (await _api).clearLogs(
-        jwt,
-        kind: '',
-        month: _month ?? '',
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已清除 ${res['deleted'] ?? 0} 条日志')),
-      );
-      await _load();
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('清除失败,请检查网络后重试')));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -239,11 +200,6 @@ class _LogPageState extends State<LogPage> {
             tooltip: '导出 CSV',
             icon: const Icon(Icons.file_download_outlined),
             onPressed: _export,
-          ),
-          IconButton(
-            tooltip: '清除日志',
-            icon: const Icon(Icons.delete_outline),
-            onPressed: _clear,
           ),
         ],
       ),

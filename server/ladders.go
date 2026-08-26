@@ -269,7 +269,10 @@ func handleDeleteTriggerLadders(db *sql.DB) http.HandlerFunc {
 
 // ---------- 阶梯绑定管理 ----------
 
+// ladderBindingAsset/Category 的 binding_id 即 asset_inheritors/category_inheritors.id,
+// 前端按"绑定行"(资产/分组 + 继承人)粒度选中与解绑。
 type ladderBindingAsset struct {
+	BindingID     int64  `json:"binding_id"`
 	AssetID       int64  `json:"asset_id"`
 	Name          string `json:"name"`
 	Status        string `json:"status"`
@@ -278,6 +281,7 @@ type ladderBindingAsset struct {
 }
 
 type ladderBindingCategory struct {
+	BindingID     int64  `json:"binding_id"`
 	CategoryID    int64  `json:"category_id"`
 	Name          string `json:"name"`
 	InheritorID   int64  `json:"inheritor_id"`
@@ -313,7 +317,7 @@ func handleListLadderBindings(db *sql.DB) http.HandlerFunc {
 		if isGlobal == 0 {
 			assetArgs = append(assetArgs, id)
 		}
-		arows, err := db.Query(`SELECT ai.asset_id, a.name, a.status, ai.inheritor_id, i.name
+		arows, err := db.Query(`SELECT ai.id, ai.asset_id, a.name, a.status, ai.inheritor_id, i.name
 			FROM asset_inheritors ai
 			JOIN assets a ON a.id = ai.asset_id
 			JOIN inheritors i ON i.id = ai.inheritor_id
@@ -325,7 +329,7 @@ func handleListLadderBindings(db *sql.DB) http.HandlerFunc {
 		}
 		for arows.Next() {
 			var b ladderBindingAsset
-			if err := arows.Scan(&b.AssetID, &b.Name, &b.Status, &b.InheritorID, &b.InheritorName); err != nil {
+			if err := arows.Scan(&b.BindingID, &b.AssetID, &b.Name, &b.Status, &b.InheritorID, &b.InheritorName); err != nil {
 				log.Printf("scan ladder asset binding: %v", err)
 				arows.Close()
 				writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -340,7 +344,7 @@ func handleListLadderBindings(db *sql.DB) http.HandlerFunc {
 		if isGlobal == 0 {
 			catArgs = append(catArgs, id)
 		}
-		crows, err := db.Query(`SELECT ci.category_id, c.name, ci.inheritor_id, i.name
+		crows, err := db.Query(`SELECT ci.id, ci.category_id, c.name, ci.inheritor_id, i.name
 			FROM category_inheritors ci
 			JOIN categories c ON c.id = ci.category_id
 			JOIN inheritors i ON i.id = ci.inheritor_id
@@ -352,7 +356,7 @@ func handleListLadderBindings(db *sql.DB) http.HandlerFunc {
 		}
 		for crows.Next() {
 			var b ladderBindingCategory
-			if err := crows.Scan(&b.CategoryID, &b.Name, &b.InheritorID, &b.InheritorName); err != nil {
+			if err := crows.Scan(&b.BindingID, &b.CategoryID, &b.Name, &b.InheritorID, &b.InheritorName); err != nil {
 				log.Printf("scan ladder category binding: %v", err)
 				crows.Close()
 				writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -367,16 +371,17 @@ func handleListLadderBindings(db *sql.DB) http.HandlerFunc {
 }
 
 // handleUnbindLadder: POST /api/v1/trigger-ladders/unbind
-// body {"ladder_id":5,"asset_ids":[1,2],"category_ids":[3]} -> 200
+// body {"ladder_id":5,"asset_bindings":[binding_id...],"category_bindings":[binding_id...]} -> 200
 // 解绑 = 把对应 asset_inheritors/category_inheritors 的 ladder_id 置 NULL(回全局)。
+// binding_id 即绑定行 id(asset_inheritors/category_inheritors.id),按"资产/分组+继承人"粒度解绑。
 // 全局阶梯(is_global=1)的绑定即默认,解绑无意义,返回 400。
 func handleUnbindLadder(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uid := userID(r)
 		var req struct {
-			LadderID    int64   `json:"ladder_id"`
-			AssetIDs    []int64 `json:"asset_ids"`
-			CategoryIDs []int64 `json:"category_ids"`
+			LadderID         int64   `json:"ladder_id"`
+			AssetBindings    []int64 `json:"asset_bindings"`
+			CategoryBindings []int64 `json:"category_bindings"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "请求数据格式错误")
@@ -392,11 +397,14 @@ func handleUnbindLadder(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		unboundAssets, unboundCategories := 0, 0
-		if len(req.AssetIDs) > 0 {
-			// 仅解绑属于该用户的资产绑定。
+		if len(req.AssetBindings) > 0 {
+			// 仅解绑属于该用户资产、且当前归属该阶梯的绑定行。
+			args := []any{req.LadderID}
+			args = append(args, toAny(req.AssetBindings)...)
+			args = append(args, uid)
 			res, err := db.Exec(`UPDATE asset_inheritors SET ladder_id = NULL
-				WHERE ladder_id = ? AND asset_id IN (SELECT id FROM assets WHERE user_id = ? AND id IN (`+
-				placeholders(len(req.AssetIDs))+`))`, append([]any{req.LadderID, uid}, toAny(req.AssetIDs)...)...)
+				WHERE ladder_id = ? AND id IN (`+placeholders(len(req.AssetBindings))+`)
+				AND asset_id IN (SELECT id FROM assets WHERE user_id = ?)`, args...)
 			if err != nil {
 				log.Printf("unbind assets: %v", err)
 				writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -405,10 +413,13 @@ func handleUnbindLadder(db *sql.DB) http.HandlerFunc {
 			n, _ := res.RowsAffected()
 			unboundAssets = int(n)
 		}
-		if len(req.CategoryIDs) > 0 {
+		if len(req.CategoryBindings) > 0 {
+			args := []any{req.LadderID}
+			args = append(args, toAny(req.CategoryBindings)...)
+			args = append(args, uid)
 			res, err := db.Exec(`UPDATE category_inheritors SET ladder_id = NULL
-				WHERE ladder_id = ? AND category_id IN (SELECT id FROM categories WHERE user_id = ? AND id IN (`+
-				placeholders(len(req.CategoryIDs))+`))`, append([]any{req.LadderID, uid}, toAny(req.CategoryIDs)...)...)
+				WHERE ladder_id = ? AND id IN (`+placeholders(len(req.CategoryBindings))+`)
+				AND category_id IN (SELECT id FROM categories WHERE user_id = ?)`, args...)
 			if err != nil {
 				log.Printf("unbind categories: %v", err)
 				writeError(w, http.StatusInternalServerError, "服务器内部错误")

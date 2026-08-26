@@ -379,6 +379,7 @@ class _HomePageState extends State<HomePage> {
   /// (后端已统计,免全量资产);本地/离线无该字段,仍按资产列表统计。
   /// 未分组无对应 category,始终从资产列表统计。
   /// 支持搜索(分组名)与排序(名称/数量/创建时间),未分组固定排最后。
+  /// API 未提供 q 参数,本地过滤;规模大时后端加分页搜索。
   List<(String, String, int)> get _groups {
     final useServerCount = !_isLocal && !_offlineMode;
     final counts = <String, int>{};

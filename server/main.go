@@ -149,6 +149,8 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("PUT /api/v1/notification-channels", auth(handlePutNotificationChannels(db)))
 	mux.HandleFunc("POST /api/v1/inheritance/claim", handleClaim(db))
 	mux.Handle("GET /api/v1/inheritance/status", auth(handleInheritanceStatus(db)))
+	mux.Handle("GET /api/v1/inheritance/events", auth(handleListInheritanceEvents(db)))
+	mux.Handle("GET /api/v1/inheritance/events/export", auth(handleExportInheritanceEvents(db)))
 	mux.Handle("GET /api/v1/inheritance/preview", auth(handleInheritancePreview(db)))
 	mux.Handle("GET /api/v1/inheritance/default-inheritor", auth(handleGetDefaultInheritor(db)))
 	mux.Handle("PUT /api/v1/inheritance/default-inheritor", auth(handlePutDefaultInheritor(db)))

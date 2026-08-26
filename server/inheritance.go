@@ -5,12 +5,14 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -406,5 +408,172 @@ func handleInheritanceStatus(db *sql.DB) http.HandlerFunc {
 			"last_login_at":    ll,
 			"events":           events,
 		})
+	}
+}
+
+// ---------- 继承事件查询/导出 ----------
+
+// inheritanceEventItem 事件列表项(含继承人名;资产可能已删除,asset_name 可空)。
+type inheritanceEventItem struct {
+	ID              int64   `json:"id"`
+	Status          string  `json:"status"`
+	CreatedAt       string  `json:"created_at"`
+	ClaimedAt       *string `json:"claimed_at"`
+	ReversedAt      *string `json:"reversed_at"`
+	ReversableUntil *string `json:"reversable_until"`
+	AssetID         *int64  `json:"asset_id"`
+	AssetName       *string `json:"asset_name"`
+	InheritorName   string  `json:"inheritor_name"`
+}
+
+// parseEventQuery 解析 month/q/limit/offset 查询参数。
+// month 形如 "2026-08";q 搜索资产名或继承人名;limit 默认 50 最大 200。
+func parseEventQuery(r *http.Request) (month, q string, limit, offset int, bad string) {
+	month = r.URL.Query().Get("month")
+	if month != "" {
+		if _, err := time.Parse("2006-01", month); err != nil {
+			return "", "", 0, 0, "month 必须为 YYYY-MM 格式"
+		}
+	}
+	q = strings.TrimSpace(r.URL.Query().Get("q"))
+	limit = 50
+	if s := r.URL.Query().Get("limit"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+	if s := r.URL.Query().Get("offset"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+	return month, q, limit, offset, ""
+}
+
+// eventWhere 拼装事件查询条件(用户 + 可选月份 + 可选搜索),返回 where 子句与参数。
+func eventWhere(uid int64, month, q string) (string, []any) {
+	where := "e.user_id = ?"
+	args := []any{uid}
+	if month != "" {
+		where += " AND substr(e.created_at, 1, 7) = ?"
+		args = append(args, month)
+	}
+	if q != "" {
+		where += " AND (a.name LIKE ? OR i.name LIKE ?)"
+		like := "%" + q + "%"
+		args = append(args, like, like)
+	}
+	return where, args
+}
+
+// handleListInheritanceEvents: GET /api/v1/inheritance/events?month=&q=&limit=&offset=
+// -> 200 {"items":[...],"total":n} 按 id 倒序。
+func handleListInheritanceEvents(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		month, q, limit, offset, bad := parseEventQuery(r)
+		if bad != "" {
+			writeError(w, http.StatusBadRequest, bad)
+			return
+		}
+		where, args := eventWhere(userID(r), month, q)
+		var total int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM inheritance_events e
+			JOIN inheritors i ON i.id = e.inheritor_id
+			LEFT JOIN assets a ON a.id = e.asset_id WHERE `+where, args...).Scan(&total); err != nil {
+			log.Printf("count events: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		rows, err := db.Query(`SELECT e.id, e.status, e.created_at, e.claimed_at, e.reversed_at,
+				e.reversable_until, e.asset_id, a.name, i.name
+			FROM inheritance_events e
+			JOIN inheritors i ON i.id = e.inheritor_id
+			LEFT JOIN assets a ON a.id = e.asset_id
+			WHERE `+where+` ORDER BY e.id DESC LIMIT ? OFFSET ?`,
+			append(append([]any{}, args...), limit, offset)...)
+		if err != nil {
+			log.Printf("list events: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		defer rows.Close()
+		items := []inheritanceEventItem{}
+		for rows.Next() {
+			var e inheritanceEventItem
+			var claimed, reversed, revUntil sql.NullString
+			var assetID sql.NullInt64
+			var assetName sql.NullString
+			if err := rows.Scan(&e.ID, &e.Status, &e.CreatedAt, &claimed, &reversed, &revUntil, &assetID, &assetName, &e.InheritorName); err != nil {
+				log.Printf("scan event: %v", err)
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
+				return
+			}
+			if claimed.Valid {
+				e.ClaimedAt = &claimed.String
+			}
+			if reversed.Valid {
+				e.ReversedAt = &reversed.String
+			}
+			if revUntil.Valid {
+				e.ReversableUntil = &revUntil.String
+			}
+			if assetID.Valid {
+				e.AssetID = &assetID.Int64
+			}
+			if assetName.Valid {
+				e.AssetName = &assetName.String
+			}
+			items = append(items, e)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
+	}
+}
+
+// eventStatusCN 状态中文映射。
+func eventStatusCN(status string) string {
+	return map[string]string{"pending": "待领取", "claimed": "已领取", "reversed": "已撤销"}[status]
+}
+
+// handleExportInheritanceEvents: GET /api/v1/inheritance/events/export?month=&q= -> CSV 下载。
+func handleExportInheritanceEvents(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		month, q, _, _, bad := parseEventQuery(r)
+		if bad != "" {
+			writeError(w, http.StatusBadRequest, bad)
+			return
+		}
+		where, args := eventWhere(userID(r), month, q)
+		rows, err := db.Query(`SELECT e.id, e.status, e.event_key, e.created_at, e.claimed_at,
+				e.reversed_at, e.reversable_until, COALESCE(a.name, ''), i.name
+			FROM inheritance_events e
+			JOIN inheritors i ON i.id = e.inheritor_id
+			LEFT JOIN assets a ON a.id = e.asset_id
+			WHERE `+where+` ORDER BY e.id`, args...)
+		if err != nil {
+			log.Printf("export events: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		defer rows.Close()
+
+		fname := fmt.Sprintf("inheritance-events-%s.csv", time.Now().Format("20060102-150405"))
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fname))
+		cw := csv.NewWriter(w)
+		_ = cw.Write([]string{"ID", "状态", "事件键", "资产", "继承人", "创建时间", "领取时间", "撤销时间", "可撤销截止"})
+		for rows.Next() {
+			var id int64
+			var status, eventKey, createdAt, assetName, inheritorName string
+			var claimed, reversed, revUntil sql.NullString
+			if err := rows.Scan(&id, &status, &eventKey, &createdAt, &claimed, &reversed, &revUntil, &assetName, &inheritorName); err != nil {
+				log.Printf("scan export event: %v", err)
+				return
+			}
+			_ = cw.Write([]string{
+				strconv.FormatInt(id, 10), eventStatusCN(status), eventKey, assetName, inheritorName,
+				createdAt, claimed.String, reversed.String, revUntil.String,
+			})
+		}
+		cw.Flush()
 	}
 }

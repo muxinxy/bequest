@@ -16,10 +16,10 @@ func TestLadderValidate(t *testing.T) {
 		ok   bool // true = 合法
 	}{
 		{[]int{30, 90}, true},
-		{[]int{30, 90, 120}, false},      // 3 个
-		{[]int{30, 30}, false},           // 非严格递增
-		{[]int{30, 0}, false},            // 含 0
-		{[]int{30, 5000}, false},         // 超 3650
+		{[]int{30, 90, 120}, false}, // 3 个
+		{[]int{30, 30}, false},      // 非严格递增
+		{[]int{30, 0}, false},       // 含 0
+		{[]int{30, 5000}, false},    // 超 3650
 	}
 	for _, c := range cases {
 		got := validateLadderDays(c.days)
@@ -231,7 +231,7 @@ func TestLadderBindings(t *testing.T) {
 		t.Fatalf("list custom bindings: status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var custom struct {
-		Assets     []ladderBindingAsset     `json:"assets"`
+		Assets     []ladderBindingAsset    `json:"assets"`
 		Categories []ladderBindingCategory `json:"categories"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &custom); err != nil {
@@ -267,7 +267,7 @@ func TestLadderBindings(t *testing.T) {
 		t.Fatalf("list global bindings: status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var global struct {
-		Assets     []ladderBindingAsset     `json:"assets"`
+		Assets     []ladderBindingAsset    `json:"assets"`
 		Categories []ladderBindingCategory `json:"categories"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &global); err != nil {
@@ -285,5 +285,92 @@ func TestLadderBindings(t *testing.T) {
 	}
 	if !foundB {
 		t.Fatalf("global bindings missing assetB: %+v", global.Assets)
+	}
+}
+
+// TestUnbindByBindingID: 按 binding_id(绑定行)粒度解绑——同一资产绑多个继承人时
+// 只解绑选中的那一行,其余绑定保留;bindings 列表返回 binding_id。
+func TestUnbindByBindingID(t *testing.T) {
+	ts, db := newTestServer(t)
+	token := registerUser(t, ts, "alice")
+
+	assetID := createAssetInCat(t, ts, token, 0, "房产")
+	inA := createInheritor(t, ts, token, "bob", "bob@example.com", "abc12345")
+	inB := createInheritor(t, ts, token, "carol", "carol@example.com", "xyz67890")
+
+	// 建自定义阶梯
+	rr := doReq(t, ts, http.MethodPost, "/api/v1/trigger-ladders", `{"name":"阶梯A","days":[10,20]}`, token)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create ladder: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var ladder ladderJSON
+	if err := json.Unmarshal(rr.Body.Bytes(), &ladder); err != nil {
+		t.Fatalf("parse ladder: %v", err)
+	}
+
+	// 同一资产绑两个继承人到该阶梯
+	for _, inID := range []int64{inA, inB} {
+		if rr := doReq(t, ts, http.MethodPost, fmt.Sprintf("/api/v1/assets/%d/inheritors", assetID),
+			fmt.Sprintf(`{"inheritor_id":%d,"ladder_id":%d}`, inID, ladder.ID), token); rr.Code != http.StatusCreated {
+			t.Fatalf("bind asset: status=%d body=%s", rr.Code, rr.Body.String())
+		}
+	}
+
+	// GET bindings 拿 binding_id(每行一个)
+	rr = doReq(t, ts, http.MethodGet, fmt.Sprintf("/api/v1/trigger-ladders/%d/bindings", ladder.ID), "", token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list bindings: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var bindings struct {
+		Assets []ladderBindingAsset `json:"assets"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &bindings); err != nil {
+		t.Fatalf("parse bindings: %v", err)
+	}
+	if len(bindings.Assets) != 2 {
+		t.Fatalf("want 2 binding rows, got %d: %s", len(bindings.Assets), rr.Body.String())
+	}
+	var bobBinding int64
+	for _, a := range bindings.Assets {
+		if a.BindingID == 0 {
+			t.Fatalf("binding row missing binding_id: %+v", a)
+		}
+		if a.InheritorID == inA {
+			bobBinding = a.BindingID
+		}
+	}
+	if bobBinding == 0 {
+		t.Fatalf("no binding row for bob: %+v", bindings.Assets)
+	}
+
+	// 按 binding_id 解绑 bob 那行
+	rr = doReq(t, ts, http.MethodPost, "/api/v1/trigger-ladders/unbind",
+		fmt.Sprintf(`{"ladder_id":%d,"asset_bindings":[%d]}`, ladder.ID, bobBinding), token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unbind: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var res struct {
+		UnboundAssets int `json:"unbound_assets"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &res); err != nil {
+		t.Fatalf("parse unbind: %v", err)
+	}
+	if res.UnboundAssets != 1 {
+		t.Fatalf("unbound_assets=%d want 1", res.UnboundAssets)
+	}
+
+	// bob 行 ladder_id 变 NULL,carol 行保留
+	var bobLadder, carolLadder sql.NullInt64
+	if err := db.QueryRow(`SELECT ladder_id FROM asset_inheritors WHERE asset_id=? AND inheritor_id=?`, assetID, inA).Scan(&bobLadder); err != nil {
+		t.Fatalf("query bob binding: %v", err)
+	}
+	if err := db.QueryRow(`SELECT ladder_id FROM asset_inheritors WHERE asset_id=? AND inheritor_id=?`, assetID, inB).Scan(&carolLadder); err != nil {
+		t.Fatalf("query carol binding: %v", err)
+	}
+	if bobLadder.Valid {
+		t.Fatalf("bob ladder_id=%d want NULL", bobLadder.Int64)
+	}
+	if !carolLadder.Valid || carolLadder.Int64 != ladder.ID {
+		t.Fatalf("carol ladder_id=%v want %d (保留)", carolLadder, ladder.ID)
 	}
 }

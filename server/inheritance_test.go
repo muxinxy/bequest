@@ -335,7 +335,7 @@ func TestSchedulerExpiry(t *testing.T) {
 	}
 	mkAsset("银行卡", now.AddDate(0, 0, 25).Format("2006-01-02")) // -> advance 30 reminder
 	mkAsset("电子邮箱", now.AddDate(0, 0, 5).Format("2006-01-02")) // -> advance 30 + 7 reminders
-	mkAsset("旧卡", now.AddDate(0, 0, -2).Format("2006-01-02"))   // -> 已到期 reminder
+	mkAsset("旧卡", now.AddDate(0, 0, -2).Format("2006-01-02"))  // -> 已到期 reminder
 
 	var id25, id5, idPast int64
 	if err := db.QueryRow(`SELECT id FROM assets WHERE name='银行卡'`).Scan(&id25); err != nil {
@@ -702,5 +702,95 @@ func TestAssetLevelInheritance(t *testing.T) {
 	rr = doReq(t, ts, http.MethodGet, "/api/v1/inheritance/status", "", token)
 	if !strings.Contains(rr.Body.String(), `"status":"claimed"`) || !strings.Contains(rr.Body.String(), `"reversable_until"`) {
 		t.Fatalf("status missing claimed/reversable_until: %s", rr.Body.String())
+	}
+}
+
+// ---------- 9. 继承事件查询/导出 ----------
+
+// TestInheritanceEventsAPI: 触发继承后 GET /events 返回事件(含继承人/资产名),
+// month/q 筛选生效,export 返回 CSV 含表头。
+func TestInheritanceEventsAPI(t *testing.T) {
+	ts, db := newTestServer(t)
+	token := registerUser(t, ts, "alice")
+	uid := getUID(t, db, "alice")
+
+	// 建资产 + 继承人并绑定,触发资产级继承事件
+	assetID := createAssetInCat(t, ts, token, 0, "保险箱")
+	inID := createInheritor(t, ts, token, "bob", "bob@example.com", "abc12345")
+	if rr := doReq(t, ts, http.MethodPost, fmt.Sprintf("/api/v1/assets/%d/inheritors", assetID),
+		fmt.Sprintf(`{"inheritor_id":%d,"ladder_id":null}`, inID), token); rr.Code != http.StatusCreated {
+		t.Fatalf("bind: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	setLastLogin(t, db, uid, "-130 days")
+	scan(db, time.Now().UTC())
+
+	// 列表:total>=1,含 inheritor_name 与 asset_name
+	rr := doReq(t, ts, http.MethodGet, "/api/v1/inheritance/events", "", token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list events: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Items []inheritanceEventItem `json:"items"`
+		Total int                    `json:"total"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse events: %v", err)
+	}
+	if resp.Total < 1 || len(resp.Items) < 1 {
+		t.Fatalf("want >=1 event, got total=%d items=%d: %s", resp.Total, len(resp.Items), rr.Body.String())
+	}
+	if resp.Items[0].InheritorName != "bob" || resp.Items[0].AssetName == nil || *resp.Items[0].AssetName != "保险箱" {
+		t.Fatalf("event missing inheritor/asset name: %+v", resp.Items[0])
+	}
+
+	// month 筛选:当前月命中,错误月份为空
+	month := time.Now().UTC().Format("2006-01")
+	rr = doReq(t, ts, http.MethodGet, "/api/v1/inheritance/events?month="+month, "", token)
+	var m struct {
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &m); err != nil {
+		t.Fatalf("parse month filter: %v", err)
+	}
+	if m.Total < 1 {
+		t.Fatalf("month=%s total=%d want >=1", month, m.Total)
+	}
+	rr = doReq(t, ts, http.MethodGet, "/api/v1/inheritance/events?month=1999-01", "", token)
+	if err := json.Unmarshal(rr.Body.Bytes(), &m); err != nil {
+		t.Fatalf("parse month filter 2: %v", err)
+	}
+	if m.Total != 0 {
+		t.Fatalf("month=1999-01 total=%d want 0", m.Total)
+	}
+
+	// q 搜索:按继承人名命中,无关词为空
+	rr = doReq(t, ts, http.MethodGet, "/api/v1/inheritance/events?q=bob", "", token)
+	if err := json.Unmarshal(rr.Body.Bytes(), &m); err != nil {
+		t.Fatalf("parse q filter: %v", err)
+	}
+	if m.Total < 1 {
+		t.Fatalf("q=bob total=%d want >=1", m.Total)
+	}
+	rr = doReq(t, ts, http.MethodGet, "/api/v1/inheritance/events?q=不存在", "", token)
+	if err := json.Unmarshal(rr.Body.Bytes(), &m); err != nil {
+		t.Fatalf("parse q filter 2: %v", err)
+	}
+	if m.Total != 0 {
+		t.Fatalf("q=不存在 total=%d want 0", m.Total)
+	}
+
+	// export:CSV 含表头与事件行
+	rr = doReq(t, ts, http.MethodGet, "/api/v1/inheritance/events/export", "", token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("export: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for _, h := range []string{"ID", "状态", "事件键", "资产", "继承人", "创建时间"} {
+		if !strings.Contains(body, h) {
+			t.Fatalf("export missing header %q: %s", h, body)
+		}
+	}
+	if !strings.Contains(body, "待领取") || !strings.Contains(body, "bob") {
+		t.Fatalf("export missing event row: %s", body)
 	}
 }
