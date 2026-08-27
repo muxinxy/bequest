@@ -60,132 +60,13 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
     }
   }
 
-  /// 2 档语义标签(一级:系统通知+IM+邮件;二级:一级+短信)。
-  static const _dayLabels = ['一级(天)', '二级(天)'];
-
-  /// 新增/修改阶梯对话框(名称 + 固定 2 档天数输入)。
+  /// 新增/修改阶梯对话框(名称 + 固定 2 档天数输入);保存成功才关闭。
   Future<void> _editLadder({TriggerLadder? ladder}) async {
-    final nameController = TextEditingController(text: ladder?.name ?? '');
-    final days = ladder?.days ?? const <int>[];
-    final dayControllers = [
-      for (var i = 0; i < 2; i++)
-        TextEditingController(text: i < days.length ? '${days[i]}' : ''),
-    ];
-    final result = await showDialog<bool>(
+    final saved = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(ladder == null ? '新增阶梯' : '修改阶梯'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                autofocus: true,
-                maxLength: 20,
-                decoration: const InputDecoration(
-                  labelText: '阶梯名称 *',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              for (var i = 0; i < 2; i++) ...[
-                TextField(
-                  controller: dayControllers[i],
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: _dayLabels[i],
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                if (i < 1) const SizedBox(height: 8),
-              ],
-              const SizedBox(height: 4),
-              Text(
-                '一级:系统通知+IM+邮件;二级:一级+短信',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final name = nameController.text.trim();
-              final days = <int>[];
-              for (final c in dayControllers) {
-                final v = int.tryParse(c.text.trim());
-                if (v == null || v <= 0 || v > 3650) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('天数需为 1-3650 的正整数')),
-                  );
-                  return;
-                }
-                days.add(v);
-              }
-              for (var i = 1; i < 2; i++) {
-                if (days[i] <= days[i - 1]) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('需要 2 个依次递增的正整数(一级:IM+邮件, 二级:一级+短信)'),
-                    ),
-                  );
-                  return;
-                }
-              }
-              if (name.isEmpty) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('请输入阶梯名称')));
-                return;
-              }
-              Navigator.of(context).pop(true);
-              _saveLadder(name: name, days: days, ladder: ladder);
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      ),
+      builder: (context) => _LadderEditDialog(ladder: ladder),
     );
-    nameController.dispose();
-    for (final c in dayControllers) {
-      c.dispose();
-    }
-    if (result != true) return;
-  }
-
-  Future<void> _saveLadder({
-    required String name,
-    required List<int> days,
-    TriggerLadder? ladder,
-  }) async {
-    try {
-      final jwt = await _store.readJwt();
-      if (jwt == null) throw ApiException('未登录');
-      final api = await ApiConfig.client();
-      if (ladder == null) {
-        await api.createTriggerLadder(jwt, name: name, days: days);
-      } else {
-        await api.updateTriggerLadder(
-          jwt,
-          '${ladder.id}',
-          name: name,
-          days: days,
-        );
-      }
-      await _load();
-    } on ApiException catch (e) {
-      _showError(e.message);
-    } catch (_) {
-      _showError('保存失败,请检查网络后重试');
-    }
+    if (saved == true) await _load();
   }
 
   /// 多选删除自定义阶梯;删除后引用它的继承自动回退全局。
@@ -446,6 +327,162 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+/// 新增/修改阶梯对话框:名称 + 2 档天数;保存成功才 pop(true),失败保留输入显示错误。
+class _LadderEditDialog extends StatefulWidget {
+  const _LadderEditDialog({this.ladder});
+
+  final TriggerLadder? ladder;
+
+  @override
+  State<_LadderEditDialog> createState() => _LadderEditDialogState();
+}
+
+class _LadderEditDialogState extends State<_LadderEditDialog> {
+  /// 2 档语义标签(一级:系统通知+IM+邮件;二级:一级+短信)。
+  static const _dayLabels = ['一级(天)', '二级(天)'];
+
+  late final TextEditingController _nameController = TextEditingController(
+    text: widget.ladder?.name ?? '',
+  );
+  late final List<TextEditingController> _dayControllers = [
+    for (var i = 0; i < 2; i++)
+      TextEditingController(
+        text: i < (widget.ladder?.days ?? const []).length
+            ? '${widget.ladder!.days[i]}'
+            : '',
+      ),
+  ];
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    for (final c in _dayControllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final name = _nameController.text.trim();
+    final days = <int>[];
+    for (final c in _dayControllers) {
+      final v = int.tryParse(c.text.trim());
+      if (v == null || v <= 0 || v > 3650) {
+        setState(() => _error = '天数需为 1-3650 的正整数');
+        return;
+      }
+      days.add(v);
+    }
+    for (var i = 1; i < 2; i++) {
+      if (days[i] <= days[i - 1]) {
+        setState(
+          () => _error = '需要 2 个依次递增的正整数(一级:IM+邮件, 二级:一级+短信)',
+        );
+        return;
+      }
+    }
+    if (name.isEmpty) {
+      setState(() => _error = '请输入阶梯名称');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final jwt = await SecureStore().readJwt();
+      if (jwt == null) throw ApiException('未登录');
+      final api = await ApiConfig.client();
+      final ladder = widget.ladder;
+      if (ladder == null) {
+        await api.createTriggerLadder(jwt, name: name, days: days);
+      } else {
+        await api.updateTriggerLadder(jwt, '${ladder.id}', name: name, days: days);
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = '保存失败,请检查网络后重试';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.ladder == null ? '新增阶梯' : '修改阶梯'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _nameController,
+              autofocus: true,
+              maxLength: 20,
+              decoration: const InputDecoration(
+                labelText: '阶梯名称 *',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (var i = 0; i < 2; i++) ...[
+              TextField(
+                controller: _dayControllers[i],
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: _dayLabels[i],
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              if (i < 1) const SizedBox(height: 8),
+            ],
+            const SizedBox(height: 4),
+            Text(
+              '一级:系统通知+IM+邮件;二级:一级+短信',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: Text(_saving ? '保存中...' : '保存'),
+        ),
+      ],
     );
   }
 }

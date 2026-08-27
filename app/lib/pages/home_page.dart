@@ -16,6 +16,7 @@ import '../storage/secure_store.dart';
 import '../sync/backup.dart';
 import '../main.dart';
 import '../widgets/ladder_dropdown.dart';
+import '../widgets/text_save_dialog.dart';
 import 'asset_edit_page.dart';
 import 'group_detail_page.dart';
 import 'login_page.dart';
@@ -587,64 +588,21 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 新增分组:输入名称创建,创建后刷新列表。
+  /// 新增分组:弹窗内创建,409/失败保留弹窗与输入,成功才关闭。
   Future<void> _addGroup() async {
     final repo = _repo;
     if (repo == null) return;
-    final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('新增分组'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 20,
-          decoration: const InputDecoration(
-            labelText: '分组名称',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = controller.text.trim();
-              if (value.isEmpty) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('请输入分组名称')));
-                return;
-              }
-              Navigator.of(context).pop(value);
-            },
-            child: const Text('确定'),
-          ),
-        ],
+      builder: (context) => TextSaveDialog(
+        title: '新增分组',
+        labelText: '分组名称',
+        conflictMessage: '分组已存在',
+        failMessage: '新增分组失败,请检查网络后重试',
+        onSave: (n) async => repo.createCategory(n),
       ),
     );
-    controller.dispose();
-    if (name == null || name.isEmpty || !mounted) return;
-    try {
-      await repo.createCategory(name);
-      if (mounted) _load();
-    } on ApiException catch (e) {
-      // 后端重名返回 409:明确提示"分组已存在",其余才归为网络错误。
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.statusCode == 409 ? '分组已存在' : '新增分组失败,请检查网络后重试'),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('新增分组失败,请检查网络后重试')));
-    }
+    if (name != null && mounted) _load();
   }
 
   /// 多选删除分组:先把分组内资产移入未分组,再软删分组。

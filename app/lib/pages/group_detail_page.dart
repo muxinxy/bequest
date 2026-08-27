@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../models/asset.dart';
 import '../models/category.dart';
@@ -13,6 +12,7 @@ import '../repository/offline_asset_repository.dart';
 import '../storage/secure_store.dart';
 import '../utils/time_format.dart';
 import '../widgets/ladder_dropdown.dart';
+import '../widgets/text_save_dialog.dart';
 import 'asset_edit_page.dart';
 import 'category_inheritors_page.dart';
 
@@ -483,95 +483,41 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
   }
 
   Future<void> _renameGroup() async {
-    final controller = TextEditingController(text: _groupName);
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('重命名分组'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 20,
-          decoration: const InputDecoration(
-            labelText: '分组名称',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = controller.text.trim();
-              if (value.isEmpty) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('请输入分组名称')));
-                return;
-              }
-              Navigator.of(context).pop(value);
-            },
-            child: const Text('确定'),
-          ),
-        ],
+      builder: (context) => TextSaveDialog(
+        title: '重命名分组',
+        labelText: '分组名称',
+        initialValue: _groupName,
+        conflictMessage: '分组已存在',
+        failMessage: _isLocal ? '保存失败,请重试' : '保存失败,请检查网络后重试',
+        onSave: (n) async {
+          if (n == _groupName) return; // 名称未变,直接关闭
+          await widget.repository.updateCategory(_groupId, {'name': n});
+        },
       ),
     );
-    controller.dispose();
-    if (name == null || name.isEmpty || name == _groupName || !mounted) return;
-    try {
-      await widget.repository.updateCategory(_groupId, {'name': name});
-      setState(() => _groupName = name);
-    } on ApiException catch (e) {
-      // 重名返回 409:明确提示"分组已存在"。
-      _showError(
-        e.statusCode == 409
-            ? '分组已存在'
-            : (_isLocal ? '保存失败,请重试' : '保存失败,请检查网络后重试'),
-      );
-    } catch (_) {
-      _showError(_isLocal ? '保存失败,请重试' : '保存失败,请检查网络后重试');
-    }
+    if (name == null || name.isEmpty || !mounted) return;
+    setState(() => _groupName = name);
   }
 
   Future<void> _editRemark() async {
-    final controller = TextEditingController(
-      text: widget.category?.remark ?? '',
-    );
-    final remark = await showDialog<String>(
+    await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('编辑备注'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            labelText: '分组备注',
-            hintText: '补充说明(可选)',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('保存'),
-          ),
-        ],
+      builder: (context) => TextSaveDialog(
+        title: '编辑备注',
+        labelText: '分组备注',
+        hintText: '补充说明(可选)',
+        initialValue: widget.category?.remark ?? '',
+        maxLines: 3,
+        maxLength: null,
+        allowEmpty: true,
+        failMessage: _isLocal ? '保存失败,请重试' : '保存失败,请检查网络后重试',
+        onSave: (r) async =>
+            widget.repository.updateCategory(_groupId, {'remark': r}),
       ),
     );
-    controller.dispose();
-    if (remark == null || !mounted) return;
-    try {
-      await widget.repository.updateCategory(_groupId, {'remark': remark});
-    } catch (_) {
-      _showError(_isLocal ? '保存失败,请重试' : '保存失败,请检查网络后重试');
-    }
+    // 保存已在弹窗内完成,失败时弹窗保留输入。
   }
 
   void _showError(String message) {

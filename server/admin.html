@@ -184,7 +184,10 @@
   <section id="tab-audit" class="card hidden">
     <div class="toolbar">
       <input id="a-uid" type="text" placeholder="按 user_id 筛选">
-      <button class="primary" id="a-search">查询</button>
+      <input id="a-from" type="date" title="开始日期">
+      <input id="a-to" type="date" title="结束日期">
+      <button class="primary" id="a-search">筛选</button>
+      <button id="a-reset">重置</button>
       <button id="a-export">导出 CSV</button>
     </div>
     <table>
@@ -205,7 +208,7 @@
 <script>
 'use strict';
 var TOKEN_KEY = 'bequest_admin_token';
-var state = { users: { page: 1, q: '', role: '', tier: '' }, audit: { page: 1, uid: '' }, codes: { page: 1 }, pendingToken: '' };
+var state = { users: { page: 1, q: '', role: '', tier: '' }, audit: { page: 1, uid: '', from: '', to: '' }, codes: { page: 1 }, pendingToken: '' };
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -605,7 +608,9 @@ function loadAudit(page) {
   if (page) state.audit.page = page;
   var p = state.audit.page;
   var uid = encodeURIComponent(state.audit.uid);
-  api('/admin/audit-log?user_id=' + uid + '&page=' + p + '&page_size=50')
+  var from = encodeURIComponent(state.audit.from);
+  var to = encodeURIComponent(state.audit.to);
+  api('/admin/audit-log?user_id=' + uid + '&from=' + from + '&to=' + to + '&page=' + p + '&page_size=50')
     .then(function (d) {
       var rows = d.entries.map(function (e) {
         return '<tr><td>' + e.id + '</td><td>' + e.user_id + '</td><td>' + esc(e.actor) + '</td>' +
@@ -621,6 +626,14 @@ function loadAudit(page) {
 }
 document.getElementById('a-search').addEventListener('click', function () {
   state.audit.uid = document.getElementById('a-uid').value.trim();
+  state.audit.from = document.getElementById('a-from').value;
+  state.audit.to = document.getElementById('a-to').value;
+  state.audit.page = 1;
+  loadAudit();
+});
+document.getElementById('a-reset').addEventListener('click', function () {
+  ['a-uid', 'a-from', 'a-to'].forEach(function (id) { document.getElementById(id).value = ''; });
+  state.audit.uid = state.audit.from = state.audit.to = '';
   state.audit.page = 1;
   loadAudit();
 });

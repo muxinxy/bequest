@@ -70,37 +70,19 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
   }
 
   /// 新增/编辑对话框;新增可选 type,编辑时 type 可改(后端 PUT 支持带 type)。
+  /// 保存成功才关闭,失败保留输入显示错误。
   Future<void> _editTemplate([ReminderTemplate? template]) async {
-    final isEdit = template != null;
-    final result = await showDialog<_TemplateDraft>(
+    final saved = await showDialog<bool>(
       context: context,
       builder: (context) => _TemplateDialog(
-        isEdit: isEdit,
+        isEdit: template != null,
         initial: template,
         isMember: _isMember,
+        api: _api,
+        store: _store,
       ),
     );
-    if (result == null) return;
-    try {
-      final jwt = await _store.readJwt();
-      if (jwt == null) throw ApiException('未登录');
-      final body = {
-        'name': result.name,
-        'title_template': result.title,
-        'body_template': result.body,
-        'type': result.type,
-      };
-      if (isEdit) {
-        await (await _api).updateReminderTemplate(jwt, template.id, body);
-      } else {
-        await (await _api).createReminderTemplate(jwt, body);
-      }
-      await _load();
-    } on ApiException catch (e) {
-      _showError(e.message);
-    } catch (_) {
-      _showError('保存失败,请检查网络后重试');
-    }
+    if (saved == true) await _load();
   }
 
   Future<void> _deleteTemplate(ReminderTemplate template) async {
@@ -356,26 +338,22 @@ class _TypeSection extends StatelessWidget {
   }
 }
 
-/// 对话框返回值。
-class _TemplateDraft {
-  const _TemplateDraft(this.name, this.title, this.body, this.type);
-  final String name;
-  final String title;
-  final String body;
-  final String type;
-}
-
 /// 新增/编辑模板对话框:名称/标题/正文 + type 下拉 + 按类型占位符说明。
+/// 弹窗内调 API 保存,成功才 pop(true),失败保留输入显示错误。
 class _TemplateDialog extends StatefulWidget {
   const _TemplateDialog({
     required this.isEdit,
     required this.initial,
     required this.isMember,
+    required this.api,
+    required this.store,
   });
 
   final bool isEdit;
   final ReminderTemplate? initial;
   final bool isMember;
+  final Future<ApiClient> api;
+  final SecureStore store;
 
   @override
   State<_TemplateDialog> createState() => _TemplateDialogState();
@@ -386,6 +364,8 @@ class _TemplateDialogState extends State<_TemplateDialog> {
   late final TextEditingController _titleController;
   late final TextEditingController _bodyController;
   late String _type;
+  bool _saving = false;
+  String? _error;
 
   @override
   void initState() {
@@ -408,19 +388,46 @@ class _TemplateDialogState extends State<_TemplateDialog> {
   _TypeInfo get _typeInfo =>
       _types.firstWhere((x) => x.type == _type, orElse: () => _types.first);
 
-  void _save() {
+  Future<void> _save() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('请输入模板名称')));
+      setState(() => _error = '请输入模板名称');
       return;
     }
-    Navigator.of(context).pop(_TemplateDraft(
-      name,
-      _titleController.text.trim(),
-      _bodyController.text.trim(),
-      _type,
-    ));
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final jwt = await widget.store.readJwt();
+      if (jwt == null) throw ApiException('未登录');
+      final body = {
+        'name': name,
+        'title_template': _titleController.text.trim(),
+        'body_template': _bodyController.text.trim(),
+        'type': _type,
+      };
+      final api = await widget.api;
+      if (widget.isEdit) {
+        await api.updateReminderTemplate(jwt, widget.initial!.id, body);
+      } else {
+        await api.createReminderTemplate(jwt, body);
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = '保存失败,请检查网络后重试';
+      });
+    }
   }
 
   @override
@@ -430,6 +437,7 @@ class _TemplateDialogState extends State<_TemplateDialog> {
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             TextField(
               controller: _nameController,
@@ -483,15 +491,28 @@ class _TemplateDialogState extends State<_TemplateDialog> {
                 ),
               ),
             ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ],
           ],
         ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
           child: const Text('取消'),
         ),
-        FilledButton(onPressed: _save, child: const Text('保存')),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: Text(_saving ? '保存中...' : '保存'),
+        ),
       ],
     );
   }

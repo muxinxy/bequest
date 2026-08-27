@@ -94,327 +94,28 @@ class _InheritorsPageState extends State<InheritorsPage> {
   }
 
   Future<void> _addInheritor() async {
-    final nameController = TextEditingController();
-    final emailController = TextEditingController();
-    final phoneController = TextEditingController();
-    final codeController = TextEditingController();
-    String? accessCode;
-
-    final result = await showDialog<_InheritorDraft>(
+    final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('添加继承人'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    labelText: '姓名 *',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: '邮箱(可选)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: '手机号(可选)',
-                    helperText: '邮箱或手机号至少填一个',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: codeController,
-                        decoration: const InputDecoration(
-                          labelText: '访问码 *',
-                          hintText: '8 位字母数字',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        accessCode = _generateAccessCode();
-                        codeController.text = accessCode!;
-                        setDialogState(() {});
-                      },
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('生成'),
-                    ),
-                  ],
-                ),
-                if (accessCode != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    '请立即将访问码线下告知继承人,此码仅现在可见,'
-                    '触发继承后凭此码领取密钥。',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final name = nameController.text.trim();
-                final email = emailController.text.trim();
-                final phone = phoneController.text.trim();
-                final code = codeController.text.trim();
-                if (name.isEmpty) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('请输入姓名')));
-                  return;
-                }
-                if (email.isEmpty && phone.isEmpty) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('邮箱或手机号至少填一个')));
-                  return;
-                }
-                if (email.isNotEmpty && !isValidEmail(email)) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('邮箱格式不正确')));
-                  return;
-                }
-                if (phone.isNotEmpty && !isValidPhone(phone)) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('手机号格式不正确(5-20 位数字)')),
-                  );
-                  return;
-                }
-                if (code.isEmpty) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('请输入或生成访问码')));
-                  return;
-                }
-                Navigator.of(context).pop(
-                  _InheritorDraft(
-                    name: name,
-                    email: email,
-                    phone: phone,
-                    accessCode: code,
-                  ),
-                );
-              },
-              child: const Text('保存'),
-            ),
-          ],
-        ),
-      ),
+      builder: (context) => _InheritorDialog(store: _store, api: _api),
     );
-    nameController.dispose();
-    emailController.dispose();
-    phoneController.dispose();
-    codeController.dispose();
-    if (result == null) return;
-    try {
-      final jwt = await _store.readJwt();
-      if (jwt == null) throw ApiException('未登录');
-      await (await _api).createInheritor(jwt, {
-        'name': result.name,
-        'email': result.email,
-        'phone': result.phone,
-        'access_code': result.accessCode,
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('已添加继承人,请将访问码线下告知对方')));
-      await _load();
-    } on ApiException catch (e) {
-      _showError(e.message);
-    } catch (_) {
-      _showError('添加失败,请检查网络后重试');
-    }
+    if (ok != true || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已添加继承人,请将访问码线下告知对方')),
+    );
+    await _load();
   }
 
-  /// 编辑继承人:改名称/邮箱/手机号/访问码(访问码留空则服务端不改)。
+/// 编辑继承人:改名称/邮箱/手机号/访问码(访问码留空则服务端不改)。
   Future<void> _editInheritor(Inheritor inheritor) async {
-    final nameController = TextEditingController(text: inheritor.name);
-    final emailController = TextEditingController(text: inheritor.email);
-    final phoneController = TextEditingController(text: inheritor.phone);
-    final codeController = TextEditingController();
-    String? newCode;
-
-    final result = await showDialog<_InheritorDraft>(
+    final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('编辑继承人'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    labelText: '姓名 *',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: '邮箱(可选)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: '手机号(可选)',
-                    helperText: '邮箱或手机号至少填一个',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: codeController,
-                        decoration: InputDecoration(
-                          labelText: '新继承码',
-                          hintText: inheritor.accessCode.isEmpty
-                              ? '8 位字母数字'
-                              : '留空则不修改',
-                          helperText: '留空表示不修改继承码',
-                          border: const OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        newCode = _generateAccessCode();
-                        codeController.text = newCode!;
-                        setDialogState(() {});
-                      },
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('生成'),
-                    ),
-                  ],
-                ),
-                if (newCode != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    '请立即将新的继承码线下告知继承人。',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final name = nameController.text.trim();
-                final email = emailController.text.trim();
-                final phone = phoneController.text.trim();
-                if (name.isEmpty) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('请输入姓名')));
-                  return;
-                }
-                if (email.isEmpty && phone.isEmpty) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('邮箱或手机号至少填一个')));
-                  return;
-                }
-                if (email.isNotEmpty && !isValidEmail(email)) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('邮箱格式不正确')));
-                  return;
-                }
-                if (phone.isNotEmpty && !isValidPhone(phone)) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('手机号格式不正确(5-20 位数字)')),
-                  );
-                  return;
-                }
-                Navigator.of(context).pop(
-                  _InheritorDraft(
-                    name: name,
-                    email: email,
-                    phone: phone,
-                    // 留空 = 不修改继承码;填了 = 重置。
-                    accessCode: codeController.text.trim(),
-                  ),
-                );
-              },
-              child: const Text('保存'),
-            ),
-          ],
-        ),
+      builder: (context) => _InheritorDialog(
+        inheritor: inheritor,
+        store: _store,
+        api: _api,
       ),
     );
-    nameController.dispose();
-    emailController.dispose();
-    phoneController.dispose();
-    codeController.dispose();
-    if (result == null) return;
-    try {
-      final jwt = await _store.readJwt();
-      if (jwt == null) throw ApiException('未登录');
-      final body = <String, dynamic>{
-        'name': result.name,
-        'email': result.email,
-        'phone': result.phone,
-      };
-      if (result.accessCode.isNotEmpty) {
-        body['access_code'] = result.accessCode;
-      }
-      await (await _api).updateInheritor(jwt, inheritor.id, body);
-      await _load();
-    } on ApiException catch (e) {
-      _showError(e.message);
-    } catch (_) {
-      _showError('保存失败,请检查网络后重试');
-    }
+    if (ok == true) await _load();
   }
 
   /// 复制继承码到剪贴板。
@@ -708,17 +409,209 @@ class _InheritorsPageState extends State<InheritorsPage> {
   }
 }
 
-/// 对话框返回的草稿数据。
-class _InheritorDraft {
-  const _InheritorDraft({
-    required this.name,
-    required this.email,
-    required this.phone,
-    required this.accessCode,
+/// 新增/编辑继承人对话框:姓名/邮箱/手机号/继承码;保存成功才 pop(true),失败保留输入。
+class _InheritorDialog extends StatefulWidget {
+  const _InheritorDialog({
+    this.inheritor,
+    required this.store,
+    required this.api,
   });
 
-  final String name;
-  final String email;
-  final String phone;
-  final String accessCode;
+  /// null = 新增;非 null = 编辑。
+  final Inheritor? inheritor;
+  final SecureStore store;
+  final Future<ApiClient> api;
+
+  @override
+  State<_InheritorDialog> createState() => _InheritorDialogState();
+}
+
+class _InheritorDialogState extends State<_InheritorDialog> {
+  late final TextEditingController _nameController = TextEditingController(
+    text: widget.inheritor?.name ?? '',
+  );
+  late final TextEditingController _emailController = TextEditingController(
+    text: widget.inheritor?.email ?? '',
+  );
+  late final TextEditingController _phoneController = TextEditingController(
+    text: widget.inheritor?.phone ?? '',
+  );
+  late final TextEditingController _codeController = TextEditingController();
+  String? _newCode;
+  bool _saving = false;
+  String? _error;
+
+  bool get _isEdit => widget.inheritor != null;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _codeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final phone = _phoneController.text.trim();
+    final code = _codeController.text.trim();
+    String? error;
+    if (name.isEmpty) {
+      error = '请输入姓名';
+    } else if (email.isEmpty && phone.isEmpty) {
+      error = '邮箱或手机号至少填一个';
+    } else if (email.isNotEmpty && !isValidEmail(email)) {
+      error = '邮箱格式不正确';
+    } else if (phone.isNotEmpty && !isValidPhone(phone)) {
+      error = '手机号格式不正确(5-20 位数字)';
+    } else if (code.isEmpty && !_isEdit) {
+      error = '请输入或生成继承码';
+    }
+    if (error != null) {
+      setState(() => _error = error);
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final jwt = await widget.store.readJwt();
+      if (jwt == null) throw ApiException('未登录');
+      final body = <String, dynamic>{
+        'name': name,
+        'email': email,
+        'phone': phone,
+      };
+      // 编辑时继承码留空 = 不修改。
+      if (code.isNotEmpty) body['access_code'] = code;
+      final api = await widget.api;
+      final inheritor = widget.inheritor;
+      if (inheritor == null) {
+        await api.createInheritor(jwt, body);
+      } else {
+        await api.updateInheritor(jwt, inheritor.id, body);
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = '保存失败,请检查网络后重试';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inheritor = widget.inheritor;
+    return AlertDialog(
+      title: Text(_isEdit ? '编辑继承人' : '添加继承人'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _nameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '姓名 *',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: '邮箱(可选)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: '手机号(可选)',
+                helperText: '邮箱或手机号至少填一个',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _codeController,
+                    decoration: InputDecoration(
+                      labelText: _isEdit ? '新继承码' : '访问码 *',
+                      hintText: _isEdit
+                          ? (inheritor!.accessCode.isEmpty
+                              ? '8 位字母数字'
+                              : '留空则不修改')
+                          : '8 位字母数字',
+                      helperText: _isEdit ? '留空表示不修改继承码' : null,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    _newCode = _InheritorsPageState._generateAccessCode();
+                    _codeController.text = _newCode!;
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('生成'),
+                ),
+              ],
+            ),
+            if (_newCode != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _isEdit
+                    ? '请立即将新的继承码线下告知继承人。'
+                    : '请立即将访问码线下告知继承人,此码仅现在可见,'
+                        '触发继承后凭此码领取密钥。',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: Text(_saving ? '保存中...' : '保存'),
+        ),
+      ],
+    );
+  }
 }

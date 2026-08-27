@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../api/api_client.dart';
 import '../crypto/key_derivation.dart';
 import '../storage/secure_store.dart';
 import '../sync/local_vault.dart';
+import '../widgets/text_save_dialog.dart';
 import 'home_page.dart';
 import 'sync_settings_page.dart';
 
@@ -171,50 +173,21 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
     await _init();
   }
 
-  /// 重命名本地账户:名称不能与其他账户相同。
+  /// 重命名本地账户:名称不能与其他账户相同;重名时弹窗保留输入。
   Future<void> _renameAccount(Map<String, String> profile) async {
-    final controller = TextEditingController(text: profile['name'] ?? '');
-    final newName = await showDialog<String>(
+    final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('重命名账户'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 20,
-          decoration: const InputDecoration(
-            labelText: '账户名称',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final name = controller.text.trim();
-              // 校验失败不关闭弹框:空名称直接提示并留在对话框内。
-              if (name.isEmpty) {
-                ScaffoldMessenger.of(context)
-                    .showSnackBar(const SnackBar(content: Text('请输入账户名称')));
-                return;
-              }
-              Navigator.of(context).pop(name);
-            },
-            child: const Text('保存'),
-          ),
-        ],
+      builder: (context) => TextSaveDialog(
+        title: '重命名账户',
+        labelText: '账户名称',
+        initialValue: profile['name'] ?? '',
+        onSave: (n) async {
+          final ok = await _store.renameLocalProfile(profile['id'] ?? '', n);
+          if (!ok) throw ApiException('名称已被其他账户使用');
+        },
       ),
     );
-    if (newName == null || newName.isEmpty || !mounted) return;
-    final ok = await _store.renameLocalProfile(profile['id'] ?? '', newName);
-    if (!mounted) return;
-    if (!ok) {
-      _showError('名称已被其他账户使用');
-      return;
-    }
+    if (name == null || !mounted) return;
     await _init();
   }
 

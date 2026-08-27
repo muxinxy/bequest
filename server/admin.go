@@ -382,7 +382,8 @@ func handleAdminDeleteUser(db *sql.DB) http.HandlerFunc {
 
 // ---------- audit log ----------
 
-// handleAdminAuditLog: GET /api/v1/admin/audit-log?user_id=&page=&page_size=
+// handleAdminAuditLog: GET /api/v1/admin/audit-log?user_id=&from=&to=&page=&page_size=
+// from/to 为 YYYY-MM-DD,按 created_at 日期范围过滤(含边界,可只给一个)。
 func handleAdminAuditLog(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		page := atoiDefault(r.URL.Query().Get("page"), 1)
@@ -390,11 +391,32 @@ func handleAdminAuditLog(db *sql.DB) http.HandlerFunc {
 		if pageSize > 200 {
 			pageSize = 200
 		}
-		cond := "1=1"
+		conds := []string{}
 		args := []any{}
 		if uid := strings.TrimSpace(r.URL.Query().Get("user_id")); uid != "" {
-			cond = "user_id = ?"
+			conds = append(conds, "user_id = ?")
 			args = append(args, uid)
+		}
+		// created_at 为 "YYYY-MM-DD HH:MM:SS" 文本,日期边界直接比较字符串。
+		if from := strings.TrimSpace(r.URL.Query().Get("from")); from != "" {
+			if _, err := time.Parse("2006-01-02", from); err != nil {
+				writeError(w, http.StatusBadRequest, "from 必须为 YYYY-MM-DD 格式")
+				return
+			}
+			conds = append(conds, "created_at >= ?")
+			args = append(args, from)
+		}
+		if to := strings.TrimSpace(r.URL.Query().Get("to")); to != "" {
+			if _, err := time.Parse("2006-01-02", to); err != nil {
+				writeError(w, http.StatusBadRequest, "to 必须为 YYYY-MM-DD 格式")
+				return
+			}
+			conds = append(conds, "created_at < date(?, '+1 day')") // 含 to 当天
+			args = append(args, to)
+		}
+		cond := "1=1"
+		if len(conds) > 0 {
+			cond = strings.Join(conds, " AND ")
 		}
 		var total int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE `+cond, args...).Scan(&total); err != nil {

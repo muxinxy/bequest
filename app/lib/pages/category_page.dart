@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../api/api_client.dart';
 import '../models/category.dart';
 import '../repository/asset_repository.dart';
+import '../widgets/text_save_dialog.dart';
 import 'category_inheritors_page.dart';
 
 /// 分组管理:列表(含预设与自定义)、新增、改名、删除。
@@ -44,78 +44,40 @@ class _CategoryPageState extends State<CategoryPage> {
   }
 
   /// 新增/编辑共用的分组对话框;编辑时预填名称。
-  /// 返回输入的名称或 null(取消)。
+  /// 弹窗内保存,409/失败保留弹窗与输入,成功才 pop 返回名称。
   Future<String?> _showCategoryDialog({
     String initialName = '',
     String title = '新增分组',
-  }) async {
-    final controller = TextEditingController(text: initialName);
-    final result = await showDialog<String>(
+    required Future<void> Function(String name) onSave,
+  }) {
+    return showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 20,
-          decoration: const InputDecoration(
-            labelText: '分组名称',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = controller.text.trim();
-              if (value.isEmpty) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('请输入分组名称')));
-                return;
-              }
-              Navigator.of(context).pop(value);
-            },
-            child: const Text('确定'),
-          ),
-        ],
+      builder: (context) => TextSaveDialog(
+        title: title,
+        labelText: '分组名称',
+        initialValue: initialName,
+        conflictMessage: '分组已存在',
+        onSave: onSave,
       ),
     );
-    controller.dispose();
-    return result;
   }
 
   Future<void> _addCategory() async {
-    final name = await _showCategoryDialog();
+    final name = await _showCategoryDialog(
+      onSave: (n) async => widget.repository.createCategory(n),
+    );
     if (name == null) return;
-    try {
-      // 分组类型走仓储默认(physical),UI 不再区分实体/虚拟。
-      await widget.repository.createCategory(name);
-      await _load();
-    } on ApiException catch (e) {
-      _showError(e.statusCode == 409 ? '分组已存在' : '新增失败,请检查网络后重试');
-    } catch (_) {
-      _showError('新增失败,请检查网络后重试');
-    }
+    await _load();
   }
 
   Future<void> _editCategory(Category category) async {
     final name = await _showCategoryDialog(
       initialName: category.name,
       title: '编辑分组',
+      onSave: (n) async => widget.repository.updateCategory(category.id, {'name': n}),
     );
     if (name == null) return;
-    try {
-      await widget.repository.updateCategory(category.id, {'name': name});
-      await _load();
-    } on ApiException catch (e) {
-      _showError(e.statusCode == 409 ? '分组已存在' : '保存失败,请检查网络后重试');
-    } catch (_) {
-      _showError('保存失败,请检查网络后重试');
-    }
+    await _load();
   }
 
   /// 打开分组的继承人设置页(该分组下所有资产默认按此继承人交接)。

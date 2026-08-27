@@ -7,7 +7,9 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // ---------- reminder templates ----------
@@ -305,11 +307,53 @@ type auditJSON struct {
 	CreatedAt string  `json:"created_at"`
 }
 
-// handleAuditLog: GET /api/v1/audit-log -> 200 newest first, max 200
+// handleAuditLog: GET /api/v1/audit-log?from=&to=&page=&page_size= -> 200
+// from/to 为 YYYY-MM-DD,按 created_at 日期范围过滤(含边界,可只给一个)。
+// 带 page 时返回 {"items":[...],"total":n,"page":p,"page_size":s}
+// (page_size 默认 20,最大 100);不带 page 时返回数组(兼容旧调用,最多 200 条)。
 func handleAuditLog(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		where := "user_id = ?"
+		args := []any{userID(r)}
+		// created_at 为 "YYYY-MM-DD HH:MM:SS" 文本,字典序即时间序,日期边界直接比较字符串。
+		if from := q.Get("from"); from != "" {
+			if _, err := time.Parse("2006-01-02", from); err != nil {
+				writeError(w, http.StatusBadRequest, "from 必须为 YYYY-MM-DD 格式")
+				return
+			}
+			where += " AND created_at >= ?"
+			args = append(args, from)
+		}
+		if to := q.Get("to"); to != "" {
+			if _, err := time.Parse("2006-01-02", to); err != nil {
+				writeError(w, http.StatusBadRequest, "to 必须为 YYYY-MM-DD 格式")
+				return
+			}
+			where += " AND created_at < date(?, '+1 day')" // 次日零点为上界,含 to 当天
+			args = append(args, to)
+		}
+		// 分页:仅当显式传 page 时启用(无参保持数组返回,兼容旧调用)。
+		paged := false
+		page, pageSize := 1, 20
+		limit, offset := 200, 0
+		if s := q.Get("page"); s != "" {
+			p, err := strconv.Atoi(s)
+			if err != nil || p < 1 {
+				writeError(w, http.StatusBadRequest, "page 必须为正整数")
+				return
+			}
+			paged = true
+			page = p
+			pageSize = atoiDefault(q.Get("page_size"), 20)
+			if pageSize > 100 {
+				pageSize = 100
+			}
+			limit, offset = pageSize, (page-1)*pageSize
+		}
 		rows, err := db.Query(`SELECT id, actor, action, detail, created_at
-			FROM audit_logs WHERE user_id = ? ORDER BY id DESC LIMIT 200`, userID(r))
+			FROM audit_logs WHERE `+where+` ORDER BY id DESC LIMIT ? OFFSET ?`,
+			append(args, limit, offset)...)
 		if err != nil {
 			log.Printf("list audit: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -330,6 +374,18 @@ func handleAuditLog(db *sql.DB) http.HandlerFunc {
 			}
 			list = append(list, a)
 		}
-		writeJSON(w, http.StatusOK, list)
+		if !paged {
+			writeJSON(w, http.StatusOK, list)
+			return
+		}
+		var total int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE `+where, args...).Scan(&total); err != nil {
+			log.Printf("count audit: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"items": list, "total": total, "page": page, "page_size": pageSize,
+		})
 	}
 }
