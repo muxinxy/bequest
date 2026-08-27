@@ -21,6 +21,7 @@ import 'asset_edit_page.dart';
 import 'group_detail_page.dart';
 import 'login_page.dart';
 import 'membership_page.dart';
+import 'overview_page.dart';
 import 'recycle_bin_page.dart';
 import 'reminders_page.dart';
 import 'settings_page.dart';
@@ -76,9 +77,6 @@ class _HomePageState extends State<HomePage> {
 
   /// 云端 tier(free/member),来自 GET /api/v1/me;本地模式为 null(访客权益)。
   String? _tier;
-
-  /// 首页总览数据(GET /api/v1/overview);拉取失败/本地/离线为 null,隐藏总览区。
-  Map<String, dynamic>? _overview;
 
   /// 应用锁是否已设置(设置页完成 PIN/图案配置后为 true);未设置则不显示锁定按钮。
   bool _lockEnabled = false;
@@ -138,7 +136,6 @@ class _HomePageState extends State<HomePage> {
       final lockEnabled = await _store.readLockEnabled();
       var unread = 0;
       String? tier;
-      Map<String, dynamic>? overview;
       if (!isLocal) {
         // 会话校验与站内提醒仅云端有;ApiClient 走配置的服务器地址。
         final api = await ApiConfig.client();
@@ -149,10 +146,7 @@ class _HomePageState extends State<HomePage> {
             .map(Reminder.fromJson)
             .where((r) => r.isUnread)
             .length;
-        // 并行拉取总览(失败忽略,不阻塞分组列表)。
-        final overviewFuture = _fetchOverview(api, jwt);
         _refreshLocalVault(jwt, api);
-        overview = await overviewFuture;
       }
       if (!mounted) return;
       setState(() {
@@ -163,7 +157,6 @@ class _HomePageState extends State<HomePage> {
         _isLocal = isLocal;
         _hasJwt = !isLocal && jwt != null;
         _tier = tier;
-        _overview = overview;
         _lockEnabled = lockEnabled;
         _loading = false;
         _loadingMoreGroups = false;
@@ -209,18 +202,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 拉取首页总览;失败返回 null(总览区静默隐藏,不阻塞分组列表)。
-  Future<Map<String, dynamic>?> _fetchOverview(
-    ApiClient api,
-    String jwt,
-  ) async {
-    try {
-      return await api.getOverview(jwt);
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// 云端不可用时从本地缓存快照恢复资产/分类(仅离线查看/导出)。
   /// 返回是否成功加载到缓存。
   Future<bool> _loadFromOfflineCache(String masterKeyB64) async {
@@ -239,7 +220,6 @@ class _HomePageState extends State<HomePage> {
         _groupTotal = categories.length;
         _assets = assets;
         _unreadReminders = 0;
-        _overview = null;
         _isLocal = false;
         _hasJwt = false;
         _offlineMode = true;
@@ -349,7 +329,6 @@ class _HomePageState extends State<HomePage> {
       final assets = (await repo.listAssets())
           .map(Asset.fromJson)
           .toList(growable: false);
-      final overview = await _fetchOverview(api, jwt);
       _refreshLocalVault(jwt, api);
       if (!mounted) return;
       setState(() {
@@ -358,7 +337,6 @@ class _HomePageState extends State<HomePage> {
         _assets = assets;
         _unreadReminders = unread;
         _tier = tier;
-        _overview = overview;
         _offlineMode = false;
         _refreshing = false;
       });
@@ -816,308 +794,41 @@ class _HomePageState extends State<HomePage> {
     if (mounted) _load();
   }
 
-  /// 资产状态色/文案(与 group_detail 一致)。
-  static const _statusColors = {
-    'active': Colors.green,
-    'inactive': Colors.grey,
-    'pending': Colors.orange,
-    'expired': Colors.red,
-  };
-  static const _statusLabels = {
-    'active': '正常',
-    'inactive': '停用',
-    'pending': '待处理',
-    'expired': '已过期',
-  };
-
-  /// 首页总览卡片区:资产概览 + 即将到期 + 统计行 + 提醒入口 + 通知用量 + 会员状态。
-  /// 总览数据缺失(本地/离线/拉取失败)时返回 null,整区隐藏。
-  Widget? _buildOverview() {
-    final o = _overview;
-    if (o == null) return null;
-    final assets = (o['assets'] as Map<String, dynamic>?) ?? const {};
-    final counts = (o['counts'] as Map<String, dynamic>?) ?? const {};
-    final reminders = (o['reminders'] as Map<String, dynamic>?) ?? const {};
-    final quota = (o['quota'] as Map<String, dynamic>?) ?? const {};
-    final membership = (o['membership'] as Map<String, dynamic>?) ?? const {};
-    final expiring = (assets['expiring_soon'] as List? ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .toList();
-    final unread = (reminders['unread'] as num?)?.toInt() ?? 0;
-    final tier = membership['tier'] as String? ?? _tier;
-    final isMember = tier == 'member';
-    final memberExpires = (membership['member_expires_at'] as String?) ?? '';
-    final emailUsed = (quota['email_used'] as num?)?.toInt() ?? 0;
-    final emailLimit = (quota['email_limit'] as num?)?.toInt() ?? 0;
-    final smsUsed = (quota['sms_used'] as num?)?.toInt() ?? 0;
-    final smsLimit = (quota['sms_limit'] as num?)?.toInt() ?? 0;
-    final scheme = Theme.of(context).colorScheme;
-    final small = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
-
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 资产概览:总资产大字 + 会员状态入口。
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  '${assets['total'] ?? 0}',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text('总资产', style: small),
-                ),
-                const Spacer(),
-                InkWell(
-                  onTap: () => _openPage(const MembershipPage()),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isMember
-                          ? scheme.primaryContainer
-                          : scheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      isMember
-                          ? (memberExpires.isEmpty
-                                ? '会员'
-                                : '会员 · $memberExpires')
-                          : '免费',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isMember
-                            ? scheme.onPrimaryContainer
-                            : scheme.onSecondaryContainer,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            // 状态分布:正常/停用/待处理/已过期。
-            Row(
-              children: [
-                for (final s in const [
-                  'active',
-                  'inactive',
-                  'pending',
-                  'expired',
-                ])
-                  Expanded(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: _statusColors[s],
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${assets[s] ?? 0}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(width: 2),
-                        Flexible(
-                          child: Text(
-                            _statusLabels[s]!,
-                            style: small,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-            // 即将到期(30 天内):最多 3 条,超出显示剩余条数。
-            if (expiring.isNotEmpty) ...[
-              const Divider(height: 24),
-              Text(
-                '即将到期(30 天内)',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              const SizedBox(height: 4),
-              for (final e in expiring.take(3))
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: _statusColors[e['status']] ?? Colors.grey,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${e['name']}',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Text('${e['expiry_date']}', style: small),
-                    ],
-                  ),
-                ),
-              if (expiring.length > 3)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    '还有 ${expiring.length - 3} 项即将到期',
-                    style: small,
-                  ),
-                ),
-            ],
-            // 统计行:分组 / 继承人 / 触发阶梯。
-            const Divider(height: 24),
-            Row(
-              children: [
-                _overviewStat('分组', counts['categories'] ?? 0),
-                _overviewStat('继承人', counts['inheritors'] ?? 0),
-                _overviewStat('触发阶梯', counts['trigger_ladders'] ?? 0),
-              ],
-            ),
-            // 提醒入口。
-            const Divider(height: 24),
-            InkWell(
-              onTap: () => _openPage(const RemindersPage()),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.notifications_outlined,
-                      size: 20,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      unread > 0 ? '未读提醒 $unread 条' : '暂无未读提醒',
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                    const Spacer(),
-                    Icon(
-                      Icons.chevron_right,
-                      size: 20,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            // 通知用量:免费仅邮件,会员邮件 + 短信。
-            const Divider(height: 24),
-            Text('通知用量', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            _usageBar('邮件', emailUsed, emailLimit),
-            if (isMember) ...[
-              const SizedBox(height: 8),
-              _usageBar('短信', smsUsed, smsLimit),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 统计行单项:数字 + 标签。
-  Widget _overviewStat(String label, int value) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(
-            '$value',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 通知用量小进度条:已用/额度。
-  Widget _usageBar(String label, int used, int limit) {
-    final ratio = limit > 0 ? (used / limit).clamp(0.0, 1.0) : 0.0;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const Spacer(),
-            Text(
-              '$used/$limit',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(value: ratio, minHeight: 6),
-        ),
-      ],
-    );
-  }
-
   Widget _tierBadge() {
     final ent = Entitlements.forJwtAndTier(hasJwt: _hasJwt, tier: _tier);
+    final isMember = ent == Entitlements.member;
+    final scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: () => _openPage(const MembershipPage()),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.secondaryContainer,
-          borderRadius: BorderRadius.circular(12),
+          color: isMember ? scheme.primary : scheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(20),
         ),
-        child: Text(
-          ent.label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Theme.of(context).colorScheme.onSecondaryContainer,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isMember ? Icons.workspace_premium : Icons.circle_outlined,
+              size: 14,
+              color: isMember
+                  ? const Color(0xFFFFD700)
+                  : scheme.onSecondaryContainer,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              isMember ? '会员' : '免费',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isMember
+                    ? scheme.onPrimary
+                    : scheme.onSecondaryContainer,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1126,7 +837,6 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final groups = _groups;
-    final overview = _buildOverview();
     return Scaffold(
       appBar: AppBar(
         title: _multiSelect
@@ -1158,6 +868,11 @@ class _HomePageState extends State<HomePage> {
                 ),
               ]
             : [
+                IconButton(
+                  tooltip: '总览',
+                  icon: const Icon(Icons.insert_chart_outlined),
+                  onPressed: () => _openPage(const OverviewPage()),
+                ),
                 Padding(
                   padding: const EdgeInsets.only(right: 4),
                   child: _tierBadge(),
@@ -1238,7 +953,6 @@ class _HomePageState extends State<HomePage> {
                       ],
                     ),
                   ),
-                ?overview,
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: Row(
