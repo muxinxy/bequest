@@ -206,6 +206,8 @@ class _RegisterPageState extends State<RegisterPage> {
         padding: const EdgeInsets.all(24),
         child: Form(
           key: _formKey,
+          // 失焦/交互后即显示校验错误(红字),提交时仍会再次校验。
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

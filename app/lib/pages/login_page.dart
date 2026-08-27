@@ -508,11 +508,19 @@ class _RecoveryDialogState extends State<_RecoveryDialog> {
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop((
-            master: _masterController.text,
-            account: _accountController.text,
-            reset: false,
-          )),
+          onPressed: () {
+            // 校验失败不关闭弹框:主密码为空直接提示并留在对话框内。
+            if (_masterController.text.isEmpty) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('请输入主密码')));
+              return;
+            }
+            Navigator.of(context).pop((
+              master: _masterController.text,
+              account: _accountController.text,
+              reset: false,
+            ));
+          },
           child: const Text('恢复'),
         ),
       ],

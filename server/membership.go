@@ -158,12 +158,13 @@ func genRedemptionCode() string {
 }
 
 type redemptionCodeJSON struct {
-	ID           int64  `json:"id"`
-	Code         string `json:"code"`
-	DurationDays int    `json:"duration_days"`
-	UsedBy       any    `json:"used_by"`
-	UsedAt       any    `json:"used_at"`
-	CreatedAt    string `json:"created_at"`
+	ID              int64  `json:"id"`
+	Code            string `json:"code"`
+	DurationDays    int    `json:"duration_days"`
+	UsedBy          any    `json:"used_by"`
+	UsedByUsername  string `json:"used_by_username"`
+	UsedAt          any    `json:"used_at"`
+	CreatedAt       string `json:"created_at"`
 }
 
 // handleListRedemptionCodes: GET /api/v1/admin/redemption-codes -> 最新在前,
@@ -197,8 +198,10 @@ func handleListRedemptionCodes(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		rows, err := db.Query(`SELECT id, code, duration_days, used_by, used_at, created_at
-			FROM redemption_codes ORDER BY id DESC LIMIT ? OFFSET ?`, pageSize, (page-1)*pageSize)
+		rows, err := db.Query(`SELECT rc.id, rc.code, rc.duration_days, rc.used_by, rc.used_at, rc.created_at,
+			COALESCE(u.username, '')
+			FROM redemption_codes rc LEFT JOIN users u ON u.id = rc.used_by
+			ORDER BY rc.id DESC LIMIT ? OFFSET ?`, pageSize, (page-1)*pageSize)
 		if err != nil {
 			log.Printf("list redemption codes: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -210,7 +213,7 @@ func handleListRedemptionCodes(db *sql.DB) http.HandlerFunc {
 			var c redemptionCodeJSON
 			var usedBy sql.NullInt64
 			var usedAt sql.NullString
-			if err := rows.Scan(&c.ID, &c.Code, &c.DurationDays, &usedBy, &usedAt, &c.CreatedAt); err != nil {
+			if err := rows.Scan(&c.ID, &c.Code, &c.DurationDays, &usedBy, &usedAt, &c.CreatedAt, &c.UsedByUsername); err != nil {
 				log.Printf("scan redemption code: %v", err)
 				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return

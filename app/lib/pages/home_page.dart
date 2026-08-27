@@ -388,9 +388,15 @@ class _HomePageState extends State<HomePage> {
   /// 否则登录页的会话恢复会因 mode=='local' + 有主密钥而弹回本地主页。
   /// 同时清除应用锁:本地模式退出 = 回到未登录状态,不应再被锁屏拦截。
   Future<void> _exitLocal() async {
-    await _store.deactivateLocalProfile();
-    await _store.saveStorageMode('cloud');
-    await _store.clearAppLock();
+    // 先切回云端模式:即使后续存储操作失败,登录页也不会因 mode=='local'
+    // + 残留 active profile 而弹回本地主页。
+    try {
+      await _store.saveStorageMode('cloud');
+      await _store.deactivateLocalProfile();
+      await _store.clearAppLock();
+    } catch (_) {
+      // 存储失败(如平台存储异常)不阻塞退出:仍回到登录页。
+    }
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(builder: (_) => const LoginPage()),

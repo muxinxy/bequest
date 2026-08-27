@@ -193,7 +193,16 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            onPressed: () {
+              final name = controller.text.trim();
+              // 校验失败不关闭弹框:空名称直接提示并留在对话框内。
+              if (name.isEmpty) {
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('请输入账户名称')));
+                return;
+              }
+              Navigator.of(context).pop(name);
+            },
             child: const Text('保存'),
           ),
         ],

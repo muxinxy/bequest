@@ -151,7 +151,15 @@ class _MasterPasswordDialogState extends State<_MasterPasswordDialog> {
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop(_controller.text),
+          onPressed: () {
+            // 校验失败不关闭弹框:空密码直接提示并留在对话框内。
+            if (_controller.text.isEmpty) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('请输入主密码')));
+              return;
+            }
+            Navigator.of(context).pop(_controller.text);
+          },
           child: const Text('确认'),
         ),
       ],

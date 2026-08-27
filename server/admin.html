@@ -68,6 +68,7 @@
     <button data-tab="config">系统配置</button>
     <button data-tab="codes">兑换码</button>
     <button data-tab="audit">审计日志</button>
+    <button data-tab="about">关于</button>
   </nav>
   <div class="spacer"></div>
   <span class="who" id="who"></span>
@@ -80,7 +81,7 @@
     <h2>管理后台登录</h2>
     <div class="form-row"><label>账号</label><input id="lg-user" autocomplete="username"></div>
     <div class="form-row"><label>密码</label><input id="lg-pass" type="password" autocomplete="current-password"></div>
-    <div class="form-row"><label>验证码</label><span id="lg-question" class="muted"></span></div>
+    <div class="form-row"><label>验证码</label><span id="lg-question" class="muted" style="cursor:pointer" title="点击刷新验证码" onclick="loadCaptcha()"></span></div>
     <div class="form-row"><label></label><input id="lg-captcha" placeholder="输入图中字符" style="width:140px"></div>
     <button class="primary" id="lg-btn">登 录</button>
   </div>
@@ -193,6 +194,11 @@
     <div class="pager">
       <button id="a-prev">上一页</button><span id="a-info"></span><button id="a-next">下一页</button>
     </div>
+  </section>
+
+  <section id="tab-about" class="card hidden">
+    <h3 style="margin-bottom:12px">关于</h3>
+    <div id="about-box" class="muted">加载中...</div>
   </section>
 </main>
 
@@ -308,7 +314,7 @@ function switchTab(name) {
   document.querySelectorAll('#tabs button').forEach(function (b) {
     b.classList.toggle('active', b.dataset.tab === name);
   });
-  ['dash', 'users', 'config', 'codes', 'audit'].forEach(function (t) {
+  ['dash', 'users', 'config', 'codes', 'audit', 'about'].forEach(function (t) {
     document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
   });
   if (name === 'dash') loadStats();
@@ -316,6 +322,7 @@ function switchTab(name) {
   if (name === 'config') loadConfig();
   if (name === 'codes') loadCodes();
   if (name === 'audit') loadAudit();
+  if (name === 'about') loadAbout();
 }
 document.querySelectorAll('#tabs button').forEach(function (b) {
   b.addEventListener('click', function () { switchTab(b.dataset.tab); });
@@ -336,6 +343,11 @@ function loadStats() {
 }
 
 /* ---------- users ---------- */
+// 分页信息:显示"第 p / 共 T 页 · N 条",并给出总页数供按钮禁用判断。
+function pagerInfo(total, page, pageSize) {
+  var pages = Math.max(1, Math.ceil(total / pageSize));
+  return { text: '第 ' + page + ' / 共 ' + pages + ' 页 · ' + total + ' 条', pages: pages };
+}
 function loadUsers(page) {
   if (page) state.users.page = page;
   var p = state.users.page;
@@ -358,15 +370,15 @@ function loadUsers(page) {
           '<td>' + userActions(u) + '</td></tr>';
       }).join('');
       document.getElementById('u-body').innerHTML = rows || '<tr><td colspan="12" class="muted">无匹配用户</td></tr>';
-      document.getElementById('u-info').textContent = '共 ' + d.total + ' 条 · 第 ' + d.page + ' 页';
+      var pi = pagerInfo(d.total, d.page, d.page_size || 20);
+      document.getElementById('u-info').textContent = pi.text;
       document.getElementById('u-prev').disabled = d.page <= 1;
-      document.getElementById('u-next').disabled = d.page * d.page_size >= d.total;
+      document.getElementById('u-next').disabled = d.page >= pi.pages;
     })
     .catch(function (e) { toast(e.message, false); });
 }
 function userActions(u) {
   var a = [];
-  a.push('<button data-act="assets" data-id="' + u.id + '">资产</button>');
   if (u.tier !== 'member') a.push('<button data-act="member" data-id="' + u.id + '">设会员</button>');
   else a.push('<button data-act="unmember" data-id="' + u.id + '">取消会员</button>');
   if (u.role !== 'admin') a.push('<button data-act="admin" data-id="' + u.id + '">设管理员</button>');
@@ -380,16 +392,6 @@ document.getElementById('u-body').addEventListener('click', function (e) {
   var btn = e.target.closest('button[data-act]');
   if (!btn) return;
   var id = btn.dataset.id, act = btn.dataset.act;
-  if (act === 'assets') {
-    api('/admin/users/' + id + '/assets').then(function (d) {
-      var rows = d.assets.map(function (a) {
-        return '<tr><td>' + a.id + '</td><td>' + esc(a.name) + '</td><td>' + esc(a.asset_type) + '</td>' +
-          '<td>' + esc(a.category) + '</td><td>' + esc(a.expiry_date || '') + '</td><td>' + esc(fmtTime(a.created_at)) + '</td></tr>';
-      }).join('');
-      alertUserAssets(id, rows);
-    }).catch(function (er) { toast(er.message, false); });
-    return;
-  }
   var body = null;
   if (act === 'member') body = { tier: 'member' };
   if (act === 'unmember') body = { tier: 'free' };
@@ -417,20 +419,6 @@ document.getElementById('u-search').addEventListener('click', setUserFilter);
 });
 document.getElementById('u-prev').addEventListener('click', function () { loadUsers(state.users.page - 1); });
 document.getElementById('u-next').addEventListener('click', function () { loadUsers(state.users.page + 1); });
-
-// 用户资产明细弹窗(仅元数据:名称/分类/类型/到期;凭据密文服务端不可见)。
-function alertUserAssets(userId, rowsHtml) {
-  var overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;display:flex;align-items:center;justify-content:center';
-  overlay.innerHTML =
-    '<div style="background:#fff;border-radius:8px;padding:20px;max-width:720px;width:90%;max-height:80vh;overflow:auto">' +
-    '<h3 style="margin-bottom:12px">用户 #' + userId + ' 的资产(元数据)</h3>' +
-    '<table><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>分类</th><th>到期</th><th>创建</th></tr></thead>' +
-    '<tbody>' + (rowsHtml || '<tr><td colspan="6" class="muted">无资产</td></tr>') + '</tbody></table>' +
-    '<div style="text-align:right;margin-top:14px"><button id="asset-dlg-close">关闭</button></div></div>';
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click', function (e) { if (e.target === overlay || e.target.id === 'asset-dlg-close') overlay.remove(); });
-}
 
 /* ---------- config ---------- */
 function smtpRow(s, hasPass) {
@@ -580,13 +568,14 @@ function loadCodes(page) {
       var stB = c.used_by ? '<span class="badge off">已用</span>' : '<span class="badge on">未用</span>';
       var del = c.used_by ? '' : '<button class="danger" data-del="' + c.id + '">删除</button>';
       return '<tr><td>' + c.id + '</td><td><code>' + esc(c.code) + '</code></td><td>' + c.duration_days + '</td>' +
-        '<td>' + (c.used_by || '') + '</td><td>' + esc(fmtTime(c.used_at)) + '</td><td>' + esc(fmtTime(c.created_at)) + '</td>' +
+        '<td>' + esc(c.used_by_username || c.used_by || '') + '</td><td>' + esc(fmtTime(c.used_at)) + '</td><td>' + esc(fmtTime(c.created_at)) + '</td>' +
         '<td>' + stB + ' ' + del + '</td></tr>';
     }).join('');
     document.getElementById('rc-body').innerHTML = rows || '<tr><td colspan="7" class="muted">暂无兑换码</td></tr>';
-    document.getElementById('rc-info').textContent = '共 ' + d.total + ' 条 · 第 ' + d.page + ' 页';
+    var pi = pagerInfo(d.total, d.page, RC_PAGE_SIZE);
+    document.getElementById('rc-info').textContent = pi.text;
     document.getElementById('rc-prev').disabled = d.page <= 1;
-    document.getElementById('rc-next').disabled = d.page * RC_PAGE_SIZE >= d.total;
+    document.getElementById('rc-next').disabled = d.page >= pi.pages;
   }).catch(function (e) { toast(e.message, false); });
 }
 document.getElementById('rc-prev').addEventListener('click', function () { loadCodes(state.codes.page - 1); });
@@ -623,9 +612,10 @@ function loadAudit(page) {
           '<td>' + esc(e.action) + '</td><td>' + esc(e.detail) + '</td><td>' + esc(fmtTime(e.created_at)) + '</td></tr>';
       }).join('');
       document.getElementById('a-body').innerHTML = rows || '<tr><td colspan="6" class="muted">无记录</td></tr>';
-      document.getElementById('a-info').textContent = '共 ' + d.total + ' 条 · 第 ' + d.page + ' 页';
+      var pi = pagerInfo(d.total, d.page, d.page_size || 50);
+      document.getElementById('a-info').textContent = pi.text;
       document.getElementById('a-prev').disabled = d.page <= 1;
-      document.getElementById('a-next').disabled = d.page * d.page_size >= d.total;
+      document.getElementById('a-next').disabled = d.page >= pi.pages;
     })
     .catch(function (e) { toast(e.message, false); });
 }
@@ -653,6 +643,25 @@ document.getElementById('a-export').addEventListener('click', function () {
     URL.revokeObjectURL(a.href);
   }).catch(function (e) { toast(e.message, false); });
 });
+
+/* ---------- about ---------- */
+function loadAbout() {
+  var box = document.getElementById('about-box');
+  box.innerHTML = '加载中...';
+  fetch('/api/v1/version').then(function (r) { return r.json(); }).then(function (d) {
+    box.innerHTML =
+      '<p style="font-size:15px;font-weight:600;color:#1f2328">托孤 (bequest)</p>' +
+      '<p style="margin:8px 0">数字资产保险箱 + 数字遗嘱:管理实体/虚拟资产,号主超时未登录时升级提醒,最终交接给继承人。</p>' +
+      '<p style="margin:8px 0">版本: <code>' + esc(d.version || 'dev') + '</code></p>' +
+      '<p style="margin:8px 0">GitHub: <a href="https://github.com/muxinxy/bequest" target="_blank" rel="noopener">https://github.com/muxinxy/bequest</a></p>';
+  }).catch(function () {
+    box.innerHTML =
+      '<p style="font-size:15px;font-weight:600;color:#1f2328">托孤 (bequest)</p>' +
+      '<p style="margin:8px 0">数字资产保险箱 + 数字遗嘱:管理实体/虚拟资产,号主超时未登录时升级提醒,最终交接给继承人。</p>' +
+      '<p style="margin:8px 0">版本: <code>dev</code></p>' +
+      '<p style="margin:8px 0">GitHub: <a href="https://github.com/muxinxy/bequest" target="_blank" rel="noopener">https://github.com/muxinxy/bequest</a></p>';
+  });
+}
 </script>
 </body>
 </html>

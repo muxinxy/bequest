@@ -758,7 +758,12 @@ Future<String?> showManualRestoreDialog(
         FilledButton(
           onPressed: () {
             final name = controller.text.trim();
-            if (name.isEmpty) return;
+            // 校验失败不关闭弹框:空文件名提示并留在对话框内。
+            if (name.isEmpty) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('请输入备份文件名')));
+              return;
+            }
             Navigator.of(context).pop(name);
           },
           child: const Text('恢复'),
