@@ -121,6 +121,21 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// 设为该类型默认模板,成功后刷新列表并提示。
+  Future<void> _setDefaultTemplate(ReminderTemplate template) async {
+    try {
+      final jwt = await _store.readJwt();
+      if (jwt == null) throw ApiException('未登录');
+      await (await _api).setDefaultTemplate(jwt, template.id);
+      await _load();
+      _showError('已设为默认模板');
+    } on ApiException catch (e) {
+      _showError(e.message);
+    } catch (_) {
+      _showError('设置失败,请检查网络后重试');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -155,7 +170,8 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 10),
                     child: const Text(
-                      '系统生成提醒时优先使用你的自定义模板(会员),未设置时用系统预设文案',
+                      '系统生成提醒时优先使用你的自定义模板(会员),未设置时用系统预设文案。'
+                      '同一类型的多个自定义模板中,标记为默认的会被使用(未标记时使用最早创建的)',
                       style: TextStyle(fontSize: 12),
                     ),
                   ),
@@ -171,6 +187,7 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
                             isMember: _isMember,
                             onEdit: _editTemplate,
                             onDelete: _deleteTemplate,
+                            onSetDefault: _setDefaultTemplate,
                           ),
                       ],
                     ),
@@ -190,6 +207,7 @@ class _TypeSection extends StatelessWidget {
     required this.isMember,
     required this.onEdit,
     required this.onDelete,
+    required this.onSetDefault,
   });
 
   final _TypeInfo type;
@@ -197,6 +215,7 @@ class _TypeSection extends StatelessWidget {
   final bool isMember;
   final void Function(ReminderTemplate?) onEdit;
   final void Function(ReminderTemplate) onDelete;
+  final void Function(ReminderTemplate) onSetDefault;
 
   @override
   Widget build(BuildContext context) {
@@ -308,6 +327,22 @@ class _TypeSection extends StatelessWidget {
               ),
               child: const Text('系统默认', style: TextStyle(fontSize: 11)),
             ),
+          ] else if (template.isDefault) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                '默认',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+              ),
+            ),
           ],
         ],
       ),
@@ -322,6 +357,12 @@ class _TypeSection extends StatelessWidget {
           : Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // 非默认的自定义模板可设为默认;已是默认的不重复设置。
+                if (!template.isDefault)
+                  TextButton(
+                    onPressed: () => onSetDefault(template),
+                    child: const Text('设为默认'),
+                  ),
                 IconButton(
                   tooltip: '编辑',
                   icon: const Icon(Icons.edit_outlined),

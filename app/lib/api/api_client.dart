@@ -521,6 +521,11 @@ class ApiClient {
     return _delete('/api/v1/reminder-templates/$id', jwt);
   }
 
+  /// POST /api/v1/reminder-templates/{id}/default 设为该类型默认
+  Future<Map<String, dynamic>> setDefaultTemplate(String jwt, String id) {
+    return _postAuth('/api/v1/reminder-templates/$id/default', const {}, jwt);
+  }
+
   /// GET /api/v1/reminders
   Future<List<Map<String, dynamic>>> listReminders(String jwt) {
     return _getList('/api/v1/reminders', jwt);

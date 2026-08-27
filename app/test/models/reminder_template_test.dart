@@ -19,5 +19,16 @@ void main() {
       final t = ReminderTemplate.fromJson({'id': 2, 'name': 'x'});
       expect(t.type, 'expiry');
     });
+
+    test('解析 is_default 字段', () {
+      final t = ReminderTemplate.fromJson({
+        'id': 3,
+        'name': 'x',
+        'is_preset': 0,
+        'is_default': 1,
+      });
+      expect(t.isPreset, isFalse);
+      expect(t.isDefault, isTrue);
+    });
   });
 }

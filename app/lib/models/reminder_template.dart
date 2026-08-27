@@ -8,6 +8,7 @@ class ReminderTemplate {
     this.bodyTemplate,
     this.isPreset = false,
     this.type = 'expiry',
+    this.isDefault = false,
     this.createdAt,
   });
 
@@ -19,6 +20,7 @@ class ReminderTemplate {
         bodyTemplate: json['body_template']?.toString(),
         isPreset: json['is_preset'] == 1 || json['is_preset'] == true,
         type: json['type']?.toString() ?? 'expiry',
+        isDefault: json['is_default'] == 1 || json['is_default'] == true,
         createdAt: json['created_at']?.toString(),
       );
 
@@ -28,5 +30,6 @@ class ReminderTemplate {
   final String? bodyTemplate;
   final bool isPreset;
   final String type;
+  final bool isDefault;
   final String? createdAt;
 }

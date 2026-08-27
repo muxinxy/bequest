@@ -21,6 +21,7 @@ type templateJSON struct {
 	TitleTemplate string `json:"title_template"`
 	BodyTemplate  string `json:"body_template"`
 	IsPreset      int    `json:"is_preset"`
+	IsDefault     int    `json:"is_default"`
 	CreatedAt     string `json:"created_at"`
 }
 
@@ -64,7 +65,7 @@ func validateTemplate(req templateRequest) string {
 // handleListTemplates: GET /api/v1/reminder-templates -> 200 system presets + user's own
 func handleListTemplates(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rows, err := db.Query(`SELECT id, name, type, title_template, body_template, is_preset, created_at
+		rows, err := db.Query(`SELECT id, name, type, title_template, body_template, is_preset, is_default, created_at
 			FROM reminder_templates WHERE user_id IS NULL OR user_id = ? ORDER BY id`, userID(r))
 		if err != nil {
 			log.Printf("list templates: %v", err)
@@ -75,7 +76,7 @@ func handleListTemplates(db *sql.DB) http.HandlerFunc {
 		list := []templateJSON{}
 		for rows.Next() {
 			var t templateJSON
-			if err := rows.Scan(&t.ID, &t.Name, &t.Type, &t.TitleTemplate, &t.BodyTemplate, &t.IsPreset, &t.CreatedAt); err != nil {
+			if err := rows.Scan(&t.ID, &t.Name, &t.Type, &t.TitleTemplate, &t.BodyTemplate, &t.IsPreset, &t.IsDefault, &t.CreatedAt); err != nil {
 				log.Printf("scan template: %v", err)
 				writeError(w, http.StatusInternalServerError, "服务器内部错误")
 				return
@@ -115,8 +116,19 @@ func handleCreateTemplate(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "模板类型不合法")
 			return
 		}
-		res, err := db.Exec(`INSERT INTO reminder_templates (user_id, name, type, title_template, body_template) VALUES (?, ?, ?, ?, ?)`,
-			uid, strings.TrimSpace(req.Name), typ, strings.TrimSpace(req.TitleTemplate), strings.TrimSpace(req.BodyTemplate))
+		// 该用户该类型首个自定义模板自动成为默认模板。
+		var cnt int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM reminder_templates WHERE user_id = ? AND type = ?`, uid, typ).Scan(&cnt); err != nil {
+			log.Printf("count templates: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		isDefault := 0
+		if cnt == 0 {
+			isDefault = 1
+		}
+		res, err := db.Exec(`INSERT INTO reminder_templates (user_id, name, type, title_template, body_template, is_default) VALUES (?, ?, ?, ?, ?, ?)`,
+			uid, strings.TrimSpace(req.Name), typ, strings.TrimSpace(req.TitleTemplate), strings.TrimSpace(req.BodyTemplate), isDefault)
 		if err != nil {
 			log.Printf("insert template: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -124,9 +136,9 @@ func handleCreateTemplate(db *sql.DB) http.HandlerFunc {
 		}
 		id, _ := res.LastInsertId()
 		var t templateJSON
-		if err := db.QueryRow(`SELECT id, name, type, title_template, body_template, is_preset, created_at
+		if err := db.QueryRow(`SELECT id, name, type, title_template, body_template, is_preset, is_default, created_at
 			FROM reminder_templates WHERE id = ?`, id).
-			Scan(&t.ID, &t.Name, &t.Type, &t.TitleTemplate, &t.BodyTemplate, &t.IsPreset, &t.CreatedAt); err != nil {
+			Scan(&t.ID, &t.Name, &t.Type, &t.TitleTemplate, &t.BodyTemplate, &t.IsPreset, &t.IsDefault, &t.CreatedAt); err != nil {
 			log.Printf("fetch created template: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
@@ -189,9 +201,9 @@ func handleUpdateTemplate(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		var t templateJSON
-		if err := db.QueryRow(`SELECT id, name, type, title_template, body_template, is_preset, created_at
+		if err := db.QueryRow(`SELECT id, name, type, title_template, body_template, is_preset, is_default, created_at
 			FROM reminder_templates WHERE id = ?`, id).
-			Scan(&t.ID, &t.Name, &t.Type, &t.TitleTemplate, &t.BodyTemplate, &t.IsPreset, &t.CreatedAt); err != nil {
+			Scan(&t.ID, &t.Name, &t.Type, &t.TitleTemplate, &t.BodyTemplate, &t.IsPreset, &t.IsDefault, &t.CreatedAt); err != nil {
 			log.Printf("fetch updated template: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
@@ -220,6 +232,59 @@ func handleDeleteTemplate(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// handleSetDefaultTemplate: POST /api/v1/reminder-templates/{id}/default -> 200 {"id":x,"is_default":true}
+// 仅本人自定义模板可设默认;事务内先清空该用户该类型全部默认,再置目标模板为默认。
+func handleSetDefaultTemplate(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := parseID(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "无效的 ID")
+			return
+		}
+		uid := userID(r)
+		var owner sql.NullInt64
+		var typ string
+		err = db.QueryRow(`SELECT user_id, type FROM reminder_templates WHERE id = ?`, id).
+			Scan(&owner, &typ)
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "提醒模板不存在")
+			return
+		}
+		if err != nil {
+			log.Printf("query template: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		if !owner.Valid || owner.Int64 != uid {
+			writeError(w, http.StatusNotFound, "提醒模板不存在")
+			return
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			log.Printf("begin tx: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec(`UPDATE reminder_templates SET is_default = 0 WHERE user_id = ? AND type = ?`, uid, typ); err != nil {
+			log.Printf("clear defaults: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		if _, err := tx.Exec(`UPDATE reminder_templates SET is_default = 1 WHERE id = ?`, id); err != nil {
+			log.Printf("set default: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			log.Printf("commit tx: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"id": id, "is_default": true})
 	}
 }
 
