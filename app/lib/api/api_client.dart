@@ -623,6 +623,11 @@ class ApiClient {
     return _get('/api/v1/notification-usage', jwt);
   }
 
+  /// GET /api/v1/overview:首页总览(资产/统计/提醒/用量/会员)。
+  Future<Map<String, dynamic>> getOverview(String jwt) {
+    return _get('/api/v1/overview', jwt);
+  }
+
   /// GET /api/v1/audit-log
   Future<List<Map<String, dynamic>>> listAuditLog(String jwt) {
     return _getList('/api/v1/audit-log', jwt);

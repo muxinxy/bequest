@@ -156,6 +156,7 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("GET /api/v1/inheritance/default-inheritor", auth(handleGetDefaultInheritor(db)))
 	mux.Handle("PUT /api/v1/inheritance/default-inheritor", auth(handlePutDefaultInheritor(db)))
 	mux.Handle("GET /api/v1/notification-usage", auth(handleNotificationUsage(db)))
+	mux.Handle("GET /api/v1/overview", auth(handleOverview(db)))
 	mux.Handle("GET /api/v1/audit-log", auth(handleAuditLog(db)))
 	// 日志(审计/应用):列表按年月筛选、导出 CSV、清除。
 	mux.Handle("GET /api/v1/logs", auth(handleListLogs(db)))
