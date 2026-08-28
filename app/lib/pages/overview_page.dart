@@ -175,7 +175,8 @@ class _OverviewPageState extends State<OverviewPage> {
               crossAxisCount: 2,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: 4,
+              // 固定行高,避免窄屏下 aspectRatio 导致过高空白。
+              mainAxisExtent: 28,
               children: [
                 for (final s in const ['active', 'inactive', 'pending', 'expired'])
                   _statusItem(s, assets[s] ?? 0, onPrimary: true),
