@@ -181,39 +181,116 @@ class _MembershipPageState extends State<MembershipPage> {
         ),
       );
 
-  /// ✓ 绿色 check / ✗ 灰色 close。
-  Widget _mark(bool ok) => Icon(
-        ok ? Icons.check_circle : Icons.cancel,
+  /// 对比标记:免费列(muted)统一灰调(有=灰勾,无=灰叉),会员列绿勾。
+  Widget _mark(bool ok, {bool muted = false}) => Icon(
+        ok ? Icons.check_circle : Icons.remove_circle_outline,
         size: 18,
-        color: ok ? Colors.green : Colors.grey,
+        color: (ok && !muted) ? Colors.green : Colors.grey,
       );
 
   /// 权益对比表(权益/免费/会员)。
   Widget _benefitTable() {
-    final rows = <(String, Widget, Widget)>[
+    final scheme = Theme.of(context).colorScheme;
+    final labelStyle =
+        TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: scheme.onSurface);
+    final cellStyle = TextStyle(fontSize: 13, color: scheme.onSurface);
+    // 会员列浅色底,突出"会员更好"。
+    final memberTint = scheme.primary.withValues(alpha: 0.06);
+    // 行间 1px 细分隔线。
+    final divider =
+        Border(bottom: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)));
+
+    // (权益图标, 权益名, 免费列, 会员列)。
+    final rows = <(IconData, String, Widget, Widget)>[
       (
+        Icons.inventory_2,
         '资产数量',
         Text('${Entitlements.free.assetLimit} 条'),
         const Text('不限'),
       ),
-      ('云端同步', _mark(Entitlements.free.cloudSync), _mark(Entitlements.member.cloudSync)),
-      ('继承交接', _mark(Entitlements.free.inheritance), _mark(Entitlements.member.inheritance)),
       (
+        Icons.cloud_sync,
+        '云端同步',
+        _mark(Entitlements.free.cloudSync, muted: true),
+        _mark(Entitlements.member.cloudSync),
+      ),
+      (
+        Icons.family_restroom,
+        '继承交接',
+        _mark(Entitlements.free.inheritance, muted: true),
+        _mark(Entitlements.member.inheritance),
+      ),
+      (
+        Icons.notifications,
         '通知渠道',
         const Text('邮件+IM'),
         const Text('邮件+IM+短信'),
       ),
-      ('自定义提醒模板', _mark(false), _mark(true)),
-      ('Excel 导出', _mark(false), _mark(true)),
-      ('离线模式', _mark(Entitlements.free.offlineMode), _mark(Entitlements.member.offlineMode)),
+      (
+        Icons.article,
+        '自定义提醒模板',
+        _mark(false, muted: true),
+        _mark(true),
+      ),
+      (Icons.table_chart, 'Excel 导出', _mark(false, muted: true), _mark(true)),
+      (
+        Icons.cloud_off,
+        '离线模式',
+        _mark(Entitlements.free.offlineMode, muted: true),
+        _mark(Entitlements.member.offlineMode),
+      ),
     ];
-    final scheme = Theme.of(context).colorScheme;
-    final headerStyle = TextStyle(
-      fontSize: 13,
-      fontWeight: FontWeight.bold,
-      color: scheme.onSurfaceVariant,
+
+    // 单元格:内容居中,会员列加浅色底。
+    Widget cell(Widget child, {bool tint = false}) => Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          color: tint ? memberTint : null,
+          child: Align(
+            alignment: Alignment.center,
+            child: DefaultTextStyle(style: cellStyle, child: child),
+          ),
+        );
+
+    // 表头"会员":主色 pill + 图标 + 高对比字。
+    final memberPill = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: scheme.primary,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.workspace_premium, size: 14, color: scheme.onPrimary),
+          const SizedBox(width: 4),
+          Text(
+            '会员',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: scheme.onPrimary,
+            ),
+          ),
+        ],
+      ),
     );
-    final cellStyle = TextStyle(fontSize: 13, color: scheme.onSurface);
+
+    // 表头普通单元格:次级色。
+    Widget headerCell(String text) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          child: Align(
+            alignment: Alignment.center,
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        );
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -225,46 +302,38 @@ class _MembershipPageState extends State<MembershipPage> {
           },
           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
           children: [
+            // 表头:免费普通样式,会员主色 pill。
             TableRow(
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest,
-              ),
+              decoration: BoxDecoration(color: scheme.surfaceContainerHighest),
               children: [
+                headerCell('权益'),
+                headerCell('免费'),
                 Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Align(alignment: Alignment.center, child: Text('权益', style: headerStyle)),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Align(alignment: Alignment.center, child: Text('免费', style: headerStyle)),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Align(alignment: Alignment.center, child: Text('会员', style: headerStyle)),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Align(alignment: Alignment.center, child: memberPill),
                 ),
               ],
             ),
-            for (final (label, free, member) in rows)
+            // 数据行:隔行浅底 + 细分隔线,会员列 tint。
+            for (final (i, (icon, label, free, member)) in rows.indexed)
               TableRow(
+                decoration: BoxDecoration(
+                  color: i.isOdd ? scheme.surfaceContainerLow : null,
+                  border: divider,
+                ),
                 children: [
                   Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Text(label, style: cellStyle),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: DefaultTextStyle(
-                      style: cellStyle,
-                      child: Align(alignment: Alignment.center, child: free),
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                    child: Row(
+                      children: [
+                        Icon(icon, size: 16, color: scheme.onSurfaceVariant),
+                        const SizedBox(width: 6),
+                        Expanded(child: Text(label, style: labelStyle)),
+                      ],
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: DefaultTextStyle(
-                      style: cellStyle,
-                      child: Align(alignment: Alignment.center, child: member),
-                    ),
-                  ),
+                  cell(free),
+                  cell(member, tint: true),
                 ],
               ),
           ],
