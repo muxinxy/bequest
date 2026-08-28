@@ -6,62 +6,171 @@
 <title>托孤 · 管理后台</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: #f4f5f7; color: #1f2328; }
-  header { background: #24292f; color: #fff; padding: 0 24px; height: 52px; display: flex; align-items: center; gap: 24px; }
-  header h1 { font-size: 16px; font-weight: 600; }
+  :root {
+    --bg: #eef2f7;
+    --card: #ffffff;
+    --border: #e3e8ef;
+    --text: #1f2430;
+    --muted: #6b7280;
+    --brand: #4f46e5;
+    --brand2: #7c3aed;
+    --radius: 12px;
+    --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px -12px rgba(16,24,40,.12);
+    --shadow-lg: 0 12px 32px -12px rgba(16,24,40,.18);
+  }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(180deg, #eef2f7 0%, #e5ebf3 100%);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    background: linear-gradient(90deg, #0f172a 0%, #1e1b4b 100%);
+    color: #fff; padding: 0 24px; height: 56px;
+    display: flex; align-items: center; gap: 20px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 4px 16px -8px rgba(0,0,0,.4);
+    position: sticky; top: 0; z-index: 20;
+  }
+  header .logo { display: flex; align-items: center; gap: 10px; }
+  header .logo svg { width: 22px; height: 22px; color: #a5b4fc; }
+  header h1 { font-size: 16px; font-weight: 600; letter-spacing: .2px; }
   header nav { display: flex; gap: 4px; }
-  header nav button { background: none; border: none; color: #c9d1d9; padding: 8px 14px; font-size: 14px; cursor: pointer; border-radius: 6px; }
-  header nav button.active, header nav button:hover { background: #32383f; color: #fff; }
+  header nav button {
+    background: none; border: none; color: #a5b0c0; padding: 8px 14px; font-size: 14px;
+    cursor: pointer; border-radius: 8px;
+    transition: background .18s ease, color .18s ease;
+  }
+  header nav button:hover { background: rgba(255,255,255,.08); color: #fff; }
+  header nav button.active {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff;
+    box-shadow: 0 4px 12px -4px rgba(99,102,241,.6);
+  }
   header .spacer { flex: 1; }
-  header .who { color: #c9d1d9; font-size: 13px; }
-  header .logout { background: none; border: 1px solid #565e66; color: #c9d1d9; border-radius: 6px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
-  main { max-width: 1100px; margin: 24px auto; padding: 0 24px; }
-  .card { background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
-  .stat { background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 16px; }
-  .stat .n { font-size: 26px; font-weight: 700; color: #0969da; }
-  .stat .l { font-size: 13px; color: #57606a; margin-top: 4px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eaecef; }
-  th { color: #57606a; font-weight: 600; background: #f6f8fa; }
-  tr:hover td { background: #f6f8fa; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
-  .badge.member { background: #ddf4ff; color: #0550ae; }
-  .badge.free { background: #f6f8fa; color: #57606a; }
-  .badge.admin { background: #ffd7d5; color: #a40e26; }
-  .badge.user { background: #f6f8fa; color: #57606a; }
-  .badge.on { background: #dafbe1; color: #1a7f37; }
-  .badge.off { background: #ffebe9; color: #a40e26; }
-  button { font-size: 13px; padding: 4px 10px; border-radius: 6px; border: 1px solid #d0d7de; background: #f6f8fa; cursor: pointer; }
-  button:hover { background: #eaeef2; }
-  button.primary { background: #0969da; border-color: #0969da; color: #fff; }
-  button.primary:hover { background: #075fc4; }
-  button.danger { color: #a40e26; border-color: #ffb3ad; }
-  button.danger:hover { background: #ffebe9; }
-  button:disabled { opacity: .5; cursor: default; }
-  input, select { font-size: 13px; padding: 5px 8px; border: 1px solid #d0d7de; border-radius: 6px; }
-  .toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+  header .who { color: #a5b0c0; font-size: 13px; }
+  header .logout {
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.18); color: #dbe2ec;
+    border-radius: 8px; padding: 6px 14px; font-size: 13px; cursor: pointer;
+    transition: background .18s ease;
+  }
+  header .logout:hover { background: rgba(255,255,255,.14); }
+  main { max-width: 1200px; margin: 28px auto; padding: 0 24px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow);
+  }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 16px; }
+  .stat {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 18px 18px 20px; position: relative; overflow: hidden;
+    box-shadow: var(--shadow);
+    transition: transform .18s ease, box-shadow .18s ease;
+  }
+  .stat::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+  .stat:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+  .stat .n { font-size: 28px; font-weight: 800; letter-spacing: -.5px; }
+  .stat .l { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .stat:nth-child(1)::before { background: #6366f1; } .stat:nth-child(1) .n { color: #4f46e5; }
+  .stat:nth-child(2)::before { background: #0ea5e9; } .stat:nth-child(2) .n { color: #0284c7; }
+  .stat:nth-child(3)::before { background: #8b5cf6; } .stat:nth-child(3) .n { color: #7c3aed; }
+  .stat:nth-child(4)::before { background: #f59e0b; } .stat:nth-child(4) .n { color: #d97706; }
+  .stat:nth-child(5)::before { background: #10b981; } .stat:nth-child(5) .n { color: #059669; }
+  .stat:nth-child(6)::before { background: #ec4899; } .stat:nth-child(6) .n { color: #db2777; }
+  .stat:nth-child(7)::before { background: #f43f5e; } .stat:nth-child(7) .n { color: #e11d48; }
+  .stat:nth-child(8)::before { background: #14b8a6; } .stat:nth-child(8) .n { color: #0d9488; }
+  .stat:nth-child(9)::before { background: #f97316; } .stat:nth-child(9) .n { color: #ea580c; }
+  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid #eef1f6; }
+  thead th {
+    color: #5b6472; font-weight: 600; background: #f4f6fa; font-size: 12px;
+    text-transform: uppercase; letter-spacing: .4px;
+  }
+  thead th:first-child { border-top-left-radius: 10px; }
+  thead th:last-child { border-top-right-radius: 10px; }
+  tbody tr { transition: background .12s ease; }
+  tbody tr:hover td { background: #f6f8fc; }
+  tbody tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+  .badge.member { background: rgba(14,165,233,.12); color: #0369a1; }
+  .badge.free { background: rgba(107,114,128,.12); color: #4b5563; }
+  .badge.admin { background: rgba(244,63,94,.12); color: #be123c; }
+  .badge.user { background: rgba(107,114,128,.12); color: #4b5563; }
+  .badge.on { background: rgba(16,185,129,.14); color: #047857; }
+  .badge.off { background: rgba(244,63,94,.12); color: #be123c; }
+  button {
+    font-size: 13px; padding: 6px 14px; border-radius: 8px; border: 1px solid #d7dce4;
+    background: #fff; color: #374151; cursor: pointer;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04);
+    transition: background .15s ease, border-color .15s ease, transform .1s ease;
+  }
+  button:hover { background: #f3f5f9; border-color: #c6cdd8; }
+  button:active { transform: translateY(1px); }
+  button.primary {
+    background: linear-gradient(135deg, #4f46e5, #7c3aed); border-color: transparent; color: #fff;
+    box-shadow: 0 4px 12px -4px rgba(79,70,229,.5);
+  }
+  button.primary:hover { background: linear-gradient(135deg, #4338ca, #6d28d9); }
+  button.danger { color: #be123c; border-color: #fecdd3; background: #fff; }
+  button.danger:hover { background: #fff1f2; border-color: #fda4af; }
+  button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; transform: none; }
+  input, select {
+    font-size: 13px; padding: 7px 10px; border: 1px solid #d7dce4; border-radius: 8px;
+    background: #fff; color: var(--text);
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  input:focus, select:focus {
+    outline: none; border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,.18);
+  }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
   .toolbar input[type=text] { width: 240px; }
-  .pager { display: flex; gap: 10px; align-items: center; margin-top: 14px; font-size: 13px; color: #57606a; }
-  .msg { position: fixed; top: 60px; right: 20px; padding: 10px 16px; border-radius: 6px; color: #fff; font-size: 13px; z-index: 10; opacity: 0; transition: opacity .2s; }
-  .msg.show { opacity: 1; }
-  .msg.ok { background: #1a7f37; }
-  .msg.err { background: #cf222e; }
-  .form-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
-  .form-row label { font-size: 13px; color: #57606a; width: 90px; }
+  .pager { display: flex; gap: 10px; align-items: center; margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .pager button { border-radius: 999px; padding: 6px 16px; }
+  .msg {
+    position: fixed; top: 68px; right: 20px; padding: 11px 18px; border-radius: 10px; color: #fff;
+    font-size: 13px; z-index: 30; opacity: 0; transform: translateY(-6px);
+    box-shadow: var(--shadow-lg);
+    transition: opacity .2s, transform .2s;
+  }
+  .msg.show { opacity: 1; transform: translateY(0); }
+  .msg.ok { background: linear-gradient(135deg, #059669, #10b981); }
+  .msg.err { background: linear-gradient(135deg, #dc2626, #f43f5e); }
+  .form-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
+  .form-row label { font-size: 13px; color: var(--muted); width: 90px; }
   .sm { width: 60px; } .md { width: 120px; }
-  .login-wrap { max-width: 360px; margin: 120px auto; background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 28px; }
-  .login-wrap h2 { font-size: 17px; margin-bottom: 18px; }
+  .login-wrap {
+    max-width: 380px; margin: 120px auto; background: var(--card);
+    border: 1px solid var(--border); border-radius: 16px; padding: 32px;
+    box-shadow: 0 0 0 1px rgba(99,102,241,.08), 0 24px 60px -20px rgba(16,24,40,.25);
+    position: relative;
+  }
+  .login-wrap::before {
+    content: ""; position: absolute; inset: 0; border-radius: 16px; padding: 1px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6, #ec4899);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+    pointer-events: none;
+  }
+  .login-wrap h2 { font-size: 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+  .login-wrap h2 svg { width: 20px; height: 20px; color: #6366f1; }
   .login-wrap .form-row label { width: 64px; }
   .login-wrap input { width: 100%; }
-  .login-wrap button { width: 100%; margin-top: 12px; padding: 8px; }
+  .login-wrap button { width: 100%; margin-top: 14px; padding: 10px; font-size: 14px; }
   .hidden { display: none; }
-  .muted { color: #57606a; font-size: 12px; }
+  .muted { color: var(--muted); font-size: 12px; }
+  @media (max-width: 640px) {
+    header { padding: 0 14px; gap: 12px; }
+    header nav button { padding: 8px 10px; }
+    main { padding: 0 14px; }
+    .cards { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  }
 </style>
 </head>
 <body>
 <header id="appbar" class="hidden">
-  <h1>托孤 · 管理后台</h1>
+  <div class="logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+    <h1>托孤 · 管理后台</h1>
+  </div>
   <nav id="tabs">
     <button data-tab="dash" class="active">仪表盘</button>
     <button data-tab="users">用户</button>
@@ -78,7 +187,7 @@
 
 <main id="login-view" class="login-wrap">
   <div id="lg-form">
-    <h2>管理后台登录</h2>
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>管理后台登录</h2>
     <div class="form-row"><label>账号</label><input id="lg-user" autocomplete="username"></div>
     <div class="form-row"><label>密码</label><input id="lg-pass" type="password" autocomplete="current-password"></div>
     <div class="form-row"><label>验证码</label><span id="lg-question" class="muted" style="cursor:pointer" title="点击刷新验证码" onclick="loadCaptcha()"></span></div>
@@ -86,7 +195,7 @@
     <button class="primary" id="lg-btn">登 录</button>
   </div>
   <div id="lg-2fa" class="hidden">
-    <h2>两步验证</h2>
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>两步验证</h2>
     <div class="form-row"><label>动态码</label><input id="lg-totp" inputmode="numeric" maxlength="6" placeholder="6 位数字" style="width:140px"></div>
     <button class="primary" id="lg-2fa-btn">验 证</button>
   </div>
