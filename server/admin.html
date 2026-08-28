@@ -135,8 +135,29 @@
   .msg.ok { background: linear-gradient(135deg, #059669, #10b981); }
   .msg.err { background: linear-gradient(135deg, #dc2626, #f43f5e); }
   .form-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
-  .form-row label { font-size: 13px; color: var(--muted); width: 90px; }
+  .form-row label { font-size: 13px; color: var(--muted); width: 110px; }
   .sm { width: 60px; } .md { width: 120px; }
+  .subcard {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow);
+  }
+  .subcard-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 14px; font-weight: 700; color: var(--text);
+    padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid #eef1f6;
+  }
+  .subcard-title svg { width: 16px; height: 16px; color: var(--brand); flex-shrink: 0; }
+  .subcard .tag {
+    margin-left: auto; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; letter-spacing: .3px;
+    background: rgba(107,114,128,.1); color: var(--muted); white-space: nowrap;
+  }
+  .subcard .form-row:last-child { margin-bottom: 0; }
+  .save-bar { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+  .save-bar button.primary {
+    padding: 10px 32px; font-size: 14px; font-weight: 600; border-radius: 10px;
+    box-shadow: 0 4px 14px -4px rgba(79,70,229,.55);
+  }
   .login-wrap {
     max-width: 380px; margin: 120px auto; background: var(--card);
     border: 1px solid var(--border); border-radius: 16px; padding: 32px;
@@ -227,50 +248,97 @@
   </section>
 
   <section id="tab-config" class="card hidden">
-    <h3 style="margin-bottom:12px">SMTP 服务器(系统发件,轮询负载均衡)</h3>
-    <div id="smtp-rows"></div>
-    <button id="smtp-add">+ 添加服务器</button>
-    <h3 style="margin:18px 0 12px">短信服务商(预留,发送未实现)</h3>
-    <div id="sms-rows"></div>
-    <button id="sms-add">+ 添加服务商</button>
-    <h3 style="margin:18px 0 12px">电话服务商(预留,发送未实现)</h3>
-    <div id="phone-rows"></div>
-    <button id="phone-add">+ 添加服务商</button>
-    <h3 style="margin:18px 0 12px">免费用户权益</h3>
-    <div class="form-row">
-      <label>资产上限</label>
-      <input id="cfg-quota" class="md" type="number" min="1">
-      <span class="muted">免费档最多可创建的资产数;会员不限</span>
+    <div class="subcard">
+      <div class="subcard-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M22 6l-10 7L2 6"/></svg>
+        发件服务器 (SMTP)
+        <span class="tag">轮询负载均衡</span>
+      </div>
+      <div id="smtp-rows"></div>
+      <button id="smtp-add">+ 添加服务器</button>
     </div>
-    <h3 style="margin:18px 0 12px">通知额度(每月)</h3>
-    <div class="form-row">
-      <label>免费用户邮件</label>
-      <input id="cfg-free-emails" class="md" type="number" min="0">
-      <span class="muted">免费用户每月系统邮件额度</span>
+
+    <div class="subcard">
+      <div class="subcard-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        短信服务商
+        <span class="tag">预留</span>
+      </div>
+      <div id="sms-rows"></div>
+      <button id="sms-add">+ 添加服务商</button>
     </div>
-    <div class="form-row">
-      <label>会员邮件</label>
-      <input id="cfg-member-emails" class="md" type="number" min="0">
-      <span class="muted">会员每月系统邮件额度</span>
+
+    <div class="subcard">
+      <div class="subcard-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        电话服务商
+        <span class="tag">预留</span>
+      </div>
+      <div id="phone-rows"></div>
+      <button id="phone-add">+ 添加服务商</button>
     </div>
-    <div class="form-row">
-      <label>会员短信</label>
-      <input id="cfg-member-sms" class="md" type="number" min="0">
-      <span class="muted">会员每月短信额度</span>
+
+    <div class="subcard">
+      <div class="subcard-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg>
+        免费用户权益
+      </div>
+      <div class="form-row">
+        <label>资产上限</label>
+        <input id="cfg-quota" class="md" type="number" min="1">
+        <span class="muted">免费档最多可创建的资产数;会员不限</span>
+      </div>
     </div>
-    <h3 style="margin:18px 0 12px">默认触发阶梯(天)</h3>
-    <div class="form-row">
-      <label>一级/二级</label>
-      <input id="cfg-ladder-1" class="sm" type="number" min="1" max="3650">
-      <span class="muted">,</span>
-      <input id="cfg-ladder-2" class="sm" type="number" min="1" max="3650">
-      <span class="muted">一级:IM+邮件;二级:一级+短信,跨过二级触发继承</span>
+
+    <div class="subcard">
+      <div class="subcard-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        通知额度
+        <span class="tag">每月</span>
+      </div>
+      <div class="form-row">
+        <label>免费用户邮件</label>
+        <input id="cfg-free-emails" class="md" type="number" min="0">
+        <span class="muted">免费用户每月系统邮件额度</span>
+      </div>
+      <div class="form-row">
+        <label>会员邮件</label>
+        <input id="cfg-member-emails" class="md" type="number" min="0">
+        <span class="muted">会员每月系统邮件额度</span>
+      </div>
+      <div class="form-row">
+        <label>会员短信</label>
+        <input id="cfg-member-sms" class="md" type="number" min="0">
+        <span class="muted">会员每月短信额度</span>
+      </div>
     </div>
-    <div class="form-row" style="margin-top:16px">
+
+    <div class="subcard">
+      <div class="subcard-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+        默认触发阶梯
+        <span class="tag">天</span>
+      </div>
+      <div class="form-row">
+        <label>一级 / 二级</label>
+        <input id="cfg-ladder-1" class="sm" type="number" min="1" max="3650">
+        <span class="muted">,</span>
+        <input id="cfg-ladder-2" class="sm" type="number" min="1" max="3650">
+        <span class="muted">一级:IM+邮件;二级:一级+短信,跨过二级触发继承</span>
+      </div>
+    </div>
+
+    <div class="subcard">
+      <div class="subcard-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+        管理后台两步验证 (2FA)
+      </div>
+      <div id="2fa-box" class="muted">加载中...</div>
+    </div>
+
+    <div class="save-bar">
       <button class="primary" id="cfg-save">保存配置</button>
     </div>
-    <h3 style="margin:18px 0 12px">管理后台两步验证 (2FA)</h3>
-    <div id="2fa-box" class="muted">加载中...</div>
   </section>
 
   <section id="tab-codes" class="card hidden">
