@@ -365,6 +365,24 @@ func handleAdminDeleteUser(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "不能删除自己")
 			return
 		}
+		// 删除管理员前检查:必须至少保留 1 个管理员,否则后台将无人可登录。
+		var role string
+		if err := db.QueryRow(`SELECT role FROM users WHERE id = ?`, id).Scan(&role); err != nil {
+			writeError(w, http.StatusNotFound, "用户不存在")
+			return
+		}
+		if role == "admin" {
+			var admins int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE role = 'admin'`).Scan(&admins); err != nil {
+				log.Printf("count admins: %v", err)
+				writeError(w, http.StatusInternalServerError, "服务器内部错误")
+				return
+			}
+			if admins <= 1 {
+				writeError(w, http.StatusBadRequest, "不能删除最后一个管理员")
+				return
+			}
+		}
 		res, err := db.Exec(`DELETE FROM users WHERE id = ?`, id)
 		if err != nil {
 			log.Printf("admin delete user: %v", err)

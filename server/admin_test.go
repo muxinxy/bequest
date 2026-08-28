@@ -191,6 +191,37 @@ func TestAdminDeleteUser(t *testing.T) {
 	}
 }
 
+// TestAdminDeleteLastAdminBlocked: 删除管理员后系统必须仍有管理员。
+// 多管理员时可删(删后剩≥1);唯一管理员靠"不能删自己"保住最后席位。
+func TestAdminDeleteLastAdminBlocked(t *testing.T) {
+	ts, db := newTestServer(t)
+	admTok, admID := loginAdmin(t, ts, db, "root", "adminpass123")
+
+	// 提升 bob 为管理员,bob 登录(此时 root+bob 两个管理员)。
+	registerUser(t, ts, "bob")
+	bobID := findUserID(t, ts, admTok, "bob")
+	rr := doReq(t, ts, http.MethodPut, fmt.Sprintf("/api/v1/admin/users/%d", bobID),
+		`{"role":"admin"}`, admTok)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("promote bob: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	bobTok, _ := loginAdmin(t, ts, db, "bob", "password123")
+
+	// bob 删除 root:还剩 bob 一个管理员 -> 200。
+	rr = doReq(t, ts, http.MethodDelete, fmt.Sprintf("/api/v1/admin/users/%d", admID), "", bobTok)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("delete admin with backup: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// bob 现在是唯一管理员:删除自己 -> 400(不能删自己,保住后台管理)。
+	rr = doReq(t, ts, http.MethodDelete, fmt.Sprintf("/api/v1/admin/users/%d", bobID), "", bobTok)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("delete sole admin self: want 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	// 防护分支(admins<=1 时删他人 admin)仅在数据异常/绕过时兜底,正常路径不可达。
+	// 直接验证:把 bob 降级为非 admin 后,root 已删,系统无 admin 属数据损坏——不构造。
+}
+
 func TestAdminBootstrapPromotesExisting(t *testing.T) {
 	ts, db := newTestServer(t)
 	registerUser(t, ts, "root") // existing user, not admin
