@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 import 'membership_page.dart';
 import 'reminders_page.dart';
@@ -73,10 +74,10 @@ class _OverviewPageState extends State<OverviewPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('总览'),
+        title: Text(L10n.tr('总览')),
         actions: [
           IconButton(
-            tooltip: '刷新',
+            tooltip: L10n.tr('刷新'),
             icon: const Icon(Icons.refresh),
             onPressed: _loading ? null : _load,
           ),
@@ -95,9 +96,9 @@ class _OverviewPageState extends State<OverviewPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('加载失败'),
+          Text(L10n.tr('加载失败')),
           const SizedBox(height: 8),
-          FilledButton(onPressed: _load, child: const Text('重试')),
+          FilledButton(onPressed: _load, child: Text(L10n.tr('重试'))),
         ],
       ),
     );
@@ -165,7 +166,7 @@ class _OverviewPageState extends State<OverviewPage> {
               ),
             ),
             Text(
-              '资产总数',
+              L10n.tr('资产总数'),
               style: TextStyle(
                 color: scheme.onPrimary.withValues(alpha: 0.85),
               ),
@@ -205,7 +206,7 @@ class _OverviewPageState extends State<OverviewPage> {
         Text('$value', style: TextStyle(fontWeight: FontWeight.w600, color: fg)),
         const SizedBox(width: 4),
         Text(
-          _statusLabels[key]!,
+          L10n.tr(_statusLabels[key]!),
           style: TextStyle(
             fontSize: 12,
             color: fg.withValues(alpha: 0.85),
@@ -229,7 +230,10 @@ class _OverviewPageState extends State<OverviewPage> {
               children: [
                 Icon(Icons.event_available, size: 20, color: scheme.primary),
                 const SizedBox(width: 8),
-                Text('即将到期(30 天内)', style: Theme.of(context).textTheme.titleSmall),
+                Text(
+                  L10n.tr('即将到期(30 天内)'),
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -261,7 +265,9 @@ class _OverviewPageState extends State<OverviewPage> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  '还有 ${expiring.length - 5} 项即将到期',
+                  L10n.trp('还有 {n} 项即将到期', {
+                    'n': '${expiring.length - 5}',
+                  }),
                   style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
                 ),
               ),
@@ -279,9 +285,9 @@ class _OverviewPageState extends State<OverviewPage> {
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Row(
           children: [
-            _statItem('分组', counts['categories'] ?? 0),
-            _statItem('继承人', counts['inheritors'] ?? 0),
-            _statItem('触发阶梯', counts['trigger_ladders'] ?? 0),
+            _statItem(L10n.tr('分组'), counts['categories'] ?? 0),
+            _statItem(L10n.tr('继承人'), counts['inheritors'] ?? 0),
+            _statItem(L10n.tr('触发阶梯'), counts['trigger_ladders'] ?? 0),
           ],
         ),
       ),
@@ -326,7 +332,7 @@ class _OverviewPageState extends State<OverviewPage> {
                 children: [
                   Icon(Icons.notifications_outlined, size: 20, color: scheme.primary),
                   const SizedBox(width: 8),
-                  Text('提醒', style: Theme.of(context).textTheme.titleSmall),
+                  Text(L10n.tr('提醒'), style: Theme.of(context).textTheme.titleSmall),
                   const Spacer(),
                   if (unread > 0)
                     Container(
@@ -336,7 +342,7 @@ class _OverviewPageState extends State<OverviewPage> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
-                        '$unread 未读',
+                        L10n.trp('{n} 未读', {'n': '$unread'}),
                         style: TextStyle(fontSize: 12, color: scheme.onErrorContainer),
                       ),
                     ),
@@ -383,14 +389,14 @@ class _OverviewPageState extends State<OverviewPage> {
               children: [
                 Icon(Icons.notifications_active_outlined, size: 20, color: scheme.primary),
                 const SizedBox(width: 8),
-                Text('通知用量', style: Theme.of(context).textTheme.titleSmall),
+                Text(L10n.tr('通知用量'), style: Theme.of(context).textTheme.titleSmall),
               ],
             ),
             const SizedBox(height: 12),
-            _usageBar('邮件', emailUsed, emailLimit),
+            _usageBar(L10n.tr('邮件'), emailUsed, emailLimit),
             if (isMember) ...[
               const SizedBox(height: 12),
-              _usageBar('短信', smsUsed, smsLimit),
+              _usageBar(L10n.tr('短信'), smsUsed, smsLimit),
             ],
           ],
         ),
@@ -430,11 +436,13 @@ class _OverviewPageState extends State<OverviewPage> {
           isMember ? Icons.workspace_premium : Icons.circle_outlined,
           color: isMember ? const Color(0xFFFFD700) : scheme.onSurfaceVariant,
         ),
-        title: Text(isMember ? '会员' : '免费'),
+        title: Text(isMember ? L10n.tr('会员') : L10n.tr('免费')),
         subtitle: Text(
           isMember
-              ? (memberExpires.isEmpty ? '永久有效' : '到期时间:$memberExpires')
-              : '升级会员解锁更多权益',
+              ? (memberExpires.isEmpty
+                    ? L10n.tr('永久有效')
+                    : L10n.trp('到期时间:{time}', {'time': memberExpires}))
+              : L10n.tr('升级会员解锁更多权益'),
         ),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => Navigator.of(context).push(

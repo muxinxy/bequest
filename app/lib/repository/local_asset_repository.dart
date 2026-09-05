@@ -1,3 +1,4 @@
+import '../l10n/app_l10n.dart';
 import '../sync/local_vault.dart';
 import 'asset_repository.dart';
 
@@ -113,7 +114,9 @@ class LocalAssetRepository implements AssetRepository {
     final data = await _load();
     final categories = data['categories'] as List;
     final index = categories.indexWhere((c) => '${(c as Map)['id']}' == id);
-    if (index < 0) throw StateError('分类不存在(id: $id)');
+    if (index < 0) {
+      throw StateError(L10n.trp('分类不存在(id: {id})', {'id': id}));
+    }
     final old = categories[index] as Map<String, dynamic>;
     // 服务器形状:name/asset_type,保留 id/created_at。
     final updated = <String, dynamic>{
@@ -177,7 +180,7 @@ class LocalAssetRepository implements AssetRepository {
     for (final asset in _asMaps((await _load())['assets'])) {
       if ('${asset['id']}' == id) return asset;
     }
-    throw StateError('资产不存在(id: $id)');
+    throw StateError(L10n.trp('资产不存在(id: {id})', {'id': id}));
   }
 
   @override
@@ -204,7 +207,9 @@ class LocalAssetRepository implements AssetRepository {
     final data = await _load();
     final assets = data['assets'] as List;
     final index = assets.indexWhere((a) => '${(a as Map)['id']}' == id);
-    if (index < 0) throw StateError('资产不存在(id: $id)');
+    if (index < 0) {
+      throw StateError(L10n.trp('资产不存在(id: {id})', {'id': id}));
+    }
     final old = assets[index] as Map<String, dynamic>;
     // 服务器形状:name/asset_type/category_id/encrypted_data/expiry_date。
     final updated = <String, dynamic>{
@@ -261,7 +266,9 @@ class LocalAssetRepository implements AssetRepository {
     final data = await _load();
     final assets = data['assets'] as List;
     final index = assets.indexWhere((a) => '${(a as Map)['id']}' == id);
-    if (index < 0) throw StateError('资产不存在(id: $id)');
+    if (index < 0) {
+      throw StateError(L10n.trp('资产不存在(id: {id})', {'id': id}));
+    }
     final src = assets[index] as Map<String, dynamic>;
     final copy = <String, dynamic>{
       ...src,
@@ -284,17 +291,17 @@ class LocalAssetRepository implements AssetRepository {
   @override
   Future<Map<String, dynamic>> createAssetInheritor(
       String assetId, Map<String, dynamic> body) {
-    throw UnsupportedError('本地模式不支持资产级继承人设置');
+    throw UnsupportedError(L10n.tr('本地模式不支持资产级继承人设置'));
   }
 
   @override
   Future<void> deleteAssetInheritor(String assetId, String iid) {
-    throw UnsupportedError('本地模式不支持资产级继承人设置');
+    throw UnsupportedError(L10n.tr('本地模式不支持资产级继承人设置'));
   }
 
   @override
   Future<void> updateAssetInheritorLadder(String assetId, String iid, int? ladderId) {
-    throw UnsupportedError('本地模式不支持资产级继承人设置');
+    throw UnsupportedError(L10n.tr('本地模式不支持资产级继承人设置'));
   }
 
   @override
@@ -304,17 +311,17 @@ class LocalAssetRepository implements AssetRepository {
   @override
   Future<Map<String, dynamic>> createCategoryInheritor(
       String categoryId, Map<String, dynamic> body) {
-    throw UnsupportedError('本地模式不支持分组级继承人设置');
+    throw UnsupportedError(L10n.tr('本地模式不支持分组级继承人设置'));
   }
 
   @override
   Future<void> deleteCategoryInheritor(String categoryId, String iid) {
-    throw UnsupportedError('本地模式不支持分组级继承人设置');
+    throw UnsupportedError(L10n.tr('本地模式不支持分组级继承人设置'));
   }
 
   @override
   Future<void> updateCategoryInheritorLadder(String categoryId, String iid, int? ladderId) {
-    throw UnsupportedError('本地模式不支持分组级继承人设置');
+    throw UnsupportedError(L10n.tr('本地模式不支持分组级继承人设置'));
   }
 
   @override
@@ -350,7 +357,7 @@ class LocalAssetRepository implements AssetRepository {
     final target = categoryId; // 本地分类 id 为 'L<时间戳><序号>' 字符串。
     // 目标分类必须存在(与云端一致);未分类(categoryId null)允许。
     if (target != null && !cats.any((c) => '${c['id']}' == target)) {
-      throw StateError('目标分类不存在');
+      throw StateError(L10n.tr('目标分类不存在'));
     }
     final idSet = ids.toSet();
     var moved = 0;

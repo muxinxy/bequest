@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../l10n/app_l10n.dart';
 import '../sync/local_vault.dart';
 import 'asset_repository.dart';
 
@@ -104,7 +105,7 @@ class OfflineAssetRepository implements AssetRepository {
     for (final a in await listAssets()) {
       if ('${a['id']}' == id) return a;
     }
-    throw StateError('资产不存在(id: $id)');
+    throw StateError(L10n.trp('资产不存在(id: {id})', {'id': id}));
   }
 
   // 离线只读:全部写操作不支持。

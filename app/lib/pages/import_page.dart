@@ -6,6 +6,7 @@ import '../crypto/asset_crypto.dart';
 import '../crypto/attempt_guard.dart';
 import '../crypto/master_password.dart';
 import '../logger.dart';
+import '../l10n/app_l10n.dart';
 import '../models/export_format.dart';
 import '../repository/asset_repository.dart';
 import '../repository/local_asset_repository.dart';
@@ -35,7 +36,7 @@ class ImportPage extends StatefulWidget {
 class _ImportPageState extends State<ImportPage> {
   final _store = SecureStore();
 
-  String _status = '准备导入...';
+  String _status = L10n.tr('准备导入...');
 
   @override
   void initState() {
@@ -65,7 +66,7 @@ class _ImportPageState extends State<ImportPage> {
     }
     final masterKey = await _store.readMasterKey();
     if (masterKey == null) {
-      _showError('未找到主密钥,请重新登录或进入本地模式');
+      _showError(L10n.tr('未找到主密钥,请重新登录或进入本地模式'));
       _finish();
       return;
     }
@@ -82,14 +83,14 @@ class _ImportPageState extends State<ImportPage> {
     }
     final items = parsed;
     if (items == null) {
-      _showError('无效的导出文件(加密文件需与当前主密码一致)');
+      _showError(L10n.tr('无效的导出文件(加密文件需与当前主密码一致)'));
       _finish();
       return;
     }
     try {
       // 覆盖导入:先清空现有资产(两种模式同一接口,分类保留按名复用)。
       if (widget.overwrite) {
-        setState(() => _status = '正在清空现有资产...');
+        setState(() => _status = L10n.tr('正在清空现有资产...'));
         for (final a in await widget.repository.listAssets()) {
           await widget.repository.deleteAsset('${a['id']}');
         }
@@ -102,7 +103,12 @@ class _ImportPageState extends State<ImportPage> {
       var failed = 0;
       for (var i = 0; i < items.length; i++) {
         if (!mounted) return;
-        setState(() => _status = '导入中 ${i + 1}/${items.length}');
+        setState(
+          () => _status = L10n.trp('导入中 {a}/{b}', {
+            'a': '${i + 1}',
+            'b': '${items.length}',
+          }),
+        );
         try {
           await _createOne(masterKey, items[i], categoryNames);
           success++;
@@ -112,12 +118,19 @@ class _ImportPageState extends State<ImportPage> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入完成: 成功 $success 条,失败 $failed 条')),
+        SnackBar(
+          content: Text(
+            L10n.trp('导入完成: 成功 {a} 条,失败 {b} 条', {
+              'a': '$success',
+              'b': '$failed',
+            }),
+          ),
+        ),
       );
       _finish();
     } catch (e) {
       Logger.instance.e('import failed: $e');
-      _showError('导入失败,请检查网络后重试');
+      _showError(L10n.tr('导入失败,请检查网络后重试'));
       _finish();
     }
   }
@@ -128,16 +141,16 @@ class _ImportPageState extends State<ImportPage> {
     final goSetup = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('未设置主密码'),
-        content: const Text('导入资产需要主密码。是否前往设置主密码?'),
+        title: Text(L10n.tr('未设置主密码')),
+        content: Text(L10n.tr('导入资产需要主密码。是否前往设置主密码?')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('去设置'),
+            child: Text(L10n.tr('去设置')),
           ),
         ],
       ),
@@ -218,7 +231,7 @@ class _ImportPageState extends State<ImportPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('导入资产')),
+      appBar: AppBar(title: Text(L10n.tr('导入资产'))),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

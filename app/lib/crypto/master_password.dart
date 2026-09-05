@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 import 'attempt_guard.dart';
 import 'key_derivation.dart';
@@ -57,8 +58,10 @@ Future<bool> guardedVerifyMasterPassword(
     SnackBar(
       content: Text(
         await guard.checkLocked()
-            ? '尝试次数过多,请等待 ${await guard.remainingSeconds()} 秒后重试'
-            : '主密码错误',
+            ? L10n.trp('尝试次数过多,请等待 {n} 秒后重试', {
+                'n': '${await guard.remainingSeconds()}',
+              })
+            : L10n.tr('主密码错误'),
       ),
     ),
   );
@@ -117,7 +120,7 @@ class _MasterPasswordDialogState extends State<_MasterPasswordDialog> {
   Widget build(BuildContext context) {
     final hint = widget.hint;
     return AlertDialog(
-      title: const Text('请输入主密码'),
+      title: Text(L10n.tr('请输入主密码')),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -125,9 +128,9 @@ class _MasterPasswordDialogState extends State<_MasterPasswordDialog> {
             controller: _controller,
             autofocus: true,
             obscureText: true,
-            decoration: const InputDecoration(
-              labelText: '主密码',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: L10n.tr('主密码'),
+              border: const OutlineInputBorder(),
             ),
           ),
           if (hint != null && hint.isNotEmpty) ...[
@@ -135,7 +138,7 @@ class _MasterPasswordDialogState extends State<_MasterPasswordDialog> {
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '主密码提示: $hint',
+                L10n.trp('主密码提示: {hint}', {'hint': hint}),
                 style: TextStyle(
                   fontSize: 12,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -148,19 +151,19 @@ class _MasterPasswordDialogState extends State<_MasterPasswordDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(L10n.tr('取消')),
         ),
         FilledButton(
           onPressed: () {
             // 校验失败不关闭弹框:空密码直接提示并留在对话框内。
             if (_controller.text.isEmpty) {
               ScaffoldMessenger.of(context)
-                  .showSnackBar(const SnackBar(content: Text('请输入主密码')));
+                  .showSnackBar(SnackBar(content: Text(L10n.tr('请输入主密码'))));
               return;
             }
             Navigator.of(context).pop(_controller.text);
           },
-          child: const Text('确认'),
+          child: Text(L10n.tr('确认')),
         ),
       ],
     );

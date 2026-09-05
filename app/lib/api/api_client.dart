@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../l10n/app_l10n.dart';
 import '../logger.dart';
 
 /// 后端接口客户端。后端运行在开发机 8080 端口,
@@ -783,7 +784,7 @@ class ApiClient {
   ) async {
     final response = await _client.post(
       Uri.parse('$baseUrl$path'),
-      headers: {'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json', ..._langHeader()},
       body: jsonEncode(body),
     );
     return _decode(response);
@@ -842,8 +843,15 @@ class ApiClient {
     _ensureSuccess(response);
   }
 
-  Map<String, String> _authHeaders(String jwt) =>
-      {'Authorization': 'Bearer $jwt'};
+  Map<String, String> _authHeaders(String jwt) => {
+    'Authorization': 'Bearer $jwt',
+    ..._langHeader(),
+  };
+
+  /// Server messages (errors, reminders copy) follow the app's UI language.
+  Map<String, String> _langHeader() => {
+    'Accept-Language': L10n.isZh ? 'zh-CN,zh;q=0.9' : 'en;q=0.9',
+  };
 
   void _ensureSuccess(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) return;
@@ -854,8 +862,9 @@ class ApiClient {
       body = null;
     }
     final map = body is Map<String, dynamic> ? body : const <String, dynamic>{};
-    final message =
-        map['message'] ?? map['error'] ?? '请求失败(${response.statusCode})';
+    final message = map['message'] ??
+        map['error'] ??
+        L10n.trp('请求失败({code})', {'code': '${response.statusCode}'});
     Logger.instance.e(
       'api ${response.request?.url.path ?? ''} error '
       '${response.statusCode}: $message',
@@ -871,7 +880,9 @@ class ApiClient {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return map;
     }
-    final message = map['message'] ?? map['error'] ?? '请求失败(${response.statusCode})';
+    final message = map['message'] ??
+        map['error'] ??
+        L10n.trp('请求失败({code})', {'code': '${response.statusCode}'});
     Logger.instance.e(
       'api ${response.request?.url.path ?? ''} error '
       '${response.statusCode}: $message',

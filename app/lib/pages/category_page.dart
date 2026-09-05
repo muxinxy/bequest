@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_l10n.dart';
 import '../models/category.dart';
 import '../repository/asset_repository.dart';
 import '../widgets/text_save_dialog.dart';
@@ -38,7 +39,7 @@ class _CategoryPageState extends State<CategoryPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('加载失败,请检查网络后重试'))));
       Navigator.of(context).pop();
     }
   }
@@ -53,10 +54,10 @@ class _CategoryPageState extends State<CategoryPage> {
     return showDialog<String>(
       context: context,
       builder: (context) => TextSaveDialog(
-        title: title,
-        labelText: '分组名称',
+        title: L10n.tr(title),
+        labelText: L10n.tr('分组名称'),
         initialValue: initialName,
-        conflictMessage: '分组已存在',
+        conflictMessage: L10n.tr('分组已存在'),
         onSave: onSave,
       ),
     );
@@ -103,7 +104,7 @@ class _CategoryPageState extends State<CategoryPage> {
     try {
       await widget.repository.reorderCategories(list.map((c) => c.id).toList());
     } catch (_) {
-      _showError('排序保存失败,请检查网络后重试');
+      _showError(L10n.tr('排序保存失败,请检查网络后重试'));
       await _load();
     }
   }
@@ -116,15 +117,20 @@ class _CategoryPageState extends State<CategoryPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('删除分组'),
+          title: Text(L10n.tr('删除分组')),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('「${category.name}」含 ${category.assetCount} 个资产。'),
+              Text(
+                L10n.trp('「{name}」含 {n} 个资产。', {
+                  'name': category.name,
+                  'n': '${category.assetCount}',
+                }),
+              ),
               const SizedBox(height: 8),
               Text(
-                '删除后这些资产将移入所选分组(默认未分组)。',
+                L10n.tr('删除后这些资产将移入所选分组(默认未分组)。'),
                 style: TextStyle(
                   fontSize: 12,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -134,12 +140,12 @@ class _CategoryPageState extends State<CategoryPage> {
               if (others.isNotEmpty)
                 DropdownButtonFormField<String?>(
                   initialValue: null,
-                  decoration: const InputDecoration(
-                    labelText: '资产移入',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: L10n.tr('资产移入'),
+                    border: const OutlineInputBorder(),
                   ),
                   items: [
-                    const DropdownMenuItem(value: null, child: Text('未分组')),
+                    DropdownMenuItem(value: null, child: Text(L10n.tr('未分组'))),
                     ...others.map(
                       (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
                     ),
@@ -148,7 +154,7 @@ class _CategoryPageState extends State<CategoryPage> {
                 )
               else
                 Text(
-                  '无可移入的分组,资产将变为未分组。',
+                  L10n.tr('无可移入的分组,资产将变为未分组。'),
                   style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -159,11 +165,11 @@ class _CategoryPageState extends State<CategoryPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('取消'),
+              child: Text(L10n.tr('取消')),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('删除'),
+              child: Text(L10n.tr('删除')),
             ),
           ],
         ),
@@ -176,7 +182,7 @@ class _CategoryPageState extends State<CategoryPage> {
       await widget.repository.deleteCategory(category.id, moveTo: moveToId);
       await _load();
     } catch (_) {
-      _showError('删除失败,请检查网络后重试');
+      _showError(L10n.tr('删除失败,请检查网络后重试'));
     }
   }
 
@@ -191,10 +197,10 @@ class _CategoryPageState extends State<CategoryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('分组管理'),
+        title: Text(L10n.tr('分组管理')),
         actions: [
           IconButton(
-            tooltip: '添加分组',
+            tooltip: L10n.tr('添加分组'),
             icon: const Icon(Icons.add),
             onPressed: _addCategory,
           ),
@@ -203,7 +209,7 @@ class _CategoryPageState extends State<CategoryPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _categories.isEmpty
-          ? const Center(child: Text('暂无分组,点击右上角 + 新增'))
+          ? Center(child: Text(L10n.tr('暂无分组,点击右上角 + 新增')))
           : ListView.separated(
               itemCount: _categories.length,
               separatorBuilder: (_, _) => const Divider(height: 1),
@@ -215,17 +221,19 @@ class _CategoryPageState extends State<CategoryPage> {
                     color: Theme.of(context).colorScheme.primary,
                   ),
                   title: Text(category.name),
-                  subtitle: Text('${category.assetCount} 个资产'),
+                  subtitle: Text(
+                    L10n.trp('{n} 个资产', {'n': '${category.assetCount}'}),
+                  ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        tooltip: '上移',
+                        tooltip: L10n.tr('上移'),
                         icon: const Icon(Icons.arrow_upward),
                         onPressed: index == 0 ? null : () => _move(index, -1),
                       ),
                       IconButton(
-                        tooltip: '下移',
+                        tooltip: L10n.tr('下移'),
                         icon: const Icon(Icons.arrow_downward),
                         onPressed: index == _categories.length - 1
                             ? null
@@ -244,7 +252,7 @@ class _CategoryPageState extends State<CategoryPage> {
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
-                            '预设',
+                            L10n.tr('预设'),
                             style: TextStyle(
                               fontSize: 12,
                               color: Theme.of(
@@ -254,12 +262,12 @@ class _CategoryPageState extends State<CategoryPage> {
                           ),
                         ),
                       IconButton(
-                        tooltip: '设置继承人',
+                        tooltip: L10n.tr('设置继承人'),
                         icon: const Icon(Icons.people_outline),
                         onPressed: () => _openInheritors(category),
                       ),
                       IconButton(
-                        tooltip: '删除',
+                        tooltip: L10n.tr('删除'),
                         icon: const Icon(Icons.delete_outline),
                         onPressed: () => _deleteCategory(category),
                       ),

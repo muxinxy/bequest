@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../platform/file_share.dart';
 import '../storage/secure_store.dart';
 import '../utils/time_format.dart';
@@ -40,12 +41,11 @@ class _InheritanceEventsPageState extends State<InheritanceEventsPage> {
     'claimed': Colors.blue,
     'reversed': Colors.grey,
   };
-  static const _statusLabels = {
-    'pending': '待领取',
-    'claimed': '已领取',
-    'reversed': '已撤销',
-  };
-
+  static Map<String, String> get _statusLabels => {
+        'pending': L10n.tr('待领取'),
+        'claimed': L10n.tr('已领取'),
+        'reversed': L10n.tr('已撤销'),
+      };
   @override
   void initState() {
     super.initState();
@@ -104,7 +104,7 @@ class _InheritanceEventsPageState extends State<InheritanceEventsPage> {
       if (!mounted) return;
       setState(() => _loading = false);
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+          .showSnackBar(SnackBar(content: Text(L10n.tr('加载失败,请检查网络后重试'))));
     }
   }
 
@@ -151,15 +151,23 @@ class _InheritanceEventsPageState extends State<InheritanceEventsPage> {
         month: _month ?? '',
         q: _q,
       );
-      final ok = await shareTextFile(_exportFileName, csv, '继承事件导出(CSV)');
+      final ok = await shareTextFile(
+        _exportFileName,
+        csv,
+        L10n.tr('继承事件导出(CSV)'),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ok ? '导出成功' : '导出失败,请检查网络后重试')),
+        SnackBar(
+          content: Text(
+            ok ? L10n.tr('导出成功') : L10n.tr('导出失败,请检查网络后重试'),
+          ),
+        ),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('导出失败,请检查网络后重试')));
+          .showSnackBar(SnackBar(content: Text(L10n.tr('导出失败,请检查网络后重试'))));
     }
   }
 
@@ -175,12 +183,21 @@ class _InheritanceEventsPageState extends State<InheritanceEventsPage> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          const SizedBox(width: 56, child: Text('状态', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
-          Expanded(flex: 3, child: Text('资产', style: bold)),
-          Expanded(flex: 2, child: Text('继承人', style: bold)),
-          Expanded(flex: 3, child: Text('创建时间', style: bold)),
-          Expanded(flex: 3, child: Text('领取时间', style: bold)),
-          Expanded(flex: 3, child: Text('撤销时间', style: bold)),
+          SizedBox(
+            width: 56,
+            child: Text(
+              L10n.tr('状态'),
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          Expanded(flex: 3, child: Text(L10n.tr('资产'), style: bold)),
+          Expanded(flex: 2, child: Text(L10n.tr('继承人'), style: bold)),
+          Expanded(flex: 3, child: Text(L10n.tr('创建时间'), style: bold)),
+          Expanded(flex: 3, child: Text(L10n.tr('领取时间'), style: bold)),
+          Expanded(flex: 3, child: Text(L10n.tr('撤销时间'), style: bold)),
         ],
       ),
     );
@@ -189,8 +206,7 @@ class _InheritanceEventsPageState extends State<InheritanceEventsPage> {
   Widget _eventRow(Map<String, dynamic> e) {
     final status = e['status']?.toString() ?? '';
     final color = _statusColors[status] ?? Colors.grey;
-    final label = _statusLabels[status] ?? status;
-    String time(String? key) {
+    final label = _statusLabels[status] ?? status;    String time(String? key) {
       final v = e[key]?.toString();
       return (v == null || v.isEmpty) ? '-' : formatServerTime(v);
     }
@@ -218,7 +234,7 @@ class _InheritanceEventsPageState extends State<InheritanceEventsPage> {
           Expanded(
             flex: 3,
             child: Text(
-              e['asset_name']?.toString() ?? '未命名',
+              e['asset_name']?.toString() ?? L10n.tr('未命名'),
               style: cell,
               overflow: TextOverflow.ellipsis,
             ),
@@ -243,10 +259,10 @@ class _InheritanceEventsPageState extends State<InheritanceEventsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('继承事件'),
+        title: Text(L10n.tr('继承事件')),
         actions: [
           IconButton(
-            tooltip: '导出 CSV',
+            tooltip: L10n.tr('导出 CSV'),
             icon: const Icon(Icons.file_download_outlined),
             onPressed: _export,
           ),
@@ -259,13 +275,16 @@ class _InheritanceEventsPageState extends State<InheritanceEventsPage> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: DropdownButtonFormField<String>(
               initialValue: _month ?? '全部',
-              decoration: const InputDecoration(
-                labelText: '月份',
+              decoration: InputDecoration(
+                labelText: L10n.tr('月份'),
                 isDense: true,
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
               ),
               items: [
-                const DropdownMenuItem(value: '全部', child: Text('全部')),
+                DropdownMenuItem(
+                  value: '全部',
+                  child: Text(L10n.tr('全部')),
+                ),
                 for (final m in _monthOptions)
                   DropdownMenuItem(value: m, child: Text(m)),
               ],
@@ -282,13 +301,13 @@ class _InheritanceEventsPageState extends State<InheritanceEventsPage> {
               controller: _searchController,
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
-                hintText: '搜索资产名或继承人名',
+                hintText: L10n.tr('搜索资产名或继承人名'),
                 isDense: true,
                 border: const OutlineInputBorder(),
                 suffixIcon: _q.isEmpty
                     ? null
                     : IconButton(
-                        tooltip: '清空',
+                        tooltip: L10n.tr('清空'),
                         icon: const Icon(Icons.clear),
                         onPressed: () {
                           _searchController.clear();
@@ -315,7 +334,7 @@ class _InheritanceEventsPageState extends State<InheritanceEventsPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _events.isEmpty
-                ? const Center(child: Text('暂无继承事件'))
+                ? Center(child: Text(L10n.tr('暂无继承事件')))
                 : RefreshIndicator(
                     onRefresh: _load,
                     child: ListView.separated(

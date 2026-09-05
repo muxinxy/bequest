@@ -7,6 +7,7 @@ import '../crypto/attempt_guard.dart';
 import '../crypto/key_derivation.dart';
 import '../crypto/master_key_change.dart';
 import '../crypto/master_password.dart';
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 import '../sync/local_vault.dart';
 
@@ -93,7 +94,7 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
       if (!mounted) return;
       // 新密码留空(仅改提示语):newMk == oldMk,无需云端重包,只提示。
       if (_newController.text.trim().isEmpty) {
-        _showMessage('主密码提示语已更新');
+        _showMessage(L10n.tr('主密码提示语已更新'));
         _clearSensitiveFields();
         return;
       }
@@ -111,17 +112,17 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
   /// 凭据密文与 asset_key_wrapped_wk 原样保留(非破坏性)。
   Future<void> _syncToCloud(String newMk, String oldMk) async {
     if (!_loggedIn) {
-      _showMessage('已更新本地主密码');
+      _showMessage(L10n.tr('已更新本地主密码'));
       return;
     }
     final jwt = await _store.readJwt();
     if (jwt == null || jwt.isEmpty) {
-      _showMessage('已更新本地主密码');
+      _showMessage(L10n.tr('已更新本地主密码'));
       return;
     }
     final wrappingKey = await _store.readWrappingKey();
     if (wrappingKey == null || wrappingKey.isEmpty) {
-      _showMessage('云端同步失败,本地已更新');
+      _showMessage(L10n.tr('云端同步失败,本地已更新'));
       return;
     }
     final wrapped = wrapMasterKey(newMk, wrappingKey);
@@ -162,13 +163,15 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
           }
         }
       }
-      _showMessage('云端已同步');
+      _showMessage(L10n.tr('云端已同步'));
     } on ApiException catch (e) {
       _showMessage(
-        e.statusCode == 401 ? '账户密码错误,云端继承密钥未更新' : '云端同步失败,本地已更新',
+        e.statusCode == 401
+            ? L10n.tr('账户密码错误,云端继承密钥未更新')
+            : L10n.tr('云端同步失败,本地已更新'),
       );
     } catch (_) {
-      _showMessage('云端同步失败,本地已更新');
+      _showMessage(L10n.tr('云端同步失败,本地已更新'));
     }
   }
 
@@ -189,7 +192,7 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('修改主密码')),
+      appBar: AppBar(title: Text(L10n.tr('修改主密码'))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -200,28 +203,30 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
               TextFormField(
                 controller: _oldController,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '当前主密码',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('当前主密码'),
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) => (value == null || value.isEmpty)
-                    ? '请输入当前主密码'
+                    ? L10n.tr('请输入当前主密码')
                     : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _newController,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '新主密码(留空则不修改)',
-                  helperText: '留空仅更新提示语;填写则至少 8 位',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('新主密码(留空则不修改)'),
+                  helperText: L10n.tr('留空仅更新提示语;填写则至少 8 位'),
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) {
                   final v = value ?? '';
                   if (v.isEmpty) return null; // 留空 = 只改提示语
-                  if (v.length < 8) return '新主密码至少 8 位';
-                  if (v == _oldController.text) return '新主密码不能与当前相同';
+                  if (v.length < 8) return L10n.tr('新主密码至少 8 位');
+                  if (v == _oldController.text) {
+                    return L10n.tr('新主密码不能与当前相同');
+                  }
                   return null;
                 },
               ),
@@ -229,23 +234,25 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
               TextFormField(
                 controller: _confirmController,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '确认新主密码',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('确认新主密码'),
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (_newController.text.isEmpty) return null; // 未改密码
-                  return value != _newController.text ? '两次输入的新主密码不一致' : null;
+                  return value != _newController.text
+                      ? L10n.tr('两次输入的新主密码不一致')
+                      : null;
                 },
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _hintController,
                 maxLength: 50,
-                decoration: const InputDecoration(
-                  labelText: '主密码提示语(可选)',
-                  hintText: '帮助回忆的提示,仅保存在本机',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('主密码提示语(可选)'),
+                  hintText: L10n.tr('帮助回忆的提示,仅保存在本机'),
+                  border: const OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 16),
@@ -253,18 +260,18 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
                 TextFormField(
                   controller: _accountPasswordController,
                   obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: '账户密码',
-                    helperText: '用于同步云端继承密钥',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: L10n.tr('账户密码'),
+                    helperText: L10n.tr('用于同步云端继承密钥'),
+                    border: const OutlineInputBorder(),
                   ),
                   validator: (value) => (value == null || value.isEmpty)
-                      ? '请输入账户密码以同步云端'
+                      ? L10n.tr('请输入账户密码以同步云端')
                       : null,
                 ),
               ] else ...[
                 Text(
-                  '未登录,云端继承密钥不会更新',
+                  L10n.tr('未登录,云端继承密钥不会更新'),
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontSize: 13,
@@ -280,7 +287,7 @@ class _ChangeMasterPasswordPageState extends State<ChangeMasterPasswordPage> {
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('确认修改'),
+                    : Text(L10n.tr('确认修改')),
               ),
             ],
           ),

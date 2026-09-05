@@ -1,5 +1,7 @@
 # 托孤 (bequest) — 架构与设计决策
 
+> English: [architecture.en.md](architecture.en.md)
+
 > 交接第一手资料。本文档记录稳定的架构决策，进度类信息见 `docs/progress.md`。
 
 ## 产品定位

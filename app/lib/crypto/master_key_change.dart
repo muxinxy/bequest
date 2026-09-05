@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 import '../sync/local_vault.dart';
 import 'key_derivation.dart';
@@ -54,7 +55,7 @@ Future<({bool ok, String? error, String? newMk})> changeMasterPasswordLocal({
   }
   final oldMk = await store.readMasterKey();
   if (oldMk == null || oldMk.isEmpty) {
-    return (ok: false, error: '未找到当前主密钥,无法修改', newMk: null);
+    return (ok: false, error: L10n.tr('未找到当前主密钥,无法修改'), newMk: null);
   }
   final trimmedNew = newPassword.trim();
   if (trimmedNew.isEmpty) {

@@ -1,5 +1,25 @@
 # 更新日志
 
+> **English**: This changelog is maintained in Chinese by the project's maintainers and records per-release feature/security/fix notes. For an English overview of the project see [README.en.md](README.en.md); English architecture docs live in [docs/architecture.en.md](docs/architecture.en.md).
+
+## v0.9.0 (2026-09-05)
+
+### 新增
+- **多数据库支持**：后端可选 SQLite(默认) / MySQL(含 MariaDB) / PostgreSQL——`DB_DRIVER` + `DB_DSN` 或 `DB_HOST/PORT/USER/PASS/NAME` 选择;迁移脚本按方言分目录(`migrations/{sqlite,mysql,postgres}`,各 25 个),启动自动执行;PostgreSQL 经自定义驱动层把 `?` 占位符重写为 `$N`,应用层 SQL 零改动
+- **界面与文档国际化(中/英)**：
+  - App 全界面中英文:设置 → 语言 切换;36 个页面 + 公共组件 + crypto/仓储层全部接入 L10n(约 900 处调用,873 条字典)
+  - 服务端 API 错误消息按请求 `Accept-Language` 返回英文(约 90 条消息字典)
+  - 用户语言偏好(迁移 025 `users.lang` + `GET/PUT /settings/lang`):提醒邮件/继承邮件/重置邮件等调度器内容对英文用户发英文
+  - Web 管理后台与继承人领取页(admin.html/claim.html)双语切换(中文/English,记忆选择)
+  - 文档双版:README.en.md、app/server README 中英、docs/architecture.en.md、server/README-deploy.en.md
+
+### 优化
+- App 请求头统一携带 `Accept-Language`,服务端错误消息跟随界面语言
+- 数据库备份子命令说明:仅 SQLite 支持 `VACUUM INTO`,MySQL/PG 建议 `mysqldump`/`pg_dump`
+
+### 说明
+- 多数据库为新增能力,默认行为不变(SQLite 零配置);升级现有部署只需替换二进制,新增迁移 025 会自动执行
+
 ## v0.8.8 (2026-08-28)
 
 ### 新增

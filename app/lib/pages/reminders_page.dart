@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../models/reminder.dart';
 import '../storage/secure_store.dart';
 import '../utils/time_format.dart';
@@ -41,7 +42,7 @@ class _RemindersPageState extends State<RemindersPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+          .showSnackBar(SnackBar(content: Text(L10n.tr('加载失败,请检查网络后重试'))));
       Navigator.of(context).pop();
     }
   }
@@ -84,7 +85,9 @@ class _RemindersPageState extends State<RemindersPage> {
             children: [
               Text(_typeLabel(reminder.type)),
               const SizedBox(height: 12),
-              Text(reminder.body.isEmpty ? '(无内容)' : reminder.body),
+              Text(
+                reminder.body.isEmpty ? L10n.tr('(无内容)') : reminder.body,
+              ),
               if (reminder.createdAt != null) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -101,7 +104,7 @@ class _RemindersPageState extends State<RemindersPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('关闭'),
+            child: Text(L10n.tr('关闭')),
           ),
         ],
       ),
@@ -131,18 +134,18 @@ class _RemindersPageState extends State<RemindersPage> {
         ];
       });
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('已全部标记为已读')));
+          .showSnackBar(SnackBar(content: Text(L10n.tr('已全部标记为已读'))));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('操作失败,请稍后重试')));
+          .showSnackBar(SnackBar(content: Text(L10n.tr('操作失败,请稍后重试'))));
     }
   }
 
   static String _typeLabel(String type) => switch (type) {
-        'expiry' => '到期提醒',
-        'escalation' => '继承升级',
-        'inheritance' => '继承事件',
+        'expiry' => L10n.tr('到期提醒'),
+        'escalation' => L10n.tr('继承升级'),
+        'inheritance' => L10n.tr('继承事件'),
         _ => type,
       };
 
@@ -162,20 +165,22 @@ class _RemindersPageState extends State<RemindersPage> {
         : _reminders.where((r) => r.type == _filter).toList(growable: false);
     return Scaffold(
       appBar: AppBar(
-        title: Text(unreadCount == 0 ? '提醒' : '提醒($unreadCount)'),
+        title: Text(
+          unreadCount == 0 ? L10n.tr('提醒') : L10n.trp('提醒({n})', {'n': '$unreadCount'}),
+        ),
         actions: [
           if (unreadCount > 0)
             TextButton.icon(
               onPressed: _markAllRead,
               icon: const Icon(Icons.done_all, size: 18),
-              label: const Text('全部已读'),
+              label: Text(L10n.tr('全部已读')),
             ),
         ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _reminders.isEmpty
-              ? const Center(child: Text('暂无提醒'))
+              ? Center(child: Text(L10n.tr('暂无提醒')))
               : Column(
                   children: [
                     // 分类筛选:全部 / 到期提醒 / 继承升级 / 继承事件
@@ -186,10 +191,10 @@ class _RemindersPageState extends State<RemindersPage> {
                       child: Row(
                         children: [
                           for (final (value, label) in [
-                            (null, '全部'),
-                            ('expiry', '到期提醒'),
-                            ('escalation', '继承升级'),
-                            ('inheritance', '继承事件'),
+                            (null, L10n.tr('全部')),
+                            ('expiry', L10n.tr('到期提醒')),
+                            ('escalation', L10n.tr('继承升级')),
+                            ('inheritance', L10n.tr('继承事件')),
                           ])
                             Padding(
                               padding: const EdgeInsets.only(right: 8),
@@ -205,7 +210,7 @@ class _RemindersPageState extends State<RemindersPage> {
                     ),
                     Expanded(
                       child: visible.isEmpty
-                          ? const Center(child: Text('该分类暂无提醒'))
+                          ? Center(child: Text(L10n.tr('该分类暂无提醒')))
                           : ListView.separated(
                               itemCount: visible.length,
                               separatorBuilder: (_, _) =>

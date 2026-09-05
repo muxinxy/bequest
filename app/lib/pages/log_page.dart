@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../platform/file_share.dart';
 import '../repository/local_asset_repository.dart';
 import '../repository/offline_asset_repository.dart';
@@ -80,7 +81,13 @@ class _LogPageState extends State<LogPage> {
           _loading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(logs.isEmpty ? '请先登录或联网' : '离线,显示缓存数据')),
+          SnackBar(
+            content: Text(
+              logs.isEmpty
+                  ? L10n.tr('请先登录或联网')
+                  : L10n.tr('离线,显示缓存数据'),
+            ),
+          ),
         );
         return;
       }
@@ -107,14 +114,14 @@ class _LogPageState extends State<LogPage> {
           _loading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('离线,显示缓存数据')),
+          SnackBar(content: Text(L10n.tr('离线,显示缓存数据'))),
         );
       }
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+          .showSnackBar(SnackBar(content: Text(L10n.tr('加载失败,请检查网络后重试'))));
     }
   }
 
@@ -163,10 +170,18 @@ class _LogPageState extends State<LogPage> {
           kind: 'audit',
           month: _month ?? '',
         );
-        final ok = await shareTextFile(_exportFileName, csv, '操作记录导出(CSV)');
+        final ok = await shareTextFile(
+          _exportFileName,
+          csv,
+          L10n.tr('操作记录导出(CSV)'),
+        );
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(ok ? '导出成功' : '导出失败,请检查网络后重试')),
+          SnackBar(
+            content: Text(
+              ok ? L10n.tr('导出成功') : L10n.tr('导出失败,请检查网络后重试'),
+            ),
+          ),
         );
         return;
       } catch (_) {
@@ -176,17 +191,21 @@ class _LogPageState extends State<LogPage> {
     if (_logs.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('暂无数据可导出')));
+          .showSnackBar(SnackBar(content: Text(L10n.tr('暂无数据可导出'))));
       return;
     }
     final ok = await shareTextFile(
       _exportFileName,
       _logsToCsv(_logs),
-      '操作记录导出(CSV)',
+      L10n.tr('操作记录导出(CSV)'),
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(ok ? '导出成功' : '导出失败,请检查网络后重试')),
+      SnackBar(
+        content: Text(
+          ok ? L10n.tr('导出成功') : L10n.tr('导出失败,请检查网络后重试'),
+        ),
+      ),
     );
   }
 
@@ -194,10 +213,10 @@ class _LogPageState extends State<LogPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('操作记录'),
+        title: Text(L10n.tr('操作记录')),
         actions: [
           IconButton(
-            tooltip: '导出 CSV',
+            tooltip: L10n.tr('导出 CSV'),
             icon: const Icon(Icons.file_download_outlined),
             onPressed: _export,
           ),
@@ -213,14 +232,14 @@ class _LogPageState extends State<LogPage> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     initialValue: _year ?? '全部',
-                    decoration: const InputDecoration(
-                      labelText: '年份',
+                    decoration: InputDecoration(
+                      labelText: L10n.tr('年份'),
                       isDense: true,
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
                     ),
                     items: [
                       for (final y in _years)
-                        DropdownMenuItem(value: y, child: Text(y)),
+                        DropdownMenuItem(value: y, child: Text(L10n.tr(y))),
                     ],
                     onChanged: (v) {
                       setState(() {
@@ -235,14 +254,14 @@ class _LogPageState extends State<LogPage> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     initialValue: _month ?? '全部',
-                    decoration: const InputDecoration(
-                      labelText: '月份',
+                    decoration: InputDecoration(
+                      labelText: L10n.tr('月份'),
                       isDense: true,
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
                     ),
                     items: [
                       for (final m in _monthOptions)
-                        DropdownMenuItem(value: m, child: Text(m)),
+                        DropdownMenuItem(value: m, child: Text(L10n.tr(m))),
                     ],
                     onChanged: (v) {
                       setState(() => _month = v == '全部' ? null : v);
@@ -258,7 +277,7 @@ class _LogPageState extends State<LogPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _logs.isEmpty
-                    ? const Center(child: Text('暂无操作记录'))
+                    ? Center(child: Text(L10n.tr('暂无操作记录')))
                     : RefreshIndicator(
                         onRefresh: _load,
                         child: ListView.separated(
@@ -306,7 +325,7 @@ class _KindTag extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
-        isAudit ? '审计' : '应用',
+        isAudit ? L10n.tr('审计') : L10n.tr('应用'),
         style: TextStyle(fontSize: 11, color: color),
       ),
     );

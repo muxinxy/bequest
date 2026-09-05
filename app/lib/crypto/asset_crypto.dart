@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:pointycastle/export.dart';
 
+import '../l10n/app_l10n.dart';
+
 const int _nonceLength = 12;
 const int _macLength = 16;
 
@@ -27,7 +29,7 @@ String encryptSensitiveData(String plainJson, String masterKeyB64) {
 String decryptSensitiveData(String blobB64, String masterKeyB64) {
   final blob = base64.decode(blobB64);
   if (blob.length < _nonceLength + _macLength) {
-    throw const FormatException('密文数据格式错误');
+    throw FormatException(L10n.tr('密文数据格式错误'));
   }
   final nonce = Uint8List.sublistView(blob, 0, _nonceLength);
   final ciphertext = Uint8List.sublistView(blob, _nonceLength);

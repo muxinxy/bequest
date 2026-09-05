@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../crypto/recover_keys.dart';
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 import 'forgot_password_page.dart';
 import 'home_page.dart';
@@ -115,7 +116,7 @@ class _LoginPageState extends State<LoginPage> {
       final api = await _api;
       if (!await _checkServer(api)) {
         if (!mounted) return;
-        _showError('无法连接服务器,请检查网络或服务器地址');
+        _showError(L10n.tr('无法连接服务器,请检查网络或服务器地址'));
         return;
       }
       final response = await api.login(
@@ -172,13 +173,13 @@ class _LoginPageState extends State<LoginPage> {
           } else {
             // 用户未完成重置:清凭据留在登录页。
             await _store.clearAll();
-            if (mounted) _showError('未恢复加密密钥,请重新登录重试');
+            if (mounted) _showError(L10n.tr('未恢复加密密钥,请重新登录重试'));
           }
           return;
         }
         if (choice != _RecoveryChoice.recovered) {
           if (!mounted) return;
-          _showError('未恢复加密密钥,请重新登录重试');
+          _showError(L10n.tr('未恢复加密密钥,请重新登录重试'));
           await _store.clearAll();
           return;
         }
@@ -193,7 +194,7 @@ class _LoginPageState extends State<LoginPage> {
       if (e.message.contains('验证码')) await _refreshCaptcha();
       _showError(e.message);
     } catch (_) {
-      _showError('登录失败,请检查网络后重试');
+      _showError(L10n.tr('登录失败,请检查网络后重试'));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -264,13 +265,13 @@ class _LoginPageState extends State<LoginPage> {
               const Icon(Icons.shield_outlined, size: 72),
               const SizedBox(height: 8),
               Text(
-                '托孤',
+                L10n.tr('托孤'),
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
               const SizedBox(height: 4),
               Text(
-                '数字资产安全传承',
+                L10n.tr('数字资产安全传承'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -279,24 +280,24 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 40),
               TextFormField(
                 controller: _usernameController,
-                decoration: const InputDecoration(
-                  labelText: '用户名/邮箱',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('用户名/邮箱'),
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) => (value == null || value.trim().isEmpty)
-                    ? '请输入用户名或邮箱'
+                    ? L10n.tr('请输入用户名或邮箱')
                     : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _passwordController,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '密码',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('密码'),
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) => (value == null || value.isEmpty)
-                    ? '请输入密码'
+                    ? L10n.tr('请输入密码')
                     : null,
               ),
               const SizedBox(height: 16),
@@ -305,14 +306,14 @@ class _LoginPageState extends State<LoginPage> {
                   Expanded(
                     child: TextFormField(
                       controller: _captchaController,
-                      decoration: const InputDecoration(
-                        labelText: '验证码',
-                        hintText: '输入图形验证码',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: L10n.tr('验证码'),
+                        hintText: L10n.tr('输入图形验证码'),
+                        border: const OutlineInputBorder(),
                       ),
                       validator: (value) =>
                           (value == null || value.trim().isEmpty)
-                              ? '请输入验证码'
+                              ? L10n.tr('请输入验证码')
                               : null,
                     ),
                   ),
@@ -333,7 +334,9 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       child: _captchaSvg.isEmpty
                           ? Text(
-                              _captchaFailed ? '加载失败,点此重试' : '加载中',
+                              _captchaFailed
+                                  ? L10n.tr('加载失败,点此重试')
+                                  : L10n.tr('加载中'),
                               style: const TextStyle(fontSize: 13),
                             )
                           : SvgPicture.string(
@@ -361,7 +364,7 @@ class _LoginPageState extends State<LoginPage> {
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('登录'),
+                    : Text(L10n.tr('登录')),
               ),
               const SizedBox(height: 12),
               TextButton(
@@ -374,7 +377,7 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         );
                       },
-                child: const Text('还没有账号?去注册'),
+                child: Text(L10n.tr('还没有账号?去注册')),
               ),
               TextButton(
                 onPressed: _submitting
@@ -387,7 +390,7 @@ class _LoginPageState extends State<LoginPage> {
                         );
                       },
                 child: Text(
-                  '忘记密码',
+                  L10n.tr('忘记密码'),
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -404,7 +407,7 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         );
                       },
-                child: const Text('进入本地模式'),
+                child: Text(L10n.tr('进入本地模式')),
               ),
               const SizedBox(height: 8),
               TextButton(
@@ -420,7 +423,7 @@ class _LoginPageState extends State<LoginPage> {
                         await _refreshCaptcha();
                       },
                 child: Text(
-                  '服务器设置',
+                  L10n.tr('服务器设置'),
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -461,33 +464,33 @@ class _RecoveryDialogState extends State<_RecoveryDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('恢复加密密钥'),
+      title: Text(L10n.tr('恢复加密密钥')),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          const Text(
-            '此设备首次登录,请输入主密码恢复本机加密密钥(资产凭据不受影响)。',
-            style: TextStyle(fontSize: 13),
+          Text(
+            L10n.tr('此设备首次登录,请输入主密码恢复本机加密密钥(资产凭据不受影响)。'),
+            style: const TextStyle(fontSize: 13),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _masterController,
             obscureText: true,
             autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '主密码',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: L10n.tr('主密码'),
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _accountController,
             obscureText: true,
-            decoration: const InputDecoration(
-              labelText: '账户密码(用于更新继承交接密钥)',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: L10n.tr('账户密码(用于更新继承交接密钥)'),
+              border: const OutlineInputBorder(),
             ),
           ),
         ],
@@ -497,7 +500,7 @@ class _RecoveryDialogState extends State<_RecoveryDialog> {
         TextButton(
           onPressed: () => Navigator.of(context).pop((master: '', account: '', reset: true)),
           child: Text(
-                  '忘记主密码?去重置',
+                  L10n.tr('忘记主密码?去重置'),
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -505,14 +508,15 @@ class _RecoveryDialogState extends State<_RecoveryDialog> {
         ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(L10n.tr('取消')),
         ),
         FilledButton(
           onPressed: () {
             // 校验失败不关闭弹框:主密码为空直接提示并留在对话框内。
             if (_masterController.text.isEmpty) {
-              ScaffoldMessenger.of(context)
-                  .showSnackBar(const SnackBar(content: Text('请输入主密码')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(L10n.tr('请输入主密码'))),
+              );
               return;
             }
             Navigator.of(context).pop((
@@ -521,7 +525,7 @@ class _RecoveryDialogState extends State<_RecoveryDialog> {
               reset: false,
             ));
           },
-          child: const Text('恢复'),
+          child: Text(L10n.tr('恢复')),
         ),
       ],
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../repository/asset_repository.dart';
 import '../repository/local_asset_repository.dart';
 import '../repository/offline_asset_repository.dart';
@@ -56,7 +57,7 @@ class _RecycleBinPageState extends State<RecycleBinPage> {
       if (!mounted) return;
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('加载失败,请检查网络后重试')),
+        SnackBar(content: Text(L10n.tr('加载失败,请检查网络后重试'))),
       );
     }
   }
@@ -72,7 +73,7 @@ class _RecycleBinPageState extends State<RecycleBinPage> {
       );
       await _load();
     } catch (_) {
-      _showError('恢复失败,请检查网络后重试');
+      _showError(L10n.tr('恢复失败,请检查网络后重试'));
     }
   }
 
@@ -80,16 +81,20 @@ class _RecycleBinPageState extends State<RecycleBinPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('永久删除'),
-        content: Text('永久删除「${item['name']}」?此操作不可恢复。'),
+        title: Text(L10n.tr('永久删除')),
+        content: Text(
+          L10n.trp('永久删除「{name}」?此操作不可恢复。', {
+            'name': '${item['name']}',
+          }),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除'),
+            child: Text(L10n.tr('删除')),
           ),
         ],
       ),
@@ -105,7 +110,7 @@ class _RecycleBinPageState extends State<RecycleBinPage> {
       );
       await _load();
     } catch (_) {
-      _showError('删除失败,请检查网络后重试');
+      _showError(L10n.tr('删除失败,请检查网络后重试'));
     }
   }
 
@@ -113,16 +118,16 @@ class _RecycleBinPageState extends State<RecycleBinPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('清空回收站'),
-        content: const Text('回收站内所有项目将被永久删除,此操作不可恢复。'),
+        title: Text(L10n.tr('清空回收站')),
+        content: Text(L10n.tr('回收站内所有项目将被永久删除,此操作不可恢复。')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('清空'),
+            child: Text(L10n.tr('清空')),
           ),
         ],
       ),
@@ -134,7 +139,7 @@ class _RecycleBinPageState extends State<RecycleBinPage> {
       await (await ApiConfig.client()).emptyRecycleBin(jwt);
       await _load();
     } catch (_) {
-      _showError('清空失败,请检查网络后重试');
+      _showError(L10n.tr('清空失败,请检查网络后重试'));
     }
   }
 
@@ -147,11 +152,11 @@ class _RecycleBinPageState extends State<RecycleBinPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('回收站'),
+        title: Text(L10n.tr('回收站')),
         actions: [
           if (!_isLocal && !_isOffline && _items.isNotEmpty)
             IconButton(
-              tooltip: '清空回收站',
+              tooltip: L10n.tr('清空回收站'),
               icon: const Icon(Icons.delete_sweep_outlined),
               onPressed: _empty,
             ),
@@ -160,11 +165,11 @@ class _RecycleBinPageState extends State<RecycleBinPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _isLocal
-              ? const Center(child: Text('本地模式删除即永久删除,无回收站'))
+              ? Center(child: Text(L10n.tr('本地模式删除即永久删除,无回收站')))
               : _isOffline
-                  ? const Center(child: Text('离线模式无法访问回收站'))
+                  ? Center(child: Text(L10n.tr('离线模式无法访问回收站')))
                   : _items.isEmpty
-                      ? const Center(child: Text('回收站为空'))
+                      ? Center(child: Text(L10n.tr('回收站为空')))
                       : ListView.separated(
                           itemCount: _items.length,
                           separatorBuilder: (_, _) => const Divider(height: 1),
@@ -186,19 +191,22 @@ class _RecycleBinPageState extends State<RecycleBinPage> {
       title: Text(name),
       subtitle: Text(
         isAsset
-            ? '原分组:${category ?? '未分组'} · 删除于 $deletedAt'
-            : '删除于 $deletedAt',
+            ? L10n.trp('原分组:{category} · 删除于 {time}', {
+                'category': category ?? L10n.tr('未分组'),
+                'time': deletedAt,
+              })
+            : L10n.trp('删除于 {time}', {'time': deletedAt}),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            tooltip: '恢复',
+            tooltip: L10n.tr('恢复'),
             icon: const Icon(Icons.restore),
             onPressed: () => _restore(item),
           ),
           IconButton(
-            tooltip: '永久删除',
+            tooltip: L10n.tr('永久删除'),
             icon: const Icon(Icons.delete_forever_outlined),
             onPressed: () => _purge(item),
           ),

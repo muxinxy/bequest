@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 
 /// 邮箱发件设置页:调用后端 /api/v1/settings/smtp 保存自定义 SMTP 凭据。
@@ -45,7 +46,7 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
   Future<void> _load() async {
     final jwt = await _store.readJwt();
     if (jwt == null) {
-      _snack('登录状态已失效,请重新登录');
+      _snack(L10n.tr('登录状态已失效,请重新登录'));
       setState(() => _loading = false);
       return;
     }
@@ -74,7 +75,7 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
     if (_saving) return;
     final jwt = await _store.readJwt();
     if (jwt == null) {
-      _snack('登录状态已失效,请重新登录');
+      _snack(L10n.tr('登录状态已失效,请重新登录'));
       return;
     }
     final body = <String, dynamic>{
@@ -91,9 +92,9 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
       await (await _api)
           .updateSmtpSettings(jwt, body)
           .timeout(const Duration(seconds: 5));
-      _snack('已保存');
+      _snack(L10n.tr('已保存'));
     } catch (_) {
-      _snack('保存失败,请检查网络后重试');
+      _snack(L10n.tr('保存失败,请检查网络后重试'));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -103,16 +104,16 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('清除发件设置'),
-        content: const Text('确定清除自定义 SMTP 设置吗?之后将恢复使用托孤服务端发送。'),
+        title: Text(L10n.tr('清除发件设置')),
+        content: Text(L10n.tr('确定清除自定义 SMTP 设置吗?之后将恢复使用托孤服务端发送。')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('清除'),
+            child: Text(L10n.tr('清除')),
           ),
         ],
       ),
@@ -120,7 +121,7 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
     if (confirmed != true) return;
     final jwt = await _store.readJwt();
     if (jwt == null) {
-      _snack('登录状态已失效,请重新登录');
+      _snack(L10n.tr('登录状态已失效,请重新登录'));
       return;
     }
     try {
@@ -136,9 +137,9 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
         _fromAddr.clear();
         _enabled = false;
       });
-      _snack('已清除发件设置');
+      _snack(L10n.tr('已清除发件设置'));
     } catch (_) {
-      _snack('清除失败,请检查网络后重试');
+      _snack(L10n.tr('清除失败,请检查网络后重试'));
     }
   }
 
@@ -150,41 +151,48 @@ class _SmtpSettingsPageState extends State<SmtpSettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('邮箱发件设置')),
+      appBar: AppBar(title: Text(L10n.tr('邮箱发件设置'))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 Text(
-                  '提醒邮件将优先使用您自己的邮箱发送,不经过托孤服务端'
-                  '(服务端仅加密保存凭据)。',
+                  L10n.tr(
+                    '提醒邮件将优先使用您自己的邮箱发送,不经过托孤服务端'
+                    '(服务端仅加密保存凭据)。',
+                  ),
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontSize: 12,
                   ),
                 ),
                 const SizedBox(height: 16),
-                _field(_host, '服务器', hint: 'smtp.example.com'),
-                _field(_port, '端口', hint: '587'),
-                _field(_user, '用户名'),
-                _field(_password, '密码', hint: '留空表示保持现有密码', obscure: true),
-                _field(_fromAddr, '发件地址', hint: 'noreply@example.com'),
+                _field(_host, L10n.tr('服务器'), hint: 'smtp.example.com'),
+                _field(_port, L10n.tr('端口'), hint: '587'),
+                _field(_user, L10n.tr('用户名')),
+                _field(
+                  _password,
+                  L10n.tr('密码'),
+                  hint: L10n.tr('留空表示保持现有密码'),
+                  obscure: true,
+                ),
+                _field(_fromAddr, L10n.tr('发件地址'), hint: 'noreply@example.com'),
                 SwitchListTile(
-                  title: const Text('启用'),
-                  subtitle: const Text('启用自定义邮箱发送提醒邮件'),
+                  title: Text(L10n.tr('启用')),
+                  subtitle: Text(L10n.tr('启用自定义邮箱发送提醒邮件')),
                   value: _enabled,
                   onChanged: (value) => setState(() => _enabled = value),
                 ),
                 const SizedBox(height: 8),
                 FilledButton(
                   onPressed: _saving ? null : _save,
-                  child: Text(_saving ? '保存中...' : '保存'),
+                  child: Text(_saving ? L10n.tr('保存中...') : L10n.tr('保存')),
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton(
                   onPressed: _saving ? null : _clear,
-                  child: const Text('清除设置'),
+                  child: Text(L10n.tr('清除设置')),
                 ),
               ],
             ),

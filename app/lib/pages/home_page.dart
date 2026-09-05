@@ -14,6 +14,7 @@ import '../repository/offline_asset_repository.dart';
 import '../repository/repository_factory.dart';
 import '../storage/secure_store.dart';
 import '../sync/backup.dart';
+import '../l10n/app_l10n.dart';
 import '../main.dart';
 import '../widgets/ladder_dropdown.dart';
 import '../widgets/text_save_dialog.dart';
@@ -173,13 +174,19 @@ class _HomePageState extends State<HomePage> {
         if (!mounted) return;
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('服务器连接失败,已加载本地缓存(仅可查看/导出)')),
+          SnackBar(content: Text(L10n.tr('服务器连接失败,已加载本地缓存(仅可查看/导出)'))),
         );
         return;
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(isLocal ? '加载失败,本地数据读取异常' : '加载失败,请检查网络后重试')),
+        SnackBar(
+          content: Text(
+            isLocal
+                ? L10n.tr('加载失败,本地数据读取异常')
+                : L10n.tr('加载失败,请检查网络后重试'),
+          ),
+        ),
       );
       setState(() => _loading = false);
     } catch (_) {
@@ -189,14 +196,20 @@ class _HomePageState extends State<HomePage> {
         if (!mounted) return;
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('服务器连接失败,已加载本地缓存(仅可查看/导出)')),
+          SnackBar(content: Text(L10n.tr('服务器连接失败,已加载本地缓存(仅可查看/导出)'))),
         );
         return;
       }
       if (!mounted) return;
       // 本地模式读取加密库失败与网络无关,提示语要准确。
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(isLocal ? '加载失败,本地数据读取异常' : '加载失败,请检查网络后重试')),
+        SnackBar(
+          content: Text(
+            isLocal
+                ? L10n.tr('加载失败,本地数据读取异常')
+                : L10n.tr('加载失败,请检查网络后重试'),
+          ),
+        ),
       );
       setState(() => _loading = false);
     }
@@ -277,7 +290,7 @@ class _HomePageState extends State<HomePage> {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('服务器已恢复,数据已更新为最新')));
+          ).showSnackBar(SnackBar(content: Text(L10n.tr('服务器已恢复,数据已更新为最新'))));
         }
       } catch (_) {
         // 服务器仍不可达,继续等待。
@@ -310,7 +323,7 @@ class _HomePageState extends State<HomePage> {
         if (!mounted) return;
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('未登录,无法刷新')));
+        ).showSnackBar(SnackBar(content: Text(L10n.tr('未登录,无法刷新'))));
         return;
       }
       final mk = await _store.readMasterKey() ?? '';
@@ -342,14 +355,14 @@ class _HomePageState extends State<HomePage> {
       });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('数据已刷新为最新')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('数据已刷新为最新'))));
     } catch (_) {
       _offlineMode = true;
       if (!mounted) return;
       setState(() => _refreshing = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('刷新失败,服务器仍不可达')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('刷新失败,服务器仍不可达'))));
     }
   }
 
@@ -360,18 +373,16 @@ class _HomePageState extends State<HomePage> {
     final keep = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('退出登录'),
-        content: const Text(
-          '是否保留本机加密密钥?\n\n保留:下次登录免恢复,本机加密数据仍可离线读取。\n清除:适用于公共电脑,下次登录需重新恢复密钥。',
-        ),
+        title: Text(L10n.tr('退出登录')),
+        content: Text(L10n.tr('是否保留本机加密密钥?\n\n保留:下次登录免恢复,本机加密数据仍可离线读取。\n清除:适用于公共电脑,下次登录需重新恢复密钥。')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('保留密钥'),
+            child: Text(L10n.tr('保留密钥')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('清除密钥'),
+            child: Text(L10n.tr('清除密钥')),
           ),
         ],
       ),
@@ -431,7 +442,7 @@ class _HomePageState extends State<HomePage> {
           useServerCount ? c.assetCount : (counts[c.id] ?? 0),
           c.createdAt,
         ),
-      ('', '未分组', uncategorized, null),
+      ('', L10n.tr('未分组'), uncategorized, null),
     ];
     final query = _search.trim().toLowerCase();
     final filtered = query.isEmpty
@@ -552,21 +563,21 @@ class _HomePageState extends State<HomePage> {
     final choice = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('新增'),
+        title: Text(L10n.tr('新增')),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.of(context).pop('asset'),
-            child: const ListTile(
-              leading: Icon(Icons.inventory_2_outlined),
-              title: Text('新增资产'),
-              subtitle: Text('默认未分组'),
+            child: ListTile(
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: Text(L10n.tr('新增资产')),
+              subtitle: Text(L10n.tr('默认未分组')),
             ),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.of(context).pop('group'),
-            child: const ListTile(
-              leading: Icon(Icons.create_new_folder_outlined),
-              title: Text('新增分组'),
+            child: ListTile(
+              leading: const Icon(Icons.create_new_folder_outlined),
+              title: Text(L10n.tr('新增分组')),
             ),
           ),
         ],
@@ -596,10 +607,10 @@ class _HomePageState extends State<HomePage> {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => TextSaveDialog(
-        title: '新增分组',
-        labelText: '分组名称',
-        conflictMessage: '分组已存在',
-        failMessage: '新增分组失败,请检查网络后重试',
+        title: L10n.tr('新增分组'),
+        labelText: L10n.tr('分组名称'),
+        conflictMessage: L10n.tr('分组已存在'),
+        failMessage: L10n.tr('新增分组失败,请检查网络后重试'),
         onSave: (n) async => repo.createCategory(n),
       ),
     );
@@ -613,16 +624,20 @@ class _HomePageState extends State<HomePage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除分组'),
-        content: Text('确定删除所选 ${_selectedGroupIds.length} 个分组?分组内资产将变为未分组。'),
+        title: Text(L10n.tr('删除分组')),
+        content: Text(
+          L10n.trp('确定删除所选 {n} 个分组?分组内资产将变为未分组。', {
+            'n': '${_selectedGroupIds.length}',
+          }),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除'),
+            child: Text(L10n.tr('删除')),
           ),
         ],
       ),
@@ -651,7 +666,7 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('删除失败,请检查网络后重试')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('删除失败,请检查网络后重试'))));
     }
   }
 
@@ -661,7 +676,7 @@ class _HomePageState extends State<HomePage> {
     if (repo == null) return;
     final jwt = await SecureStore().readJwt();
     if (jwt == null || jwt.isEmpty) {
-      _showSnack('未登录,无法设置继承人');
+      _showSnack(L10n.tr('未登录,无法设置继承人'));
       return;
     }
     List<Map<String, dynamic>> inheritors;
@@ -678,14 +693,14 @@ class _HomePageState extends State<HomePage> {
           masterKeyB64: mk,
         ).listInheritors();
         ladders = const [];
-        _showSnack('离线,显示缓存继承人(绑定需联网)');
+        _showSnack(L10n.tr('离线,显示缓存继承人(绑定需联网)'));
       } catch (_) {
-        _showSnack('加载继承人失败,请检查网络后重试');
+        _showSnack(L10n.tr('加载继承人失败,请检查网络后重试'));
         return;
       }
     }
     if (inheritors.isEmpty) {
-      _showSnack('暂无继承人,请先在设置中创建');
+      _showSnack(L10n.tr('暂无继承人,请先在设置中创建'));
       return;
     }
     // 过滤出真实分组(跳过未分组 id='')。
@@ -696,62 +711,63 @@ class _HomePageState extends State<HomePage> {
     if (!mounted) return;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('设置继承人'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 300),
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      for (final i in inheritors)
-                        CheckboxListTile(
-                          value: selected.contains('${i['id']}'),
-                          onChanged: (v) => setDialogState(() {
-                            if (v == true) {
-                              selected.add('${i['id']}');
-                            } else {
-                              selected.remove('${i['id']}');
-                            }
-                          }),
-                          title: Text('${i['name']}'),
-                          subtitle: Text(
-                            '${i['email'] == null || (i['email'] as String).isEmpty ? '' : '${i['email']} · '}'
-                            '${i['category_count'] ?? 0} 个分组 · ${i['asset_count'] ?? 0} 个资产',
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text(L10n.tr('设置继承人')),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 300),
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final i in inheritors)
+                          CheckboxListTile(
+                            value: selected.contains('${i['id']}'),
+                            onChanged: (v) => setDialogState(() {
+                              if (v == true) {
+                                selected.add('${i['id']}');
+                              } else {
+                                selected.remove('${i['id']}');
+                              }
+                            }),
+                            title: Text('${i['name']}'),
+                            subtitle: Text(
+                              '${i['email'] == null || (i['email'] as String).isEmpty ? '' : '${i['email']} · '}'
+                              '${L10n.trp('{n} 个分组', {'n': '${i['category_count'] ?? 0}'})} · '
+                              '${L10n.trp('{n} 个资产', {'n': '${i['asset_count'] ?? 0}'})}',
+                            ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
+                const SizedBox(height: 8),
+                LadderDropdown(
+                  ladders: ladders,
+                  value: ladderId,
+                  onChanged: (v) => setDialogState(() => ladderId = v),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text(L10n.tr('取消')),
               ),
-              const SizedBox(height: 8),
-              LadderDropdown(
-                ladders: ladders,
-                value: ladderId,
-                onChanged: (v) => setDialogState(() => ladderId = v),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: Text(L10n.tr('绑定')),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('绑定'),
-            ),
-          ],
         ),
-      ),
     );
     if (ok != true || !mounted) return;
     if (selected.isEmpty) {
-      _showSnack('请至少选择一名继承人');
+      _showSnack(L10n.tr('请至少选择一名继承人'));
       return;
     }
     try {
@@ -766,7 +782,7 @@ class _HomePageState extends State<HomePage> {
         }
       }
     } catch (_) {
-      _showSnack('绑定失败');
+      _showSnack(L10n.tr('绑定失败'));
       return;
     }
     if (!mounted) return;
@@ -776,7 +792,12 @@ class _HomePageState extends State<HomePage> {
     });
     // 刷新分组列表,让继承人名字立即更新。
     await _load();
-    _showSnack('已为 ${groupIds.length} 个分组设置 ${selected.length} 名继承人');
+    _showSnack(
+      L10n.trp('已为 {n} 个分组设置 {m} 名继承人', {
+        'n': '${groupIds.length}',
+        'm': '${selected.length}',
+      }),
+    );
   }
 
   void _showSnack(String message) {
@@ -819,7 +840,7 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(width: 4),
             Text(
-              isMember ? '会员' : '免费',
+              isMember ? L10n.tr('会员') : L10n.tr('免费'),
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -840,26 +861,28 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       appBar: AppBar(
         title: _multiSelect
-            ? Text('已选 ${_selectedGroupIds.length} 项')
-            : const Text('托孤'),
+            ? Text(
+                L10n.trp('已选 {n} 项', {'n': '${_selectedGroupIds.length}'}),
+              )
+            : Text(L10n.tr('托孤')),
         actions: _multiSelect
             ? [
                 IconButton(
-                  tooltip: '设置继承人',
+                  tooltip: L10n.tr('设置继承人'),
                   icon: const Icon(Icons.family_restroom),
                   onPressed: _selectedGroupIds.isEmpty
                       ? null
                       : _setSelectedGroupInheritors,
                 ),
                 IconButton(
-                  tooltip: '删除',
+                  tooltip: L10n.tr('删除'),
                   icon: const Icon(Icons.delete_outline),
                   onPressed: _selectedGroupIds.isEmpty
                       ? null
                       : _deleteSelectedGroups,
                 ),
                 IconButton(
-                  tooltip: '取消',
+                  tooltip: L10n.tr('取消'),
                   icon: const Icon(Icons.close),
                   onPressed: () => setState(() {
                     _multiSelect = false;
@@ -869,7 +892,7 @@ class _HomePageState extends State<HomePage> {
               ]
             : [
                 IconButton(
-                  tooltip: '总览',
+                  tooltip: L10n.tr('总览'),
                   icon: const Icon(Icons.insert_chart_outlined),
                   onPressed: () => _openPage(const OverviewPage()),
                 ),
@@ -878,7 +901,7 @@ class _HomePageState extends State<HomePage> {
                   child: _tierBadge(),
                 ),
                 IconButton(
-                  tooltip: '提醒',
+                  tooltip: L10n.tr('提醒'),
                   icon: Badge.count(
                     count: _unreadReminders,
                     isLabelVisible: _unreadReminders > 0,
@@ -887,7 +910,7 @@ class _HomePageState extends State<HomePage> {
                   onPressed: () => _openPage(const RemindersPage()),
                 ),
                 IconButton(
-                  tooltip: '回收站',
+                  tooltip: L10n.tr('回收站'),
                   icon: const Icon(Icons.restore_from_trash),
                   onPressed: () {
                     final repo = _repo;
@@ -897,12 +920,12 @@ class _HomePageState extends State<HomePage> {
                 ),
                 if (_lockEnabled)
                   IconButton(
-                    tooltip: '锁定',
+                    tooltip: L10n.tr('锁定'),
                     icon: const Icon(Icons.lock_outline),
                     onPressed: LockGate.lockNow,
                   ),
                 IconButton(
-                  tooltip: '设置',
+                  tooltip: L10n.tr('设置'),
                   icon: const Icon(Icons.settings_outlined),
                   onPressed: () {
                     final repo = _repo;
@@ -912,14 +935,16 @@ class _HomePageState extends State<HomePage> {
                 ),
                 TextButton(
                   onPressed: _isLocal ? _exitLocal : _logout,
-                  child: Text(_isLocal ? '退出本地模式' : '退出登录'),
+                  child: Text(
+                    _isLocal ? L10n.tr('退出本地模式') : L10n.tr('退出登录'),
+                  ),
                 ),
               ],
       ),
       floatingActionButton: _offlineMode || _multiSelect
           ? null // 离线只读 / 多选模式:不提供添加入口。
           : FloatingActionButton(
-              tooltip: '添加',
+              tooltip: L10n.tr('添加'),
               onPressed: _fabMenu,
               child: const Icon(Icons.add),
             ),
@@ -937,10 +962,10 @@ class _HomePageState extends State<HomePage> {
                     ),
                     child: Row(
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Text(
-                            '离线模式:服务器不可达,已加载本地缓存,仅可查看与导出',
-                            style: TextStyle(
+                            L10n.tr('离线模式:服务器不可达,已加载本地缓存,仅可查看与导出'),
+                            style: const TextStyle(
                               fontSize: 12,
                               color: Colors.orange,
                             ),
@@ -948,7 +973,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                         TextButton(
                           onPressed: () => _attemptRefreshFromOffline(),
-                          child: const Text('刷新'),
+                          child: Text(L10n.tr('刷新')),
                         ),
                       ],
                     ),
@@ -962,13 +987,13 @@ class _HomePageState extends State<HomePage> {
                           controller: _searchController,
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.search),
-                            hintText: '搜索分组或资产名称',
+                            hintText: L10n.tr('搜索分组或资产名称'),
                             isDense: true,
                             border: const OutlineInputBorder(),
                             suffixIcon: _search.isEmpty
                                 ? null
                                 : IconButton(
-                                    tooltip: '清空',
+                                    tooltip: L10n.tr('清空'),
                                     icon: const Icon(Icons.clear),
                                     onPressed: () {
                                       _searchController.clear();
@@ -990,7 +1015,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                       IconButton(
-                        tooltip: '排序',
+                        tooltip: L10n.tr('排序'),
                         icon: const Icon(Icons.sort),
                         onPressed: () => _pickSort(),
                       ),
@@ -1051,7 +1076,7 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 16),
             Text(
-              noSearch ? '欢迎使用托孤' : '没有匹配的分组',
+              noSearch ? L10n.tr('欢迎使用托孤') : L10n.tr('没有匹配的分组'),
               style: Theme.of(context).textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
@@ -1059,8 +1084,8 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 8),
               Text(
                 firstTime
-                    ? '点击右下角 + 创建你的第一个分组,或直接添加资产'
-                    : '点击右下角 + 新增分组',
+                    ? L10n.tr('点击右下角 + 创建你的第一个分组,或直接添加资产')
+                    : L10n.tr('点击右下角 + 新增分组'),
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -1077,11 +1102,15 @@ class _HomePageState extends State<HomePage> {
   Future<void> _pickSort() async {    final choice = await showDialog<_GroupSort>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('分组排序'),
+        title: Text(L10n.tr('分组排序')),
         children: [
-          _sortOption(_GroupSort.name, '按名称', '名称'),
-          _sortOption(_GroupSort.count, '按数量', '数量'),
-          _sortOption(_GroupSort.created, '按创建时间', '创建时间'),
+          _sortOption(_GroupSort.name, L10n.tr('按名称'), L10n.tr('名称')),
+          _sortOption(_GroupSort.count, L10n.tr('按数量'), L10n.tr('数量')),
+          _sortOption(
+            _GroupSort.created,
+            L10n.tr('按创建时间'),
+            L10n.tr('创建时间'),
+          ),
         ],
       ),
     );
@@ -1156,10 +1185,12 @@ class _HomePageState extends State<HomePage> {
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('$count 个资产'),
+              Text(L10n.trp('{n} 个资产', {'n': '$count'})),
               if (inheritors.isNotEmpty)
                 Text(
-                  '继承人:${inheritors.join('、')}',
+                  L10n.trp('继承人:{names}', {
+                    'names': inheritors.join('、'),
+                  }),
                   style: const TextStyle(fontSize: 12),
                 ),
             ],

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:dartssh2/dartssh2.dart';
 
+import '../l10n/app_l10n.dart';
 import 'sync_provider.dart';
 
 /// SFTP 同步提供方。基于 dartssh2(socket 协议,仅桌面/移动端,web 不支持)。
@@ -44,7 +45,7 @@ class SftpSyncProvider implements SyncProvider {
       await authenticated.future.timeout(Duration(seconds: timeoutSeconds));
     } catch (_) {
       ssh.close();
-      throw SyncException('SFTP 认证失败或超时');
+      throw SyncException(L10n.tr('SFTP 认证失败或超时'));
     }
     final sftp = await ssh.sftp();
     return (ssh, sftp);
@@ -127,7 +128,7 @@ class SftpSyncProvider implements SyncProvider {
     } on SyncException {
       rethrow;
     } catch (e) {
-      throw SyncException('SFTP 连接失败: $e');
+      throw SyncException(L10n.trp('SFTP 连接失败: {err}', {'err': '$e'}));
     }
   }
 

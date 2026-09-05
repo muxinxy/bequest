@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 import '../utils/validation.dart';
 
@@ -103,7 +104,7 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('加载失败,请检查网络后重试')),
+        SnackBar(content: Text(L10n.tr('加载失败,请检查网络后重试'))),
       );
       Navigator.of(context).pop();
     }
@@ -149,7 +150,11 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
         .toList();
     for (final u in urls) {
       if (!u.startsWith('https://') || !domains.any(u.contains)) {
-        _show('$label webhook 地址需为 https:// 开头且含平台域名');
+        _show(
+          L10n.trp('{label} webhook 地址需为 https:// 开头且含平台域名', {
+            'label': label,
+          }),
+        );
         return null;
       }
     }
@@ -167,25 +172,37 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
         .toList();
     for (final e in emails) {
       if (!isValidEmail(e)) {
-        _show('邮箱格式不正确');
+        _show(L10n.tr('邮箱格式不正确'));
         return;
       }
     }
     for (final p in phones) {
       if (!isValidPhone(p)) {
-        _show('手机号格式不正确(5-20 位数字)');
+        _show(L10n.tr('手机号格式不正确(5-20 位数字)'));
         return;
       }
     }
     if (phones.isNotEmpty && !_isMember) {
-      _show('手机号功能为会员专属');
+      _show(L10n.tr('手机号功能为会员专属'));
       return;
     }
-    final wecom = _validatedUrls(_wecomControllers, '企业微信', ['qyapi.weixin.qq.com']);
+    final wecom = _validatedUrls(
+      _wecomControllers,
+      L10n.tr('企业微信'),
+      const ['qyapi.weixin.qq.com'],
+    );
     if (wecom == null) return;
-    final dingtalk = _validatedUrls(_dingtalkControllers, '钉钉', ['oapi.dingtalk.com']);
+    final dingtalk = _validatedUrls(
+      _dingtalkControllers,
+      L10n.tr('钉钉'),
+      const ['oapi.dingtalk.com'],
+    );
     if (dingtalk == null) return;
-    final feishu = _validatedUrls(_feishuControllers, '飞书', ['open.feishu.cn', 'open.larksuite.com']);
+    final feishu = _validatedUrls(
+      _feishuControllers,
+      L10n.tr('飞书'),
+      const ['open.feishu.cn', 'open.larksuite.com'],
+    );
     if (feishu == null) return;
     setState(() => _saving = true);
     try {
@@ -199,11 +216,11 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
         dingtalk: dingtalk,
         feishu: feishu,
       );
-      _show('已保存');
+      _show(L10n.tr('已保存'));
     } on ApiException catch (e) {
       _show(e.message);
     } catch (_) {
-      _show('保存失败,请检查网络后重试');
+      _show(L10n.tr('保存失败,请检查网络后重试'));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -217,7 +234,7 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('通知渠道')),
+      appBar: AppBar(title: Text(L10n.tr('通知渠道'))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -225,8 +242,8 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
               children: [
                 _sectionHeader(
                   context,
-                  '邮箱',
-                  '未设置邮箱时默认使用注册邮箱',
+                  L10n.tr('邮箱'),
+                  L10n.tr('未设置邮箱时默认使用注册邮箱'),
                   onAdd: _emailControllers.length >= 3 ? null : _addEmail,
                 ),
                 for (var i = 0; i < _emailControllers.length; i++)
@@ -239,8 +256,10 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
                 const SizedBox(height: 24),
                 _sectionHeader(
                   context,
-                  '手机号',
-                  _isMember ? '最多 3 个,用于短信提醒' : '会员专属,升级后可用',
+                  L10n.tr('手机号'),
+                  _isMember
+                      ? L10n.tr('最多 3 个,用于短信提醒')
+                      : L10n.tr('会员专属,升级后可用'),
                   onAdd: _isMember && _phoneControllers.length < 3
                       ? _addPhone
                       : null,
@@ -257,26 +276,26 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
                 const SizedBox(height: 24),
                 _imSection(
                   context,
-                  '企业微信群机器人',
-                  '在企业微信建群 → 群机器人 → 复制 webhook 地址',
+                  L10n.tr('企业微信群机器人'),
+                  L10n.tr('在企业微信建群 → 群机器人 → 复制 webhook 地址'),
                   _wecomControllers,
                 ),
                 _imSection(
                   context,
-                  '钉钉机器人',
-                  '在钉钉群添加自定义机器人 → 复制 webhook 地址',
+                  L10n.tr('钉钉机器人'),
+                  L10n.tr('在钉钉群添加自定义机器人 → 复制 webhook 地址'),
                   _dingtalkControllers,
                 ),
                 _imSection(
                   context,
-                  '飞书机器人',
-                  '在飞书群添加自定义机器人 → 复制 webhook 地址',
+                  L10n.tr('飞书机器人'),
+                  L10n.tr('在飞书群添加自定义机器人 → 复制 webhook 地址'),
                   _feishuControllers,
                 ),
                 const SizedBox(height: 32),
                 FilledButton(
                   onPressed: _saving ? null : _save,
-                  child: Text(_saving ? '保存中...' : '保存'),
+                  child: Text(_saving ? L10n.tr('保存中...') : L10n.tr('保存')),
                 ),
               ],
             ),
@@ -352,7 +371,7 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          '会员专属',
+                          L10n.tr('会员专属'),
                           style: TextStyle(
                             fontSize: 11,
                             color: Theme.of(
@@ -376,7 +395,7 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
             ),
           ),
           IconButton(
-            tooltip: '添加$title',
+            tooltip: L10n.trp('添加{title}', {'title': title}),
             icon: Icon(Icons.add_circle_outline, color: color),
             onPressed: onAdd,
           ),
@@ -410,7 +429,7 @@ class _NotificationChannelsPageState extends State<NotificationChannelsPage> {
             ),
           ),
           IconButton(
-            tooltip: '删除',
+            tooltip: L10n.tr('删除'),
             icon: const Icon(Icons.delete_outline),
             onPressed: onDelete,
           ),

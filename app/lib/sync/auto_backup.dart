@@ -26,7 +26,7 @@ const kAutoBackupIntervals = <String, Duration?>{
   'on_exit': null,
 };
 const kAutoBackupIntervalLabels = <String, String>{
-  'off': '关闭',
+  'off': '不自动备份',
   '1m': '每 1 分钟',
   '5m': '每 5 分钟',
   '15m': '每 15 分钟',

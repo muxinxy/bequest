@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../api/api_client.dart';
 import '../crypto/asset_crypto.dart';
 import '../crypto/key_derivation.dart';
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 import 'local_vault.dart';
 
@@ -60,7 +61,10 @@ Future<String> buildBackupJson(
   final local = vault ?? LocalVault();
   final cached = await local.loadVault(masterKeyB64);
   if (cached != null) return cached;
-  if (jwt == null || api == null) throw StateError('无本地数据且未登录');
+  // 同步设置页会把这句抛给用户看,文案按当前语言生成。
+  if (jwt == null || api == null) {
+    throw StateError(L10n.tr('无本地数据且未登录'));
+  }
   final backup = await _fetchAll(jwt, api);
   try {
     await local.saveVault(backup, masterKeyB64);

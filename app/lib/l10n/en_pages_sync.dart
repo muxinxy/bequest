@@ -1,0 +1,97 @@
+﻿// English dictionary fragment (module: sync). Populated by the page-conversion agents.
+const Map<String, String> enPagesSync = {
+  // ---- sync settings page ----
+  '同步设置': 'Sync Settings',
+  '无需登录:备份与恢复均在本地完成,数据只存在您的存储中;同步配置仅保存在本机,不会发送到托孤服务端,备份使用主密钥加密。':
+      'No login needed: backup and restore happen locally, and your data only lives in your own storage. Sync configuration stays on this device and is never sent to the Bequest server; backups are encrypted with your master key.',
+  'FTP/SFTP 为 socket 协议,仅桌面/移动端支持;Web 端仅可用 WebDAV/S3。':
+      'FTP/SFTP are socket protocols supported only on desktop/mobile; on the web only WebDAV/S3 are available.',
+  '服务器地址': 'Server address',
+  '用户名': 'Username',
+  '基础路径': 'Base path',
+  '端点': 'Endpoint',
+  'Bucket': 'Bucket',
+  'Region': 'Region',
+  '前缀': 'Prefix',
+  '加密': 'Encryption',
+  '禁用(明文)': 'Disabled (plaintext)',
+  '显式 SSL/TLS(FTPES)': 'Explicit SSL/TLS (FTPES)',
+  '隐式 SSL/TLS(FTPS)': 'Implicit SSL/TLS (FTPS)',
+  '自动备份': 'Auto backup',
+  '按间隔自动备份到上述存储;备份文件名自动生成(bequest_用户名_设备名_时间戳)。':
+      'Automatically backs up to the storage above on a schedule; the file name is auto-generated (bequest_username_device_timestamp).',
+  '备份间隔': 'Backup interval',
+  '最大备份数量': 'Max backups kept',
+  '{n} 份(超出自动删除最旧)': '{n} copies (oldest auto-deleted when exceeded)',
+  '最近备份: {name}': 'Last backup: {name}',
+  '测试连接': 'Test connection',
+  '立即备份': 'Back up now',
+  '从备份恢复': 'Restore from backup',
+  '保存配置': 'Save configuration',
+  '配置已保存': 'Configuration saved',
+  '请先填写完整的连接信息': 'Please fill in the complete connection details first',
+  '连接成功': 'Connection successful',
+  '连接失败': 'Connection failed',
+  '请先注册并设置主密码': 'Please register and set a master password first',
+  '请先设置主密码': 'Please set a master password first',
+  '备份完成: {name}': 'Backup complete: {name}',
+  '同步失败,请检查网络与连接配置': 'Sync failed, please check your network and connection configuration',
+  '没有找到备份文件': 'No backup files found',
+  '已删除 {name}': 'Deleted {name}',
+  '删除失败': 'Delete failed',
+  '恢复完成: 成功 {ok} 失败 {fail}': 'Restore complete: {ok} succeeded, {fail} failed',
+  '未找到主密钥,无法写入本机': 'No master key found, cannot write to this device',
+  '已恢复,可在本地模式使用': 'Restored, usable in local mode now',
+  '恢复失败: {err}': 'Restore failed: {err}',
+  '输入备份文件名': 'Enter backup file name',
+  '备份文件名': 'Backup file name',
+  '如 bequest_alice_device_20260812_100000.json':
+      'e.g. bequest_alice_device_20260812_100000.json',
+  '请输入备份文件名': 'Please enter a backup file name',
+  '备份文件({count})': 'Backup files ({count})',
+  '手动输入文件名': 'Enter the file name manually',
+  '未知时间': 'Unknown time',
+  // ---- auto-backup interval labels (auto_backup.dart) ----
+  // 注:off 的源文案用"不自动备份"而非"关闭",避免与通用"关闭"(Close)
+  // 撞键导致全局英文串义(见 sync_settings_page 使用处)。
+  '不自动备份': 'Off',
+  '每 1 分钟': 'Every 1 minute',
+  '每 5 分钟': 'Every 5 minutes',
+  '每 15 分钟': 'Every 15 minutes',
+  '每 30 分钟': 'Every 30 minutes',
+  '每 1 小时': 'Every 1 hour',
+  '每 2 小时': 'Every 2 hours',
+  '每 6 小时': 'Every 6 hours',
+  '每 12 小时': 'Every 12 hours',
+  '每 24 小时': 'Every 24 hours',
+  '打开应用时': 'When the app opens',
+  '退出应用时': 'When the app exits',
+  // ---- sync-layer user-visible messages (thrown at use site in lib/sync) ----
+  '服务器不支持文件列表(PROPFIND),请直接填写文件名恢复':
+      'The server does not support file listing (PROPFIND); enter the file name manually to restore',
+  '列出备份失败: HTTP {code}': 'Failed to list backups: HTTP {code}',
+  '列出备份失败: {err}': 'Failed to list backups: {err}',
+  '解密失败(主密码错误或数据被篡改)':
+      'Decryption failed (wrong master password or tampered data)',
+  '服务器返回空列表(PROPFIND 未启用),请直接填写文件名恢复':
+      'The server returned an empty list (PROPFIND not enabled); enter the file name manually to restore',
+  '服务器未返回文件属性(PROPFIND 异常),请直接填写文件名恢复':
+      'The server did not return file properties (PROPFIND issue); enter the file name manually to restore',
+  '认证失败: HTTP {code},请检查用户名/密码':
+      'Authentication failed: HTTP {code}, check your username/password',
+  '连接失败: {err}': 'Connection failed: {err}',
+  '创建备份目录失败: HTTP {code} {path}':
+      'Failed to create the backup directory: HTTP {code} {path}',
+  'S3 连接失败: HTTP {code}': 'S3 connection failed: HTTP {code}',
+  'S3 连接失败: {err}': 'S3 connection failed: {err}',
+  'FTP 连接失败({host}:{port})': 'FTP connection failed ({host}:{port})',
+  'FTP 连接失败: {err}': 'FTP connection failed: {err}',
+  'FTP 上传失败: {name}': 'FTP upload failed: {name}',
+  'FTP 下载失败: {name}': 'FTP download failed: {name}',
+  'SFTP 认证失败或超时': 'SFTP authentication failed or timed out',
+  'SFTP 连接失败: {err}': 'SFTP connection failed: {err}',
+  '上传 {name} 失败: {err}': 'Failed to upload {name}: {err}',
+  '下载 {name} 失败: {err}': 'Failed to download {name}: {err}',
+  '删除备份失败: HTTP {code}': 'Failed to delete backup: HTTP {code}',
+  '无本地数据且未登录': 'No local data and not logged in',
+};

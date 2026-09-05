@@ -1,5 +1,7 @@
 ﻿# 托孤 (bequest) — 开发进度
 
+> **English**: This is an internal, Chinese-language development log (phases, current status, recent work items) used for handover between maintainers. Architecture decisions (English): [architecture.en.md](architecture.en.md). Project overview (English): [../README.en.md](../README.en.md).
+
 > 交接用：记录阶段划分、当前状态、最近完成事项。架构决策见 `docs/architecture.md`。
 
 ## 阶段划分

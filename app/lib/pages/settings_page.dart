@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../models/asset.dart';
 import '../models/entitlements.dart';
 import '../repository/asset_repository.dart';
@@ -49,9 +50,9 @@ class _SettingsPageState extends State<SettingsPage> {
     );
     if (!context.mounted) return;
     if (assets.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('暂无资产可导出')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(L10n.tr('暂无资产可导出'))),
+      );
       return;
     }
     // 导出方式:JSON(可选加密) / Excel(会员)。
@@ -64,14 +65,14 @@ class _SettingsPageState extends State<SettingsPage> {
     final choice = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('导出资产'),
+        title: Text(L10n.tr('导出资产')),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.of(context).pop('json'),
-            child: const ListTile(
-              leading: Icon(Icons.code),
-              title: Text('JSON(可加密)'),
-              subtitle: Text('通用格式,可再导入'),
+            child: ListTile(
+              leading: const Icon(Icons.code),
+              title: Text(L10n.tr('JSON(可加密)')),
+              subtitle: Text(L10n.tr('通用格式,可再导入')),
             ),
           ),
           SimpleDialogOption(
@@ -80,9 +81,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 : Navigator.of(context).pop('excel_locked'),
             child: ListTile(
               leading: const Icon(Icons.table_chart),
-              title: const Text('Excel 表格'),
+              title: Text(L10n.tr('Excel 表格')),
               subtitle: Text(
-                ent.exportExcel ? '表格查看,适合打印分享' : '会员权益,升级后可用',
+                ent.exportExcel
+                    ? L10n.tr('表格查看,适合打印分享')
+                    : L10n.tr('会员权益,升级后可用'),
               ),
             ),
           ),
@@ -92,7 +95,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (choice == null || !context.mounted) return;
     if (choice == 'excel_locked') {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Excel 导出为会员权益,请联系管理员开通会员')),
+        SnackBar(content: Text(L10n.tr('Excel 导出为会员权益,请联系管理员开通会员'))),
       );
       return;
     }
@@ -108,16 +111,16 @@ class _SettingsPageState extends State<SettingsPage> {
     final encrypt = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('导出资产'),
-        content: const Text('是否用主密码加密导出文件?\n加密后文件无法直接查看,导入时需验证主密码。'),
+        title: Text(L10n.tr('导出资产')),
+        content: Text(L10n.tr('是否用主密码加密导出文件?\n加密后文件无法直接查看,导入时需验证主密码。')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('不加密'),
+            child: Text(L10n.tr('不加密')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('加密'),
+            child: Text(L10n.tr('加密')),
           ),
         ],
       ),
@@ -144,12 +147,12 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _importFlow(BuildContext context) async {
     // 用官方 file_selector(无自定义 Gradle 插件,CI 可编译;file_picker 有 KGP 兼容问题)。
-    const typeGroup = XTypeGroup(
-      label: 'JSON / 加密导出文件',
+    final typeGroup = XTypeGroup(
+      label: L10n.tr('JSON / 加密导出文件'),
       extensions: ['json', 'beq'],
     );
     try {
-      final file = await openFile(acceptedTypeGroups: const [typeGroup]);
+      final file = await openFile(acceptedTypeGroups: [typeGroup]);
       if (file == null) return;
       final text = await file.readAsString();
       if (!context.mounted) return;
@@ -157,16 +160,16 @@ class _SettingsPageState extends State<SettingsPage> {
       final overwrite = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('导入资产'),
-          content: const Text('是否覆盖现有资产?\n覆盖会先删除当前全部资产再导入(不可恢复)。选择"否"则追加导入。'),
+          title: Text(L10n.tr('导入资产')),
+          content: Text(L10n.tr('是否覆盖现有资产?\n覆盖会先删除当前全部资产再导入(不可恢复)。选择"否"则追加导入。')),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('追加'),
+              child: Text(L10n.tr('追加')),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('覆盖'),
+              child: Text(L10n.tr('覆盖')),
             ),
           ],
         ),
@@ -185,7 +188,7 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('读取文件失败')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('读取文件失败'))));
     }
   }
 
@@ -196,106 +199,111 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('设置')),
+      appBar: AppBar(title: Text(L10n.tr('设置'))),
       body: ListView(
         children: [
-          _section(context, '数据'),
+          _section(context, L10n.tr('数据')),
           _entry(
             Icons.file_download_outlined,
-            '导入资产',
+            L10n.tr('导入资产'),
             () => _importFlow(context),
           ),
           _entry(
             Icons.file_upload_outlined,
-            '导出资产',
+            L10n.tr('导出资产'),
             () => _exportFlow(context),
           ),
-          _section(context, '提醒'),
+          _section(context, L10n.tr('提醒')),
           _entry(
             Icons.event_note_outlined,
-            '提醒模板',
+            L10n.tr('提醒模板'),
             () => _push(context, const ReminderTemplatesPage()),
             enabled: !_isLocal,
           ),
           _entry(
             Icons.format_list_numbered_outlined,
-            '触发阶梯',
+            L10n.tr('触发阶梯'),
             () => _push(context, const TriggerLaddersPage()),
             enabled: !_isLocal,
           ),
           _entry(
             Icons.flag_outlined,
-            '继承',
+            L10n.tr('继承'),
             () => _push(context, const InheritancePage()),
             enabled: !_isLocal,
           ),
           _entry(
             Icons.people_outline,
-            '继承人',
+            L10n.tr('继承人'),
             () => _push(context, InheritorsPage(repository: widget.repository)),
             enabled: !_isLocal,
           ),
-          _section(context, '账户与安全'),
+          _section(context, L10n.tr('账户与安全')),
           _entry(
             Icons.person_outline,
-            '账号信息',
+            L10n.tr('账号信息'),
             () => _push(context, const AccountSettingsPage()),
             enabled: !_isLocal,
           ),
           _entry(
             Icons.notifications_outlined,
-            '通知渠道',
+            L10n.tr('通知渠道'),
             () => _push(context, const NotificationChannelsPage()),
             enabled: !_isLocal,
           ),
           _entry(
             Icons.lock_outline,
-            '应用锁',
+            L10n.tr('应用锁'),
             () => _push(context, const AppLockSetupPage()),
           ),
           _entry(
             Icons.password_outlined,
-            '修改主密码',
+            L10n.tr('修改主密码'),
             () => _push(context, const ChangeMasterPasswordPage()),
           ),
           _entry(
             Icons.restart_alt_outlined,
-            '重置主密码(忘记)',
+            L10n.tr('重置主密码(忘记)'),
             () => _push(context, const ResetMasterPasswordPage()),
             enabled: !_isLocal,
           ),
           _entry(
             Icons.mail_outline,
-            '邮箱发件设置',
+            L10n.tr('邮箱发件设置'),
             () => _push(context, const SmtpSettingsPage()),
             enabled: !_isLocal,
           ),
           _entry(
             Icons.article_outlined,
-            '操作记录',
+            L10n.tr('操作记录'),
             () => _push(context, const LogPage()),
           ),
-          _section(context, '外观'),
+          _section(context, L10n.tr('外观')),
           _entry(
             Icons.palette_outlined,
-            '主题',
+            L10n.tr('主题'),
             _pickTheme,
           ),
-          _section(context, '存储与服务器'),
+          _entry(
+            Icons.language_outlined,
+            L10n.tr('语言'),
+            _pickLanguage,
+          ),
+          _section(context, L10n.tr('存储与服务器')),
           _entry(
             Icons.dns_outlined,
-            '服务器地址',
+            L10n.tr('服务器地址'),
             () => _push(context, const ServerSettingsPage()),
           ),
           _entry(
             Icons.sync_outlined,
-            '同步设置',
+            L10n.tr('同步设置'),
             () => _push(context, const SyncSettingsPage()),
           ),
-          _section(context, '关于'),
+          _section(context, L10n.tr('关于')),
           _entry(
             Icons.info_outline,
-            '关于本应用',
+            L10n.tr('关于本应用'),
             () => _push(context, const AboutPage()),
           ),
           const SizedBox(height: 24),
@@ -331,6 +339,57 @@ class _SettingsPageState extends State<SettingsPage> {
     onTap: enabled ? onTap : null,
   );
 
+  /// 语言选择:简体中文 / English。
+  Future<void> _pickLanguage() async {
+    final current = await _store.readLocale() ?? 'zh';
+    if (!mounted) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('语言 / Language'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop('zh'),
+            child: Row(
+              children: [
+                const Icon(Icons.translate),
+                const SizedBox(width: 12),
+                Text('简体中文'),
+                if (current == 'zh') ...[
+                  const Spacer(),
+                  Icon(
+                    Icons.check,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop('en'),
+            child: Row(
+              children: [
+                const Icon(Icons.translate),
+                const SizedBox(width: 12),
+                const Text('English'),
+                if (current == 'en') ...[
+                  const Spacer(),
+                  Icon(
+                    Icons.check,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || choice == current) return;
+    await _store.saveLocale(choice);
+    BequestApp.notifyLocaleChanged();
+  }
+
   /// 主题选择:浅色 / 深色 / 跟随系统。
   Future<void> _pickTheme() async {
     final current = await _store.readThemeMode() ?? 'system';
@@ -338,11 +397,11 @@ class _SettingsPageState extends State<SettingsPage> {
     final choice = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('主题'),
+        title: Text(L10n.tr('主题')),
         children: [
-          _themeOption('system', '跟随系统', current),
-          _themeOption('light', '浅色', current),
-          _themeOption('dark', '深色', current),
+          _themeOption('system', L10n.tr('跟随系统'), current),
+          _themeOption('light', L10n.tr('浅色'), current),
+          _themeOption('dark', L10n.tr('深色'), current),
         ],
       ),
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../l10n/app_l10n.dart';
 import '../models/trigger_ladder.dart';
 
 /// 加载触发阶梯;失败(本地模式/离线/网络)返回空列表,不报错。
@@ -11,6 +12,17 @@ Future<List<TriggerLadder>> loadTriggerLadders(ApiClient api, String jwt) async 
   } catch (_) {
     return const [];
   }
+}
+
+/// 天数展示文本本地化:源串为模型 getter 输出(如 "未设置" / "30/60/90 天")。
+/// 返回已按当前语言渲染的完整文案。
+String ladderDaysLabel(String zh) {
+  if (zh == '未设置') return L10n.tr('未设置');
+  final m = RegExp(r'^(.*?)\s*天$').firstMatch(zh);
+  if (m != null) {
+    return L10n.trp('{days} 天', {'days': m.group(1)!});
+  }
+  return L10n.trp('{days} 天', {'days': zh});
 }
 
 /// 触发阶梯下拉:全局(默认) + 自定义阶梯。
@@ -33,16 +45,19 @@ class LadderDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
       initialValue: value == null ? 'global' : '$value',
-      decoration: InputDecoration(labelText: label),
+      decoration: InputDecoration(labelText: L10n.tr(label)),
       items: [
-        const DropdownMenuItem<String>(
+        DropdownMenuItem<String>(
           value: 'global',
-          child: Text('全局(默认)'),
+          child: Text(L10n.tr('全局(默认)')),
         ),
         for (final l in ladders.where((l) => !l.isGlobal))
           DropdownMenuItem<String>(
             value: '${l.id}',
-            child: Text('${l.name}(${l.daysLabel})', overflow: TextOverflow.ellipsis),
+            child: Text(
+              '${l.name}(${ladderDaysLabel(l.daysLabel)})',
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
       ],
       onChanged: (v) => onChanged(v == 'global' ? null : int.tryParse(v ?? '')),
@@ -61,7 +76,7 @@ Future<(bool, int?)> pickLadderDialog(
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setDialogState) => AlertDialog(
-        title: const Text('修改触发阶梯'),
+        title: Text(L10n.tr('修改触发阶梯')),
         content: LadderDropdown(
           ladders: ladders,
           value: selected,
@@ -70,11 +85,11 @@ Future<(bool, int?)> pickLadderDialog(
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('确定'),
+            child: Text(L10n.tr('确定')),
           ),
         ],
       ),

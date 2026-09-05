@@ -5,6 +5,7 @@ import 'package:local_auth/local_auth.dart';
 import '../crypto/key_derivation.dart';
 import '../crypto/pattern_hash.dart';
 import '../crypto/pin_hash.dart';
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 import '../widgets/pattern_lock.dart';
 
@@ -87,14 +88,16 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
 
   /// 设备可用类别的中文描述;iris 归入人脸类。
   String _supportText() {
-    if (_availableBiometrics.isEmpty) return '当前设备未检测到生物识别';
+    if (_availableBiometrics.isEmpty) {
+      return L10n.tr('当前设备未检测到生物识别');
+    }
     final labels = _availableBiometrics.map((b) => switch (b) {
-      BiometricType.fingerprint => '指纹',
-      BiometricType.face || BiometricType.iris => '人脸',
-      BiometricType.strong => '指纹(强)',
-      BiometricType.weak => '弱生物识别',
+      BiometricType.fingerprint => L10n.tr('指纹'),
+      BiometricType.face || BiometricType.iris => L10n.tr('人脸'),
+      BiometricType.strong => L10n.tr('指纹(强)'),
+      BiometricType.weak => L10n.tr('弱生物识别'),
     }).toSet();
-    return '当前设备支持: ${labels.join(' / ')}';
+    return L10n.trp('当前设备支持: {labels}', {'labels': labels.join(' / ')});
   }
 
   /// 设置/重设图案:两次绘制一致才写入(此时只存内存,点保存落盘)。
@@ -113,14 +116,16 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
 
   String? _validatePin(String? value) {
     if (value == null || value.isEmpty) return null; // 留空 = 不改动现有 PIN
-    if (!RegExp(r'^\d{4,6}$').hasMatch(value)) return 'PIN 码需为 4-6 位数字';
+    if (!RegExp(r'^\d{4,6}$').hasMatch(value)) {
+      return L10n.tr('PIN 码需为 4-6 位数字');
+    }
     return null;
   }
 
   String? _validateConfirm(String? value) {
     if (_pinController.text.isEmpty) return null;
     if (value == null || value.isEmpty || value != _pinController.text) {
-      return '两次输入的 PIN 码不一致';
+      return L10n.tr('两次输入的 PIN 码不一致');
     }
     return null;
   }
@@ -134,11 +139,11 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
         await _store.clearAppLock();
         if (!mounted) return;
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('应用锁已关闭')));
+            .showSnackBar(SnackBar(content: Text(L10n.tr('应用锁已关闭'))));
         Navigator.of(context).pop();
       } catch (_) {
         if (!mounted) return;
-        _snack('保存失败,请重试');
+        _snack(L10n.tr('保存失败,请重试'));
       } finally {
         if (mounted) setState(() => _saving = false);
       }
@@ -148,14 +153,14 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
     if (_timing == 'timeout') {
       timeout = int.tryParse(_timeoutController.text);
       if (timeout == null || timeout < 1 || timeout > 60) {
-        _snack('超时时间需为 1-60 分钟');
+        _snack(L10n.tr('超时时间需为 1-60 分钟'));
         return;
       }
     }
     final patternSet = (_hasPattern && !_clearPattern) || _newPattern != null;
     final pinSet = _hasPin || _pinController.text.isNotEmpty;
     if (!_biometricEnabled && !patternSet && !pinSet) {
-      _snack('请至少设置一种解锁方式(PIN 或图案)');
+      _snack(L10n.tr('请至少设置一种解锁方式(PIN 或图案)'));
       return;
     }
     setState(() => _saving = true);
@@ -182,11 +187,11 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('应用锁已启用')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('应用锁已启用'))));
       Navigator.of(context).pop();
     } catch (_) {
       if (!mounted) return;
-      _snack('保存失败,请重试');
+      _snack(L10n.tr('保存失败,请重试'));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -203,7 +208,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
   Widget build(BuildContext context) {
     final patternSet = (_hasPattern && !_clearPattern) || _newPattern != null;
     return Scaffold(
-      appBar: AppBar(title: const Text('应用锁')),
+      appBar: AppBar(title: Text(L10n.tr('应用锁'))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -213,9 +218,11 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
             children: [
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('启用应用锁'),
+                title: Text(L10n.tr('启用应用锁')),
                 subtitle: Text(
-                  _lockEnabled ? '锁定后需解锁方式验证' : '关闭后进入应用不锁定',
+                  _lockEnabled
+                      ? L10n.tr('锁定后需解锁方式验证')
+                      : L10n.tr('关闭后进入应用不锁定'),
                 ),
                 value: _lockEnabled,
                 onChanged: (value) =>
@@ -226,7 +233,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                    '开启后需设置至少一种解锁方式(PIN 或图案)。',
+                    L10n.tr('开启后需设置至少一种解锁方式(PIN 或图案)。'),
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -234,21 +241,21 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
                   ),
                 ),
               if (_lockEnabled) ...[
-              _sectionTitle('锁定时机'),
+              _sectionTitle(L10n.tr('锁定时机')),
               RadioGroup<String>(
                 groupValue: _timing,
                 onChanged: (value) => setState(() => _timing = value ?? 'exit'),
                 child: Column(
                   children: [
-                    const RadioListTile<String>(
+                    RadioListTile<String>(
                       value: 'exit',
-                      title: Text('退出时锁定'),
-                      subtitle: Text('应用进入后台立即锁定'),
+                      title: Text(L10n.tr('退出时锁定')),
+                      subtitle: Text(L10n.tr('应用进入后台立即锁定')),
                     ),
-                    const RadioListTile<String>(
+                    RadioListTile<String>(
                       value: 'timeout',
-                      title: Text('退出且超时锁定'),
-                      subtitle: Text('进入后台超过设定时间后锁定,期间回到前台不锁'),
+                      title: Text(L10n.tr('退出且超时锁定')),
+                      subtitle: Text(L10n.tr('进入后台超过设定时间后锁定,期间回到前台不锁')),
                     ),
                   ],
                 ),
@@ -257,7 +264,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Text('超时时间(分钟)'),
+                    Text(L10n.tr('超时时间(分钟)')),
                     const SizedBox(width: 12),
                     SizedBox(
                       width: 96,
@@ -275,12 +282,12 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
               ],
               const SizedBox(height: 8),
               const Divider(),
-              _sectionTitle('生物识别解锁'),
+              _sectionTitle(L10n.tr('生物识别解锁')),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('使用生物识别解锁'),
+                title: Text(L10n.tr('使用生物识别解锁')),
                 subtitle: _availableBiometrics.isEmpty
-                    ? const Text('当前设备未检测到生物识别')
+                    ? Text(L10n.tr('当前设备未检测到生物识别'))
                     : null,
                 value: _biometricEnabled,
                 onChanged: (value) =>
@@ -289,7 +296,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
-                  '系统弹窗由设备统一管理,会自动选择可用的人脸或指纹验证方式',
+                  L10n.tr('系统弹窗由设备统一管理,会自动选择可用的人脸或指纹验证方式'),
                   style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -310,7 +317,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                    '当前设备不支持生物识别,保存后将自动关闭',
+                    L10n.tr('当前设备不支持生物识别,保存后将自动关闭'),
                     style: TextStyle(
                       fontSize: 13,
                       color: Theme.of(context).colorScheme.error,
@@ -324,8 +331,8 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
                 keyboardType: TextInputType.number,
                 maxLength: 6,
                 decoration: InputDecoration(
-                  labelText: _hasPin ? '修改 PIN 码(可选)' : 'PIN 码',
-                  helperText: '4-6 位数字,用于解锁应用;留空表示不改动',
+                  labelText: _hasPin ? L10n.tr('修改 PIN 码(可选)') : L10n.tr('PIN 码'),
+                  helperText: L10n.tr('4-6 位数字,用于解锁应用;留空表示不改动'),
                   border: const OutlineInputBorder(),
                 ),
                 validator: _validatePin,
@@ -336,9 +343,9 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
                 obscureText: true,
                 keyboardType: TextInputType.number,
                 maxLength: 6,
-                decoration: const InputDecoration(
-                  labelText: '确认 PIN 码',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('确认 PIN 码'),
+                  border: const OutlineInputBorder(),
                 ),
                 validator: _validateConfirm,
               ),
@@ -347,16 +354,16 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
                 OutlinedButton.icon(
                   onPressed: _saving ? null : _setupPattern,
                   icon: const Icon(Icons.gesture),
-                  label: const Text('设置图案解锁'),
+                  label: Text(L10n.tr('设置图案解锁')),
                 )
               else ...[
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.gesture),
-                  title: const Text('图案解锁已设置'),
+                  title: Text(L10n.tr('图案解锁已设置')),
                   trailing: TextButton(
                     onPressed: _saving ? null : _setupPattern,
-                    child: const Text('重新设置'),
+                    child: Text(L10n.tr('重新设置')),
                   ),
                 ),
                 Align(
@@ -368,9 +375,9 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
                             _newPattern = null;
                             _clearPattern = true;
                           }),
-                    child: const Text(
-                      '清除图案',
-                      style: TextStyle(color: Colors.red),
+                    child: Text(
+                      L10n.tr('清除图案'),
+                      style: const TextStyle(color: Colors.red),
                     ),
                   ),
                 ),
@@ -385,7 +392,7 @@ class _AppLockSetupPageState extends State<AppLockSetupPage> {
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('保存'),
+                    : Text(L10n.tr('保存')),
               ),
             ],
           ),
@@ -421,7 +428,7 @@ class _PatternSetupDialogState extends State<_PatternSetupDialog> {
 
   void _onDraw(List<int> dots) {
     if (dots.length < 4) {
-      setState(() => _hint = '至少连接 4 个点,请重试');
+      setState(() => _hint = L10n.tr('至少连接 4 个点,请重试'));
       return;
     }
     if (_first == null) {
@@ -436,7 +443,7 @@ class _PatternSetupDialogState extends State<_PatternSetupDialog> {
     } else {
       setState(() {
         _first = null;
-        _hint = '两次图案不一致,请重新绘制';
+        _hint = L10n.tr('两次图案不一致,请重新绘制');
       });
     }
   }
@@ -444,7 +451,9 @@ class _PatternSetupDialogState extends State<_PatternSetupDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(_first == null ? '绘制图案' : '再次绘制确认'),
+      title: Text(
+        _first == null ? L10n.tr('绘制图案') : L10n.tr('再次绘制确认'),
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -469,7 +478,7 @@ class _PatternSetupDialogState extends State<_PatternSetupDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(L10n.tr('取消')),
         ),
       ],
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../models/trigger_ladder.dart';
 import '../repository/asset_repository.dart';
 import '../storage/secure_store.dart';
@@ -69,7 +70,7 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
       setState(() => _loading = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('加载失败,请检查网络后重试'))));
     }
   }
 
@@ -80,7 +81,7 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
         .toList();
     if (available.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('暂无可用继承人(请先在继承人管理中创建)')),
+        SnackBar(content: Text(L10n.tr('暂无可用继承人(请先在继承人管理中创建)'))),
       );
       return;
     }
@@ -90,13 +91,13 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('绑定继承人'),
+          title: Text(L10n.tr('绑定继承人')),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
                 initialValue: selected,
-                decoration: const InputDecoration(labelText: '继承人'),
+                decoration: InputDecoration(labelText: L10n.tr('继承人')),
                 items: [
                   for (final i in available)
                     DropdownMenuItem(
@@ -120,11 +121,11 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('取消'),
+              child: Text(L10n.tr('取消')),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('绑定'),
+              child: Text(L10n.tr('绑定')),
             ),
           ],
         ),
@@ -142,7 +143,7 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('绑定失败')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('绑定失败'))));
     }
   }
 
@@ -157,7 +158,7 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('解绑失败')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('解绑失败'))));
     }
   }
 
@@ -180,7 +181,7 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('修改失败')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('修改失败'))));
     }
   }
 
@@ -209,14 +210,14 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('修改失败')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('修改失败'))));
     }
   }
 
   /// 绑定行的阶梯展示文本。
   static String _ladderLabel(Map<String, dynamic> b) {
     final name = b['ladder_name']?.toString() ?? '';
-    return name.isEmpty ? '阶梯:全局' : '阶梯:$name';
+    return name.isEmpty ? L10n.tr('阶梯:全局') : L10n.trp('阶梯:{name}', {'name': name});
   }
 
   @override
@@ -224,12 +225,14 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _multiSelect ? '已选 ${_selected.length} 项' : '分组继承人 · ${widget.categoryName}',
+          _multiSelect
+              ? L10n.trp('已选 {n} 项', {'n': '${_selected.length}'})
+              : L10n.trp('分组继承人 · {name}', {'name': widget.categoryName}),
         ),
         actions: _multiSelect
             ? [
                 IconButton(
-                  tooltip: '取消',
+                  tooltip: L10n.tr('取消'),
                   icon: const Icon(Icons.close),
                   onPressed: () => setState(() {
                     _multiSelect = false;
@@ -239,7 +242,7 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
               ]
             : [
                 IconButton(
-                  tooltip: '批量修改阶梯',
+                  tooltip: L10n.tr('批量修改阶梯'),
                   icon: const Icon(Icons.edit_note),
                   onPressed: _bindings.isEmpty
                       ? null
@@ -252,14 +255,14 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
           : FloatingActionButton.extended(
               onPressed: _add,
               icon: const Icon(Icons.add),
-              label: const Text('绑定继承人'),
+              label: Text(L10n.tr('绑定继承人')),
             ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _bindings.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text(
-                    '未设置分组继承人\n该分组下资产继承触发时随全量交接',
+                    L10n.tr('未设置分组继承人\n该分组下资产继承触发时随全量交接'),
                     textAlign: TextAlign.center,
                   ),
                 )
@@ -284,7 +287,9 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
                             )
                           : const Icon(Icons.person_outline),
                       title: Text(
-                        '${b['inheritor_name'] ?? '继承人 #${b['inheritor_id']}'}',
+                        b['inheritor_name'] == null
+                            ? L10n.trp('继承人 #{n}', {'n': '${b['inheritor_id']}'})
+                            : '${b['inheritor_name']}',
                       ),
                       subtitle: Text(_ladderLabel(b)),
                       onLongPress: _multiSelect
@@ -304,13 +309,13 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
-                                  tooltip: '修改阶梯',
+                                  tooltip: L10n.tr('修改阶梯'),
                                   icon: const Icon(Icons.tune),
                                   onPressed: () => _changeLadder(b),
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.delete_outline),
-                                  tooltip: '解绑',
+                                  tooltip: L10n.tr('解绑'),
                                   onPressed: () => _remove(b),
                                 ),
                               ],
@@ -325,7 +330,7 @@ class _CategoryInheritorsPageState extends State<CategoryInheritorsPage> {
                   TextButton.icon(
                     onPressed: _selected.isEmpty ? null : _changeSelectedLadders,
                     icon: const Icon(Icons.tune),
-                    label: const Text('修改阶梯'),
+                    label: Text(L10n.tr('修改阶梯')),
                   ),
                 ],
               ),

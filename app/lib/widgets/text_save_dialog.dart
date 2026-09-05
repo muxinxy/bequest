@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../l10n/app_l10n.dart';
 
 /// 单文本框 + 保存对话框:校验/保存中/失败均保留输入,保存成功才 pop 返回输入值。
 /// 用于分组新增/改名、备注编辑、本地账户改名等"输入后保存"场景。
@@ -57,7 +58,11 @@ class _TextSaveDialogState extends State<TextSaveDialog> {
   Future<void> _save() async {
     final value = _controller.text.trim();
     if (value.isEmpty && !widget.allowEmpty) {
-      setState(() => _error = '请输入${widget.labelText}');
+      setState(
+        () => _error = L10n.trp('请输入{label}', {
+          'label': L10n.tr(widget.labelText),
+        }),
+      );
       return;
     }
     setState(() {
@@ -73,14 +78,14 @@ class _TextSaveDialogState extends State<TextSaveDialog> {
       setState(() {
         _saving = false;
         _error = e.statusCode == 409 && widget.conflictMessage != null
-            ? widget.conflictMessage!
+            ? L10n.tr(widget.conflictMessage!)
             : e.message;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = widget.failMessage;
+        _error = L10n.tr(widget.failMessage);
       });
     }
   }
@@ -89,7 +94,7 @@ class _TextSaveDialogState extends State<TextSaveDialog> {
   Widget build(BuildContext context) {
     final errorColor = Theme.of(context).colorScheme.error;
     return AlertDialog(
-      title: Text(widget.title),
+      title: Text(L10n.tr(widget.title)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -100,8 +105,10 @@ class _TextSaveDialogState extends State<TextSaveDialog> {
             maxLength: widget.maxLength,
             maxLines: widget.maxLines,
             decoration: InputDecoration(
-              labelText: widget.labelText,
-              hintText: widget.hintText,
+              labelText: L10n.tr(widget.labelText),
+              hintText: widget.hintText == null
+                  ? null
+                  : L10n.tr(widget.hintText!),
               border: const OutlineInputBorder(),
             ),
           ),
@@ -114,11 +121,11 @@ class _TextSaveDialogState extends State<TextSaveDialog> {
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(L10n.tr('取消')),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,
-          child: Text(_saving ? '保存中...' : '保存'),
+          child: Text(_saving ? L10n.tr('保存中...') : L10n.tr('保存')),
         ),
       ],
     );

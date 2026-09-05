@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 
 /// 忘记密码:输入邮箱 → 发送验证码 → 输入验证码与新密码重置。
 class ForgotPasswordPage extends StatefulWidget {
@@ -40,17 +41,17 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   Future<void> _sendCode() async {
     final email = _emailController.text.trim();
     if (!email.contains('@')) {
-      _show('请输入正确的邮箱');
+      _show(L10n.tr('请输入正确的邮箱'));
       return;
     }
     setState(() => _sending = true);
     try {
       await (await _api).requestPasswordReset(email);
       if (!mounted) return;
-      _show('验证码已发送到邮箱(10 分钟内有效)');
+      _show(L10n.tr('验证码已发送到邮箱(10 分钟内有效)'));
       _startCooldown();
     } catch (_) {
-      _show('发送失败,请检查网络后重试');
+      _show(L10n.tr('发送失败,请检查网络后重试'));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -71,18 +72,18 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   }
 
   String get _sendButtonLabel {
-    if (_sending) return '发送中...';
-    if (_cooldown > 0) return '重新发送($_cooldown s)';
-    return '发送验证码';
+    if (_sending) return L10n.tr('发送中...');
+    if (_cooldown > 0) return L10n.trp('重新发送({seconds} s)', {'seconds': '$_cooldown'});
+    return L10n.tr('发送验证码');
   }
 
   Future<void> _reset() async {
     if (_passwordController.text.length < 8) {
-      _show('新密码至少 8 位');
+      _show(L10n.tr('新密码至少 8 位'));
       return;
     }
     if (_passwordController.text != _confirmController.text) {
-      _show('两次输入的密码不一致');
+      _show(L10n.tr('两次输入的密码不一致'));
       return;
     }
     setState(() => _submitting = true);
@@ -93,12 +94,12 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         newPassword: _passwordController.text,
       );
       if (!mounted) return;
-      _show('密码已重置,请用新密码登录');
+      _show(L10n.tr('密码已重置,请用新密码登录'));
       Navigator.of(context).pop();
     } on ApiException catch (e) {
       _show(e.message);
     } catch (_) {
-      _show('重置失败,请检查网络后重试');
+      _show(L10n.tr('重置失败,请检查网络后重试'));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -114,7 +115,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('重置密码')),
+      appBar: AppBar(title: Text(L10n.tr('重置密码'))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -123,9 +124,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
             TextFormField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: '注册邮箱',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('注册邮箱'),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 16),
@@ -135,9 +136,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                   child: TextFormField(
                     controller: _codeController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '验证码',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: L10n.tr('验证码'),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                 ),
@@ -152,24 +153,26 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
             TextFormField(
               controller: _passwordController,
               obscureText: true,
-              decoration: const InputDecoration(
-                labelText: '新密码(至少 8 位)',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('新密码(至少 8 位)'),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _confirmController,
               obscureText: true,
-              decoration: const InputDecoration(
-                labelText: '确认新密码',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('确认新密码'),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 24),
             FilledButton(
               onPressed: _submitting ? null : _reset,
-              child: Text(_submitting ? '重置中...' : '重置密码'),
+              child: Text(
+                _submitting ? L10n.tr('重置中...') : L10n.tr('重置密码'),
+              ),
             ),
           ],
         ),

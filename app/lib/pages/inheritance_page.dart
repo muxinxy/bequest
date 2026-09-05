@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../models/inheritance_status.dart';
 import '../storage/secure_store.dart';
 import '../utils/time_format.dart';
@@ -52,7 +53,7 @@ class _InheritancePageState extends State<InheritancePage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+          .showSnackBar(SnackBar(content: Text(L10n.tr('加载失败,请检查网络后重试'))));
       Navigator.of(context).pop();
     }
   }
@@ -68,17 +69,17 @@ class _InheritancePageState extends State<InheritancePage> {
       setState(() => _inheritanceEnabled = !value);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('开关保存失败,请检查网络后重试')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('开关保存失败,请检查网络后重试'))));
     }
   }
 
   static String _stageLabel(String? stage) => switch (stage) {
-        'inactive' => '未触发',
-        'warning' => '提醒中',
-        'triggered' => '已触发',
-        'claimed' => '已领取',
-        'reversed' => '已撤销',
-        _ => stage == null || stage.isEmpty ? '未知' : stage,
+        'inactive' => L10n.tr('未触发'),
+        'warning' => L10n.tr('提醒中'),
+        'triggered' => L10n.tr('已触发'),
+        'claimed' => L10n.tr('已领取'),
+        'reversed' => L10n.tr('已撤销'),
+        _ => stage == null || stage.isEmpty ? L10n.tr('未知') : stage,
       };
 
   static IconData _stageIcon(String? stage) => switch (stage) {
@@ -96,8 +97,8 @@ class _InheritancePageState extends State<InheritancePage> {
     return Card(
       child: SwitchListTile(
         secondary: Icon(Icons.power_settings_new, color: scheme.primary),
-        title: const Text('继承开关'),
-        subtitle: const Text('关闭后不触发继承交接', style: TextStyle(fontSize: 12)),
+        title: Text(L10n.tr('继承开关')),
+        subtitle: Text(L10n.tr('关闭后不触发继承交接'), style: const TextStyle(fontSize: 12)),
         value: _inheritanceEnabled,
         onChanged: _toggleInheritance,
       ),
@@ -120,13 +121,17 @@ class _InheritancePageState extends State<InheritancePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '当前阶段:${_stageLabel(status.stage)}',
+                    L10n.trp('当前阶段:{stage}', {'stage': _stageLabel(status.stage)}),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '升级等级:${status.escalationLevel ?? 0}'
-                    '${status.lastLoginAt == null ? '' : ' · 最近登录 ${formatServerTime(status.lastLoginAt)}'}',
+                    L10n.trp('升级等级:{n}', {'n': '${status.escalationLevel ?? 0}'}) +
+                        (status.lastLoginAt == null
+                            ? ''
+                            : L10n.trp(' · 最近登录 {time}', {
+                                'time': formatServerTime(status.lastLoginAt),
+                              })),
                   ),
                 ],
               ),
@@ -143,8 +148,11 @@ class _InheritancePageState extends State<InheritancePage> {
     return Card(
       child: ListTile(
         leading: Icon(Icons.history, color: scheme.primary),
-        title: const Text('查看事件记录'),
-        subtitle: const Text('继承事件永久保留,支持年月筛选与 CSV 导出', style: TextStyle(fontSize: 12)),
+        title: Text(L10n.tr('查看事件记录')),
+        subtitle: Text(
+          L10n.tr('继承事件永久保留,支持年月筛选与 CSV 导出'),
+          style: const TextStyle(fontSize: 12),
+        ),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const InheritanceEventsPage()),
@@ -167,12 +175,15 @@ class _InheritancePageState extends State<InheritancePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('默认继承人', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(L10n.tr('默认继承人'), style: const TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
                   Text(
                     _defaultInheritorName == null || _defaultInheritorName!.isEmpty
-                        ? '未指定(继承触发时按第一顺位分配)'
-                        : '$_defaultInheritorName(ID $_defaultInheritorId)',
+                        ? L10n.tr('未指定(继承触发时按第一顺位分配)')
+                        : L10n.trp('{name}(ID {id})', {
+                            'name': _defaultInheritorName!,
+                            'id': '$_defaultInheritorId',
+                          }),
                     style: const TextStyle(fontSize: 14),
                   ),
                 ],
@@ -180,7 +191,7 @@ class _InheritancePageState extends State<InheritancePage> {
             ),
             TextButton(
               onPressed: _pickDefaultInheritor,
-              child: const Text('设置'),
+              child: Text(L10n.tr('设置')),
             ),
           ],
         ),
@@ -200,7 +211,7 @@ class _InheritancePageState extends State<InheritancePage> {
     final picked = await showDialog<int>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('设置默认继承人'),
+        title: Text(L10n.tr('设置默认继承人')),
         children: [
           for (final i in inheritors)
             SimpleDialogOption(
@@ -210,19 +221,22 @@ class _InheritancePageState extends State<InheritancePage> {
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.person_outline),
-                title: Text(i['name']?.toString() ?? '未命名'),
+                title: Text(i['name']?.toString() ?? L10n.tr('未命名')),
                 subtitle: Text(
-                  '${i['category_count'] ?? 0} 个分组 · ${i['asset_count'] ?? 0} 个资产',
+                  L10n.trp('{n} 个分组 · {m} 个资产', {
+                    'n': '${i['category_count'] ?? 0}',
+                    'm': '${i['asset_count'] ?? 0}',
+                  }),
                   style: const TextStyle(fontSize: 12),
                 ),
               ),
             ),
           SimpleDialogOption(
             onPressed: () => Navigator.of(context).pop(unspecified),
-            child: const ListTile(
+            child: ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.clear),
-              title: Text('不指定(按第一顺位)'),
+              leading: const Icon(Icons.clear),
+              title: Text(L10n.tr('不指定(按第一顺位)')),
             ),
           ),
         ],
@@ -236,11 +250,11 @@ class _InheritancePageState extends State<InheritancePage> {
       await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('默认继承人已保存')));
+          .showSnackBar(SnackBar(content: Text(L10n.tr('默认继承人已保存'))));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('保存失败,请检查网络后重试')));
+          .showSnackBar(SnackBar(content: Text(L10n.tr('保存失败,请检查网络后重试'))));
     }
   }
 
@@ -259,13 +273,15 @@ class _InheritancePageState extends State<InheritancePage> {
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(width: 8),
-                const Text('交接说明', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text(L10n.tr('交接说明'), style: const TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 8),
-            const Text(
-              '失联超过触发阶梯末档将触发继承,继承人凭继承码领取密钥,原主登录可在 72 小时内撤销。',
-              style: TextStyle(fontSize: 14),
+            Text(
+              L10n.tr(
+                '失联超过触发阶梯末档将触发继承,继承人凭继承码领取密钥,原主登录可在 72 小时内撤销。',
+              ),
+              style: const TextStyle(fontSize: 14),
             ),
           ],
         ),
@@ -276,7 +292,7 @@ class _InheritancePageState extends State<InheritancePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('继承')),
+      appBar: AppBar(title: Text(L10n.tr('继承'))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(

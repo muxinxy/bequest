@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 
 /// 服务器设置:配置服务器地址(立即生效)。
@@ -53,12 +54,12 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
   Future<void> _saveUrl() async {
     final url = _urlController.text.trim().replaceFirst(RegExp(r'/+$'), '');
     if (url.isEmpty) {
-      _snack('请输入服务器地址');
+      _snack(L10n.tr('请输入服务器地址'));
       return;
     }
     // 先验证连接,验证有效才保存。
     if (!await _testConnection(quiet: false)) {
-      _snack('无法连接服务器,请检查地址');
+      _snack(L10n.tr('无法连接服务器,请检查地址'));
       return;
     }
     // 记入最近地址(去重置顶,最多 5 条)。
@@ -67,14 +68,14 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
     await ApiConfig.setBaseUrl(url);
     if (!mounted) return;
     setState(() => _recentUrls = recent.take(5).toList());
-    _snack('已保存');
+    _snack(L10n.tr('已保存'));
   }
 
   /// 测试与指定地址的连接,返回是否可达;更新指示灯。
   Future<bool> _testConnection({bool quiet = false}) async {
     final url = _urlController.text.trim().replaceFirst(RegExp(r'/+$'), '');
     if (url.isEmpty) {
-      if (!quiet) _snack('请输入服务器地址');
+      if (!quiet) _snack(L10n.tr('请输入服务器地址'));
       return false;
     }
     if (!quiet) setState(() => _busy = true);
@@ -105,11 +106,11 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('服务器设置')),
+      appBar: AppBar(title: Text(L10n.tr('服务器设置'))),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('服务器地址', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(L10n.tr('服务器地址'), style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           TextFormField(
             controller: _urlController,
@@ -162,7 +163,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
           const SizedBox(height: 12),
           FilledButton(
             onPressed: _busy ? null : _saveUrl,
-            child: const Text('保存'),
+            child: Text(L10n.tr('保存')),
           ),
         ],
       ),

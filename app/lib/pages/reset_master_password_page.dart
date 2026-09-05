@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../crypto/reset_master_password.dart';
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 import 'change_master_password_page.dart';
 
@@ -54,23 +55,27 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('确认重置主密码?'),
+        title: Text(L10n.tr('确认重置主密码?')),
         content: Text(
           assetCount == null
-              ? '重置后将无法解密现有的资产凭据与备注(端到端加密),'
-                  '资产将保留名称/分组,凭据需重新填写。此操作不可撤销。'
-              : '将影响 ${assetCount == 0 ? '0' : assetCount} 条资产:'
-                  '重置后无法解密其凭据与备注(端到端加密),'
+              ? L10n.tr(
+                  '重置后将无法解密现有的资产凭据与备注(端到端加密),'
                   '资产将保留名称/分组,凭据需重新填写。此操作不可撤销。',
+                )
+              : L10n.trp(
+                  '将影响 {count} 条资产:重置后无法解密其凭据与备注(端到端加密),'
+                  '资产将保留名称/分组,凭据需重新填写。此操作不可撤销。',
+                  {'count': '${assetCount == 0 ? '0' : assetCount}'},
+                ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('确认重置'),
+            child: Text(L10n.tr('确认重置')),
           ),
         ],
       ),
@@ -81,7 +86,7 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
     try {
       final jwt = await _store.readJwt();
       if (jwt == null || jwt.isEmpty) {
-        _showMessage('本地模式无账户密码,无法重置主密码(请重新设置本地库)');
+        _showMessage(L10n.tr('本地模式无账户密码,无法重置主密码(请重新设置本地库)'));
         return;
       }
       final api = await ApiConfig.client();
@@ -95,18 +100,22 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
       );
       if (!mounted) return;
       if (!result.ok) {
-        _showMessage(result.error ?? '重置失败');
+        _showMessage(result.error ?? L10n.tr('重置失败'));
         return;
       }
-      _showMessage('主密码已重置');
+      _showMessage(L10n.tr('主密码已重置'));
       _accountPasswordController.clear();
       _newController.clear();
       _confirmController.clear();
       _hintController.clear();
     } on ApiException catch (e) {
-      _showMessage(e.statusCode == 401 ? '账户密码错误' : '重置失败,请检查网络后重试');
+      _showMessage(
+        e.statusCode == 401
+            ? L10n.tr('账户密码错误')
+            : L10n.tr('重置失败,请检查网络后重试'),
+      );
     } catch (_) {
-      _showMessage('重置失败,请检查网络后重试');
+      _showMessage(L10n.tr('重置失败,请检查网络后重试'));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -122,7 +131,7 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('重置主密码')),
+      appBar: AppBar(title: Text(L10n.tr('重置主密码'))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -140,10 +149,10 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
                       Icon(Icons.lightbulb_outline,
                           color: Colors.orange.shade800),
                       const SizedBox(width: 8),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          '如果还记得当前主密码,建议用「修改主密码」——数据不丢失。',
-                          style: TextStyle(fontSize: 13),
+                          L10n.tr('如果还记得当前主密码,建议用「修改主密码」——数据不丢失。'),
+                          style: const TextStyle(fontSize: 13),
                         ),
                       ),
                       TextButton(
@@ -152,7 +161,7 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
                             builder: (_) => const ChangeMasterPasswordPage(),
                           ),
                         ),
-                        child: const Text('去修改'),
+                        child: Text(L10n.tr('去修改')),
                       ),
                     ],
                   ),
@@ -160,9 +169,11 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
               ),
               const SizedBox(height: 16),
               Text(
-                '忘记主密码时,用账户密码重置。'
-                '端到端加密意味着旧数据不可恢复:重置后资产保留名称/分组,'
-                '凭据与备注清空,需重新填写。',
+                L10n.tr(
+                  '忘记主密码时,用账户密码重置。'
+                  '端到端加密意味着旧数据不可恢复:重置后资产保留名称/分组,'
+                  '凭据与备注清空,需重新填写。',
+                ),
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -170,51 +181,53 @@ class _ResetMasterPasswordPageState extends State<ResetMasterPasswordPage> {
               TextFormField(
                 controller: _accountPasswordController,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '账户密码',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('账户密码'),
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) => (value == null || value.isEmpty)
-                    ? '请输入账户密码'
+                    ? L10n.tr('请输入账户密码')
                     : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _newController,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '新主密码',
-                  helperText: '至少 8 位,用于加密本地数据',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('新主密码'),
+                  helperText: L10n.tr('至少 8 位,用于加密本地数据'),
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) => (value == null || value.length < 8)
-                    ? '新主密码至少 8 位'
+                    ? L10n.tr('新主密码至少 8 位')
                     : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _confirmController,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '确认新主密码',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('确认新主密码'),
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) => value != _newController.text
-                    ? '两次输入不一致'
+                    ? L10n.tr('两次输入不一致')
                     : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _hintController,
-                decoration: const InputDecoration(
-                  labelText: '主密码提示语(可选)',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('主密码提示语(可选)'),
+                  border: const OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: _submitting ? null : _submit,
-                child: Text(_submitting ? '重置中...' : '重置主密码'),
+                child: Text(
+                  _submitting ? L10n.tr('重置中...') : L10n.tr('重置主密码'),
+                ),
               ),
             ],
           ),

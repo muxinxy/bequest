@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:ftpconnect/ftpconnect.dart';
 
+import '../l10n/app_l10n.dart';
 import 'sync_provider.dart';
 
 /// FTP 加密方式。
@@ -57,7 +58,15 @@ class FtpSyncProvider implements SyncProvider {
       },
     );
     final ok = await ftp.connect();
-    if (!ok) throw SyncException('FTP 连接失败($host:$port)');
+    if (!ok) {
+      // 端口为空时用默认端口文案展示。
+      throw SyncException(
+        L10n.trp('FTP 连接失败({host}:{port})', {
+          'host': host,
+          'port': port == null ? '21' : '$port',
+        }),
+      );
+    }
     return ftp;
   }
 
@@ -83,7 +92,11 @@ class FtpSyncProvider implements SyncProvider {
         await tmp.writeAsString(data, encoding: utf8);
         try {
           final ok = await ftp.uploadFile(tmp, sRemoteName: remotePath);
-          if (!ok) throw SyncException('FTP 上传失败: $remotePath');
+          if (!ok) {
+            throw SyncException(
+              L10n.trp('FTP 上传失败: {name}', {'name': remotePath}),
+            );
+          }
         } finally {
           try { await tmp.delete(); } catch (_) {}
         }
@@ -102,7 +115,11 @@ class FtpSyncProvider implements SyncProvider {
         final tmp = File('${Directory.systemTemp.path}/bequest_download_${DateTime.now().millisecondsSinceEpoch}');
         try {
           final ok = await ftp.downloadFile(remotePath, tmp);
-          if (!ok) throw SyncException('FTP 下载失败: $remotePath');
+          if (!ok) {
+            throw SyncException(
+              L10n.trp('FTP 下载失败: {name}', {'name': remotePath}),
+            );
+          }
           return await tmp.readAsString(encoding: utf8);
         } finally {
           try { await tmp.delete(); } catch (_) {}
@@ -122,7 +139,7 @@ class FtpSyncProvider implements SyncProvider {
     } on SyncException {
       rethrow;
     } catch (e) {
-      throw SyncException('FTP 连接失败: $e');
+      throw SyncException(L10n.trp('FTP 连接失败: {err}', {'err': '$e'}));
     }
   }
 

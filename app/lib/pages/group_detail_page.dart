@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../models/asset.dart';
 import '../models/category.dart';
 import '../models/trigger_ladder.dart';
@@ -93,7 +94,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
   @override
   void initState() {
     super.initState();
-    _groupName = widget.category?.name ?? '未分组';
+    _groupName = widget.category?.name ?? L10n.tr('未分组');
     _scrollController.addListener(_onScroll);
     _load();
   }
@@ -142,7 +143,13 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_isLocal ? '加载失败,本地数据读取异常' : '加载失败,请检查网络后重试')),
+        SnackBar(
+          content: Text(
+            _isLocal
+                ? L10n.tr('加载失败,本地数据读取异常')
+                : L10n.tr('加载失败,请检查网络后重试'),
+          ),
+        ),
       );
       Navigator.of(context).pop();
     }
@@ -228,7 +235,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     if (_readOnly) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('离线模式仅可查看与导出,无法修改资产')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('离线模式仅可查看与导出,无法修改资产'))));
       return;
     }
     await Navigator.of(context).push(
@@ -249,16 +256,20 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除资产'),
-        content: Text('确定删除所选 ${_selectedIds.length} 个资产?删除后资产将进入回收站,可在回收站恢复。'),
+        title: Text(L10n.tr('删除资产')),
+        content: Text(
+          L10n.trp('确定删除所选 {n} 个资产?删除后资产将进入回收站,可在回收站恢复。', {
+            'n': '${_selectedIds.length}',
+          }),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除'),
+            child: Text(L10n.tr('删除')),
           ),
         ],
       ),
@@ -269,7 +280,11 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       _exitMultiSelect();
       await _load();
     } catch (_) {
-      _showError(_isLocal ? '删除失败,请重试' : '删除失败,请检查网络后重试');
+      _showError(
+        _isLocal
+            ? L10n.tr('删除失败,请重试')
+            : L10n.tr('删除失败,请检查网络后重试'),
+      );
     }
   }
 
@@ -279,11 +294,11 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     final target = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('复制到分组'),
+        title: Text(L10n.tr('复制到分组')),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.of(context).pop(''),
-            child: const Text('未分组'),
+            child: Text(L10n.tr('未分组')),
           ),
           for (final c in _categories)
             SimpleDialogOption(
@@ -306,7 +321,11 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       _exitMultiSelect();
       await _load();
     } catch (_) {
-      _showError(_isLocal ? '复制失败,请重试' : '复制失败,请检查网络后重试');
+      _showError(
+        _isLocal
+            ? L10n.tr('复制失败,请重试')
+            : L10n.tr('复制失败,请检查网络后重试'),
+      );
     }
   }
 
@@ -315,11 +334,11 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     final target = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('移动到分组'),
+        title: Text(L10n.tr('移动到分组')),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.of(context).pop(''),
-            child: const Text('未分组'),
+            child: Text(L10n.tr('未分组')),
           ),
           for (final c in targets)
             SimpleDialogOption(
@@ -338,7 +357,11 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       _exitMultiSelect();
       await _load();
     } catch (_) {
-      _showError(_isLocal ? '移动失败,请重试' : '移动失败,请检查网络后重试');
+      _showError(
+        _isLocal
+            ? L10n.tr('移动失败,请重试')
+            : L10n.tr('移动失败,请检查网络后重试'),
+      );
     }
   }
 
@@ -346,7 +369,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
   Future<void> _setInheritors() async {
     final jwt = await SecureStore().readJwt();
     if (jwt == null || jwt.isEmpty) {
-      _showError('未登录,无法设置继承人');
+      _showError(L10n.tr('未登录,无法设置继承人'));
       return;
     }
     List<Map<String, dynamic>> inheritors;
@@ -363,14 +386,14 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
           masterKeyB64: mk,
         ).listInheritors();
         ladders = const [];
-        _showError('离线,显示缓存继承人(绑定需联网)');
+        _showError(L10n.tr('离线,显示缓存继承人(绑定需联网)'));
       } catch (_) {
-        _showError('加载继承人失败,请检查网络后重试');
+        _showError(L10n.tr('加载继承人失败,请检查网络后重试'));
         return;
       }
     }
     if (inheritors.isEmpty) {
-      _showError('暂无继承人,请先在设置中创建');
+      _showError(L10n.tr('暂无继承人,请先在设置中创建'));
       return;
     }
     final selected = <String>{};
@@ -380,7 +403,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('设置继承人'),
+          title: Text(L10n.tr('设置继承人')),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -403,7 +426,8 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                           title: Text('${i['name']}'),
                           subtitle: Text(
                             '${i['email'] == null || (i['email'] as String).isEmpty ? '' : '${i['email']} · '}'
-                            '${i['category_count'] ?? 0} 个分组 · ${i['asset_count'] ?? 0} 个资产',
+                            '${L10n.trp('{n} 个分组', {'n': '${i['category_count'] ?? 0}'})} · '
+                            '${L10n.trp('{n} 个资产', {'n': '${i['asset_count'] ?? 0}'})}',
                           ),
                         ),
                     ],
@@ -421,11 +445,11 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('取消'),
+              child: Text(L10n.tr('取消')),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('绑定'),
+              child: Text(L10n.tr('绑定')),
             ),
           ],
         ),
@@ -433,7 +457,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     );
     if (ok != true || !mounted) return;
     if (selected.isEmpty) {
-      _showError('请至少选择一名继承人');
+      _showError(L10n.tr('请至少选择一名继承人'));
       return;
     }
     try {
@@ -450,7 +474,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       _exitMultiSelect();
       await _load();
     } catch (_) {
-      _showError('绑定失败');
+      _showError(L10n.tr('绑定失败'));
     }
   }
 
@@ -486,11 +510,13 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => TextSaveDialog(
-        title: '重命名分组',
-        labelText: '分组名称',
+        title: L10n.tr('重命名分组'),
+        labelText: L10n.tr('分组名称'),
         initialValue: _groupName,
-        conflictMessage: '分组已存在',
-        failMessage: _isLocal ? '保存失败,请重试' : '保存失败,请检查网络后重试',
+        conflictMessage: L10n.tr('分组已存在'),
+        failMessage: _isLocal
+            ? L10n.tr('保存失败,请重试')
+            : L10n.tr('保存失败,请检查网络后重试'),
         onSave: (n) async {
           if (n == _groupName) return; // 名称未变,直接关闭
           await widget.repository.updateCategory(_groupId, {'name': n});
@@ -505,14 +531,16 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     await showDialog<String>(
       context: context,
       builder: (context) => TextSaveDialog(
-        title: '编辑备注',
-        labelText: '分组备注',
-        hintText: '补充说明(可选)',
+        title: L10n.tr('编辑备注'),
+        labelText: L10n.tr('分组备注'),
+        hintText: L10n.tr('补充说明(可选)'),
         initialValue: widget.category?.remark ?? '',
         maxLines: 3,
         maxLength: null,
         allowEmpty: true,
-        failMessage: _isLocal ? '保存失败,请重试' : '保存失败,请检查网络后重试',
+        failMessage: _isLocal
+            ? L10n.tr('保存失败,请重试')
+            : L10n.tr('保存失败,请检查网络后重试'),
         onSave: (r) async =>
             widget.repository.updateCategory(_groupId, {'remark': r}),
       ),
@@ -532,11 +560,11 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
     final choice = await showDialog<_AssetSort>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('资产排序'),
+        title: Text(L10n.tr('资产排序')),
         children: [
-          _sortOption(_AssetSort.name, '按名称'),
-          _sortOption(_AssetSort.updated, '按修改时间'),
-          _sortOption(_AssetSort.status, '按状态'),
+          _sortOption(_AssetSort.name, L10n.tr('按名称')),
+          _sortOption(_AssetSort.updated, L10n.tr('按修改时间')),
+          _sortOption(_AssetSort.status, L10n.tr('按状态')),
         ],
       ),
     );
@@ -570,11 +598,15 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_multiSelect ? '已选 ${_selectedIds.length} 项' : _groupName),
+        title: Text(
+          _multiSelect
+              ? L10n.trp('已选 {n} 项', {'n': '${_selectedIds.length}'})
+              : _groupName,
+        ),
         actions: _multiSelect
             ? [
                 IconButton(
-                  tooltip: '取消',
+                  tooltip: L10n.tr('取消'),
                   icon: const Icon(Icons.close),
                   onPressed: _exitMultiSelect,
                 ),
@@ -583,15 +615,15 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                 // 未分组无分组操作;离线只读。
                 if (_groupId.isNotEmpty && !_readOnly)
                   PopupMenuButton<String>(
-                    tooltip: '分组操作',
+                    tooltip: L10n.tr('分组操作'),
                     onSelected: _onMenu,
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'rename', child: Text('重命名')),
+                    itemBuilder: (_) => [
+                      PopupMenuItem(value: 'rename', child: Text(L10n.tr('重命名'))),
                       PopupMenuItem(
                         value: 'inheritors',
-                        child: Text('设置分组继承人'),
+                        child: Text(L10n.tr('设置分组继承人')),
                       ),
-                      PopupMenuItem(value: 'remark', child: Text('编辑备注')),
+                      PopupMenuItem(value: 'remark', child: Text(L10n.tr('编辑备注'))),
                     ],
                   ),
               ],
@@ -609,13 +641,13 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                           controller: _searchController,
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.search),
-                            hintText: '搜索资产名称',
+                            hintText: L10n.tr('搜索资产名称'),
                             isDense: true,
                             border: const OutlineInputBorder(),
                             suffixIcon: _search.isEmpty
                                 ? null
                                 : IconButton(
-                                    tooltip: '清空',
+                                    tooltip: L10n.tr('清空'),
                                     icon: const Icon(Icons.clear),
                                     onPressed: () {
                                       _searchController.clear();
@@ -637,7 +669,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                         ),
                       ),
                       IconButton(
-                        tooltip: '排序',
+                        tooltip: L10n.tr('排序'),
                         icon: const Icon(Icons.sort),
                         onPressed: () => _pickSort(),
                       ),
@@ -676,7 +708,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
       floatingActionButton: _readOnly || _multiSelect
           ? null // 离线只读 / 多选模式:不提供添加入口。
           : FloatingActionButton(
-              tooltip: '新增资产',
+              tooltip: L10n.tr('新增资产'),
               onPressed: _addAsset,
               child: const Icon(Icons.add),
             ),
@@ -700,14 +732,14 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
             ),
             const SizedBox(height: 16),
             Text(
-              noSearch ? '该分组暂无资产' : '没有匹配的资产',
+              noSearch ? L10n.tr('该分组暂无资产') : L10n.tr('没有匹配的资产'),
               style: Theme.of(context).textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
             if (noSearch) ...[
               const SizedBox(height: 8),
               Text(
-                '点击右下角 + 添加',
+                L10n.tr('点击右下角 + 添加'),
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -741,23 +773,23 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
           TextButton.icon(
             onPressed: _selectedIds.isEmpty ? null : _deleteSelected,
             icon: const Icon(Icons.delete_outline),
-            label: const Text('删除'),
+            label: Text(L10n.tr('删除')),
           ),
           TextButton.icon(
             onPressed: _selectedIds.isEmpty ? null : _copySelected,
             icon: const Icon(Icons.copy_outlined),
-            label: const Text('复制'),
+            label: Text(L10n.tr('复制')),
           ),
           TextButton.icon(
             onPressed: _selectedIds.isEmpty ? null : _moveSelected,
             icon: const Icon(Icons.drive_file_move_outline),
-            label: const Text('移动'),
+            label: Text(L10n.tr('移动')),
           ),
           if (!_isLocal && !_isOffline)
             TextButton.icon(
               onPressed: _selectedIds.isEmpty ? null : _setInheritors,
               icon: const Icon(Icons.people_outline),
-              label: const Text('继承人'),
+              label: Text(L10n.tr('继承人')),
             ),
         ],
       ),
@@ -791,8 +823,13 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (inheritors.isNotEmpty) Text('继承人:${inheritors.join('、')}'),
-              Text('修改 ${formatServerTime(a.updatedAt)}'),
+              if (inheritors.isNotEmpty)
+                Text(L10n.trp('继承人:{names}', {'names': inheritors.join('、')})),
+              Text(
+                L10n.trp('修改 {time}', {
+                  'time': formatServerTime(a.updatedAt),
+                }),
+              ),
             ],
           ),
           trailing: _multiSelect
@@ -806,7 +843,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      _statusLabels[status] ?? status,
+                      L10n.tr(_statusLabels[status] ?? status),
                       style: TextStyle(
                         fontSize: 12,
                         color: _statusColors[status],

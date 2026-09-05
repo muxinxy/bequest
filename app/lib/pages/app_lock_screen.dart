@@ -9,6 +9,7 @@ import '../crypto/attempt_guard.dart';
 import '../crypto/master_password.dart';
 import '../crypto/pattern_hash.dart';
 import '../crypto/pin_hash.dart';
+import '../l10n/app_l10n.dart';
 import '../logger.dart';
 import '../main.dart' show LockGate;
 import '../storage/secure_store.dart';
@@ -154,12 +155,12 @@ class _AppLockScreenState extends State<AppLockScreen> {
       }
       if (available.isEmpty) {
         if (mounted) {
-          setState(() => _error = '设备未录入指纹或人脸,请先在系统设置中添加');
+          setState(() => _error = L10n.tr('设备未录入指纹或人脸,请先在系统设置中添加'));
         }
         return;
       }
       final ok = await _auth.authenticate(
-        localizedReason: '请验证生物识别以解锁',
+        localizedReason: L10n.tr('请验证生物识别以解锁'),
         options: const AuthenticationOptions(
           biometricOnly: true,
           stickyAuth: true,
@@ -188,16 +189,16 @@ class _AppLockScreenState extends State<AppLockScreen> {
     if (error is PlatformException) {
       switch (error.code) {
         case 'NotEnrolled':
-          return '未录入指纹/人脸,请在系统设置中添加';
+          return L10n.tr('未录入指纹/人脸,请在系统设置中添加');
         case 'NotAvailable':
-          return '设备不支持生物识别';
+          return L10n.tr('设备不支持生物识别');
         case 'LockedOut':
-          return '尝试次数过多,系统已暂时锁定生物识别,请稍后再试或用其他方式解锁';
+          return L10n.tr('尝试次数过多,系统已暂时锁定生物识别,请稍后再试或用其他方式解锁');
         case 'PermanentlyLocked':
-          return '生物识别已被系统永久锁定,请用其他方式解锁';
+          return L10n.tr('生物识别已被系统永久锁定,请用其他方式解锁');
       }
     }
-    return '生物识别验证失败,请重试或用其他方式解锁';
+    return L10n.tr('生物识别验证失败,请重试或用其他方式解锁');
   }
 
   Future<void> _unlockWithPin() async {
@@ -221,12 +222,12 @@ class _AppLockScreenState extends State<AppLockScreen> {
         await _recordWrongAttempt();
         // 进入锁定时由倒计时文案提示,不再叠加"错误"提示。
         if (mounted && _lockSeconds == 0) {
-          setState(() => _error = 'PIN 码错误,请重试');
+          setState(() => _error = L10n.tr('PIN 码错误,请重试'));
         }
         _pinController.clear();
       }
     } catch (_) {
-      if (mounted) setState(() => _error = '解锁失败,请重试');
+      if (mounted) setState(() => _error = L10n.tr('解锁失败,请重试'));
     } finally {
       if (mounted) setState(() => _verifying = false);
     }
@@ -247,7 +248,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
       await _recordWrongAttempt();
       // 进入锁定时由倒计时文案提示,不再叠加"错误"提示。
       if (mounted && _lockSeconds == 0) {
-        setState(() => _error = '图案错误,请重试');
+        setState(() => _error = L10n.tr('图案错误,请重试'));
       }
     } else {
       await _lockGuard.recordSuccess();
@@ -283,7 +284,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
       if (await _masterGuard.checkLocked()) {
         await _startMasterLockCountdown();
       } else {
-        setState(() => _error = '主密码错误,请重试');
+        setState(() => _error = L10n.tr('主密码错误,请重试'));
       }
     } finally {
       if (mounted) setState(() => _verifying = false);
@@ -360,15 +361,17 @@ class _AppLockScreenState extends State<AppLockScreen> {
                 const Icon(Icons.lock_outline, size: 72),
                 const SizedBox(height: 16),
                 Text(
-                  '应用已锁定',
+                  L10n.tr('应用已锁定'),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 4),
                 Text(
                   _hasPattern
-                      ? '请绘制图案解锁'
-                      : (_hasPin ? '请输入 PIN 码解锁' : '请输入主密码解锁'),
+                      ? L10n.tr('请绘制图案解锁')
+                      : (_hasPin
+                            ? L10n.tr('请输入 PIN 码解锁')
+                            : L10n.tr('请输入主密码解锁')),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -377,7 +380,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                 if (_masterHint.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
-                    '主密码提示: $_masterHint',
+                    L10n.trp('主密码提示: {hint}', {'hint': _masterHint}),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,
@@ -388,7 +391,9 @@ class _AppLockScreenState extends State<AppLockScreen> {
                 if (_lockSeconds > 0) ...[
                   const SizedBox(height: 8),
                   Text(
-                    '尝试次数过多,请等待 $_lockSeconds 秒后重试',
+                    L10n.trp('尝试次数过多,请等待 {n} 秒后重试', {
+                      'n': '$_lockSeconds',
+                    }),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.error,
@@ -436,7 +441,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                             width: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text('解锁'),
+                        : Text(L10n.tr('解锁')),
                   ),
                 ],
                 if (_hasPattern && !_hasPin && _error != null) ...[
@@ -456,19 +461,21 @@ class _AppLockScreenState extends State<AppLockScreen> {
                         ? null
                         : _tryBiometric,
                     icon: const Icon(Icons.fingerprint),
-                    label: const Text('生物识别解锁'),
+                    label: Text(L10n.tr('生物识别解锁')),
                   ),
                 ],
                 if (_hasMasterKey || _hasJwt) ...[
                   const SizedBox(height: 12),
                   TextButton(
                     onPressed: _verifying ? null : _unlockWithMasterPassword,
-                    child: const Text('用主密码解锁'),
+                    child: Text(L10n.tr('用主密码解锁')),
                   ),
                   if (_masterLockSeconds > 0) ...[
                     const SizedBox(height: 4),
                     Text(
-                      '主密码尝试次数过多,请等待 $_masterLockSeconds 秒后重试',
+                      L10n.trp('主密码尝试次数过多,请等待 {n} 秒后重试', {
+                        'n': '$_masterLockSeconds',
+                      }),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 13,
@@ -499,7 +506,9 @@ class _AppLockScreenState extends State<AppLockScreen> {
                           LockGate.exitToLogin();
                         },
                   child: Text(
-                    _hasJwt ? '跳过(退出登录)' : '跳过(退出本地模式)',
+                    _hasJwt
+                        ? L10n.tr('跳过(退出登录)')
+                        : L10n.tr('跳过(退出本地模式)'),
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),

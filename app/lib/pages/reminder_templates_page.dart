@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../models/reminder_template.dart';
 import '../storage/secure_store.dart';
 
@@ -15,11 +16,29 @@ class _TypeInfo {
   final String hint;
 }
 
-const _types = [
-  _TypeInfo('expiry', '资产到期', Icons.alarm, Colors.orange, '{name} 资产名 · {date} 日期 · {days} 天数'),
-  _TypeInfo('escalation', '未登录升级', Icons.warning_amber_rounded, Colors.red, '{days} 未登录天数'),
-  _TypeInfo('inheritance', '继承事件', Icons.menu_book_outlined, Colors.teal, '{name} 资产名'),
-];
+List<_TypeInfo> get _types => [
+      _TypeInfo(
+        'expiry',
+        L10n.tr('资产到期'),
+        Icons.alarm,
+        Colors.orange,
+        L10n.tr('{name} 资产名 · {date} 日期 · {days} 天数'),
+      ),
+      _TypeInfo(
+        'escalation',
+        L10n.tr('未登录升级'),
+        Icons.warning_amber_rounded,
+        Colors.red,
+        L10n.tr('{days} 未登录天数'),
+      ),
+      _TypeInfo(
+        'inheritance',
+        L10n.tr('继承事件'),
+        Icons.menu_book_outlined,
+        Colors.teal,
+        L10n.tr('{name} 资产名'),
+      ),
+    ];
 
 /// 提醒模板管理:按类型分组展示;系统模板只读,自定义模板可增删改(会员专属)。
 class ReminderTemplatesPage extends StatefulWidget {
@@ -64,7 +83,7 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+          .showSnackBar(SnackBar(content: Text(L10n.tr('加载失败,请检查网络后重试'))));
       Navigator.of(context).pop();
     }
   }
@@ -89,16 +108,16 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除模板'),
-        content: Text('确定删除模板「${template.name}」吗?'),
+        title: Text(L10n.tr('删除模板')),
+        content: Text(L10n.trp('确定删除模板「{name}」吗?', {'name': template.name})),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除'),
+            child: Text(L10n.tr('删除')),
           ),
         ],
       ),
@@ -112,7 +131,7 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
     } on ApiException catch (e) {
       _showError(e.message);
     } catch (_) {
-      _showError('删除失败,请检查网络后重试');
+      _showError(L10n.tr('删除失败,请检查网络后重试'));
     }
   }
 
@@ -128,11 +147,11 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
       if (jwt == null) throw ApiException('未登录');
       await (await _api).setDefaultTemplate(jwt, template.id);
       await _load();
-      _showError('已设为默认模板');
+      _showError(L10n.tr('已设为默认模板'));
     } on ApiException catch (e) {
       _showError(e.message);
     } catch (_) {
-      _showError('设置失败,请检查网络后重试');
+      _showError(L10n.tr('设置失败,请检查网络后重试'));
     }
   }
 
@@ -142,7 +161,7 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
       length: _types.length,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('提醒模板'),
+          title: Text(L10n.tr('提醒模板')),
           bottom: TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,
@@ -154,7 +173,7 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
         // 免费用户隐藏新增按钮。
         floatingActionButton: _isMember
             ? FloatingActionButton(
-                tooltip: '新增模板',
+                tooltip: L10n.tr('新增模板'),
                 onPressed: () => _editTemplate(),
                 child: const Icon(Icons.add),
               )
@@ -169,10 +188,12 @@ class _ReminderTemplatesPageState extends State<ReminderTemplatesPage> {
                     color: Theme.of(context).colorScheme.surfaceContainerHighest,
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 10),
-                    child: const Text(
-                      '系统生成提醒时优先使用你的自定义模板(会员),未设置时用系统预设文案。'
-                      '同一类型的多个自定义模板中,标记为默认的会被使用(未标记时使用最早创建的)',
-                      style: TextStyle(fontSize: 12),
+                    child: Text(
+                      L10n.tr(
+                        '系统生成提醒时优先使用你的自定义模板(会员),未设置时用系统预设文案。'
+                        '同一类型的多个自定义模板中,标记为默认的会被使用(未标记时使用最早创建的)',
+                      ),
+                      style: const TextStyle(fontSize: 12),
                     ),
                   ),
                   Expanded(
@@ -251,7 +272,7 @@ class _TypeSection extends StatelessWidget {
                   ],
                 ),
               ),
-              if (!isMember) ...[
+                if (!isMember) ...[
                 const SizedBox(width: 8),
                 Container(
                   padding:
@@ -261,7 +282,7 @@ class _TypeSection extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    '会员专属',
+                    L10n.tr('会员专属'),
                     style: TextStyle(
                       fontSize: 11,
                       color: Theme.of(context).colorScheme.onSecondaryContainer,
@@ -277,7 +298,7 @@ class _TypeSection extends StatelessWidget {
             padding: const EdgeInsets.all(24),
             child: Center(
               child: Text(
-                '该类型暂无自定义模板',
+                L10n.tr('该类型暂无自定义模板'),
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -291,7 +312,7 @@ class _TypeSection extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
-              '系统预设(只读)',
+              L10n.tr('系统预设(只读)'),
               style: TextStyle(
                 fontSize: 12,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -325,7 +346,7 @@ class _TypeSection extends StatelessWidget {
                     Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: const Text('系统默认', style: TextStyle(fontSize: 11)),
+              child: Text(L10n.tr('系统默认'), style: const TextStyle(fontSize: 11)),
             ),
           ] else if (template.isDefault) ...[
             const SizedBox(width: 8),
@@ -336,7 +357,7 @@ class _TypeSection extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                '默认',
+                L10n.tr('默认'),
                 style: TextStyle(
                   fontSize: 11,
                   color: Theme.of(context).colorScheme.onPrimaryContainer,
@@ -361,15 +382,15 @@ class _TypeSection extends StatelessWidget {
                 if (!template.isDefault)
                   TextButton(
                     onPressed: () => onSetDefault(template),
-                    child: const Text('设为默认'),
+                    child: Text(L10n.tr('设为默认')),
                   ),
                 IconButton(
-                  tooltip: '编辑',
+                  tooltip: L10n.tr('编辑'),
                   icon: const Icon(Icons.edit_outlined),
                   onPressed: () => onEdit(template),
                 ),
                 IconButton(
-                  tooltip: '删除',
+                  tooltip: L10n.tr('删除'),
                   icon: const Icon(Icons.delete_outline),
                   onPressed: () => onDelete(template),
                 ),
@@ -432,7 +453,7 @@ class _TemplateDialogState extends State<_TemplateDialog> {
   Future<void> _save() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      setState(() => _error = '请输入模板名称');
+      setState(() => _error = L10n.tr('请输入模板名称'));
       return;
     }
     setState(() {
@@ -466,7 +487,7 @@ class _TemplateDialogState extends State<_TemplateDialog> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = '保存失败,请检查网络后重试';
+        _error = L10n.tr('保存失败,请检查网络后重试');
       });
     }
   }
@@ -474,7 +495,7 @@ class _TemplateDialogState extends State<_TemplateDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.isEdit ? '编辑模板' : '新增模板'),
+      title: Text(widget.isEdit ? L10n.tr('编辑模板') : L10n.tr('新增模板')),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -483,18 +504,18 @@ class _TemplateDialogState extends State<_TemplateDialog> {
             TextField(
               controller: _nameController,
               autofocus: !widget.isEdit,
-              decoration: const InputDecoration(
-                labelText: '名称 *',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('名称 *'),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
             // type 下拉:新增可选,编辑也可改(后端 PUT 支持带 type)。
             DropdownButtonFormField<String>(
               initialValue: _type,
-              decoration: const InputDecoration(
-                labelText: '类型',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('类型'),
+                border: const OutlineInputBorder(),
               ),
               items: [
                 for (final t in _types)
@@ -507,25 +528,25 @@ class _TemplateDialogState extends State<_TemplateDialog> {
             const SizedBox(height: 12),
             TextField(
               controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: '标题模板',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('标题模板'),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _bodyController,
               maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: '正文模板',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('正文模板'),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '可用变量:${_typeInfo.hint}',
+                L10n.trp('可用变量:{hint}', {'hint': _typeInfo.hint}),
                 style: TextStyle(
                   fontSize: 12,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -548,11 +569,11 @@ class _TemplateDialogState extends State<_TemplateDialog> {
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(L10n.tr('取消')),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,
-          child: Text(_saving ? '保存中...' : '保存'),
+          child: Text(_saving ? L10n.tr('保存中...') : L10n.tr('保存')),
         ),
       ],
     );

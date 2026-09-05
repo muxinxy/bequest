@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'logger.dart';
+import 'l10n/app_l10n.dart';
 import 'pages/app_lock_screen.dart';
 import 'pages/login_page.dart';
 import 'storage/secure_store.dart';
@@ -35,17 +37,22 @@ class BequestApp extends StatefulWidget {
   /// 设置页切换主题后通知全局刷新。
   static void notifyThemeChanged() => _BequestAppState._instance?.reloadTheme();
 
+  /// 设置页切换语言后通知全局刷新。
+  static void notifyLocaleChanged() => _BequestAppState._instance?.reloadLocale();
+
   @override
   State<BequestApp> createState() => _BequestAppState();
 }
 
 class _BequestAppState extends State<BequestApp> {
   ThemeMode _themeMode = ThemeMode.system;
+  Locale _locale = const Locale('zh');
 
   @override
   void initState() {
     super.initState();
     _loadTheme();
+    _loadLocale();
   }
 
   Future<void> _loadTheme() async {
@@ -64,8 +71,24 @@ class _BequestAppState extends State<BequestApp> {
     }
   }
 
+  Future<void> _loadLocale() async {
+    try {
+      final locale = await SecureStore().readLocale();
+      if (!mounted) return;
+      setState(() {
+        _locale = locale == 'en' ? const Locale('en') : const Locale('zh');
+        L10n.locale = _locale;
+      });
+    } catch (_) {
+      // 读取失败保持默认(中文)。
+    }
+  }
+
   /// 重新加载主题(设置页切换后调用)。
   void reloadTheme() => _loadTheme();
+
+  /// 重新加载语言(设置页切换后调用)。
+  void reloadLocale() => _loadLocale();
 
   static _BequestAppState? _instance;
 
@@ -74,7 +97,14 @@ class _BequestAppState extends State<BequestApp> {
     _instance = this;
     return MaterialApp(
       navigatorKey: appNavigatorKey,
-      title: '托孤',
+      title: L10n.tr('托孤'),
+      locale: _locale,
+      supportedLocales: const [Locale('zh'), Locale('en')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         fontFamily: 'NotoSansSC',

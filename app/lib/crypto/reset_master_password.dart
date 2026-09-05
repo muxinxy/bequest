@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../api/api_client.dart';
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 import '../sync/local_vault.dart';
 import 'asset_crypto.dart';
@@ -82,6 +83,6 @@ Future<({bool ok, String? error, String? newMk})> resetMasterPassword({
   } on ApiException catch (e) {
     return (ok: false, error: e.message, newMk: null);
   } catch (_) {
-    return (ok: false, error: '重置失败,请检查网络后重试', newMk: null);
+    return (ok: false, error: L10n.tr('重置失败,请检查网络后重试'), newMk: null);
   }
 }

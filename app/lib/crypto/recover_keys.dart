@@ -1,4 +1,5 @@
 import '../api/api_client.dart';
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 import 'asset_crypto.dart';
 import 'key_derivation.dart';
@@ -45,7 +46,7 @@ Future<({bool ok, String? error})> recoverMasterKeys({
       try {
         unwrapAssetKey(sampleWrappedMk, mk);
       } catch (_) {
-        return (ok: false, error: '主密码错误,请重试');
+        return (ok: false, error: L10n.tr('主密码错误,请重试'));
       }
     }
 
@@ -84,6 +85,6 @@ Future<({bool ok, String? error})> recoverMasterKeys({
   } on ApiException catch (e) {
     return (ok: false, error: e.message);
   } catch (_) {
-    return (ok: false, error: '恢复失败,请检查网络后重试');
+    return (ok: false, error: L10n.tr('恢复失败,请检查网络后重试'));
   }
 }

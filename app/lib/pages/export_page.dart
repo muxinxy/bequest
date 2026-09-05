@@ -6,6 +6,7 @@ import '../crypto/asset_crypto.dart';
 import '../crypto/attempt_guard.dart';
 import '../crypto/master_password.dart';
 import '../logger.dart';
+import '../l10n/app_l10n.dart';
 import '../models/asset.dart';
 import '../models/export_format.dart';
 import '../platform/file_share.dart';
@@ -34,7 +35,7 @@ class ExportPage extends StatefulWidget {
 class _ExportPageState extends State<ExportPage> {
   final _store = SecureStore();
 
-  String _status = '准备导出...';
+  String _status = L10n.tr('准备导出...');
 
   @override
   void initState() {
@@ -58,11 +59,11 @@ class _ExportPageState extends State<ExportPage> {
     try {
       final masterKey = await _store.readMasterKey();
       if (masterKey == null) {
-        _showError('未找到主密钥,请重新登录或进入本地模式');
+        _showError(L10n.tr('未找到主密钥,请重新登录或进入本地模式'));
         _finish();
         return;
       }
-      setState(() => _status = '正在导出资产...');
+      setState(() => _status = L10n.tr('正在导出资产...'));
       final items = await _collectItems(masterKey);
       final exportJson = buildExportJson(items, DateTime.now());
       final now = DateTime.now();
@@ -73,14 +74,14 @@ class _ExportPageState extends State<ExportPage> {
           ? encryptSensitiveData(jsonEncode(exportJson), masterKey)
           : jsonEncode(exportJson);
       final fileName = 'bequest_export_$stamp${widget.encrypt ? '.beq' : '.json'}';
-      final ok = await shareTextFile(fileName, content, '托孤资产导出');
+      final ok = await shareTextFile(fileName, content, L10n.tr('托孤资产导出'));
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(ok ? '导出成功' : '导出失败,请检查网络后重试')));
+          .showSnackBar(SnackBar(content: Text(ok ? L10n.tr('导出成功') : L10n.tr('导出失败,请检查网络后重试'))));
       _finish();
     } catch (e) {
       Logger.instance.e('export failed: $e');
-      _showError('导出失败,请检查网络后重试');
+      _showError(L10n.tr('导出失败,请检查网络后重试'));
       _finish();
     }
   }
@@ -155,7 +156,7 @@ class _ExportPageState extends State<ExportPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('导出资产')),
+      appBar: AppBar(title: Text(L10n.tr('导出资产'))),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

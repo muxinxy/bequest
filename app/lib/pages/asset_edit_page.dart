@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../crypto/asset_crypto.dart';
+import '../l10n/app_l10n.dart';
 import '../models/asset.dart';
 import '../models/category.dart';
 import '../models/entitlements.dart';
@@ -158,8 +159,10 @@ class _AssetEditPageState extends State<AssetEditPage> {
           if (_isLocalRepo) {
             // 本地库解密失败与多端无关(本地数据/篡改),保留原提示。
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('敏感信息解密失败,可能已被篡改或密钥不匹配,请重新填写保存'),
+              SnackBar(
+                content: Text(
+                  L10n.tr('敏感信息解密失败,可能已被篡改或密钥不匹配,请重新填写保存'),
+                ),
               ),
             );
           } else {
@@ -182,8 +185,10 @@ class _AssetEditPageState extends State<AssetEditPage> {
     } catch (e) {
       if (!mounted) return;
       final message = _isLocalRepo
-          ? (e is StateError ? '资产不存在或本地数据异常' : '加载失败,本地数据读取异常')
-          : '加载失败,请检查网络后重试';
+          ? (e is StateError
+              ? L10n.tr('资产不存在或本地数据异常')
+              : L10n.tr('加载失败,本地数据读取异常'))
+          : L10n.tr('加载失败,请检查网络后重试');
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message)));
       Navigator.of(context).pop();
@@ -196,18 +201,18 @@ class _AssetEditPageState extends State<AssetEditPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('无法解密敏感信息'),
-        content: const Text(
-          '主密码可能已在其他设备修改,本机加密密钥已失效。请退出登录并重新登录以恢复密钥。',
+        title: Text(L10n.tr('无法解密敏感信息')),
+        content: Text(
+          L10n.tr('主密码可能已在其他设备修改,本机加密密钥已失效。请退出登录并重新登录以恢复密钥。'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('退出登录'),
+            child: Text(L10n.tr('退出登录')),
           ),
         ],
       ),
@@ -257,16 +262,18 @@ class _AssetEditPageState extends State<AssetEditPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除资产'),
-        content: const Text('确定删除该资产?删除后资产将进入回收站,可在回收站恢复。'),
+        title: Text(L10n.tr('删除资产')),
+        content: Text(
+          L10n.tr('确定删除该资产?删除后资产将进入回收站,可在回收站恢复。'),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除'),
+            child: Text(L10n.tr('删除')),
           ),
         ],
       ),
@@ -276,10 +283,14 @@ class _AssetEditPageState extends State<AssetEditPage> {
       await widget.repository.deleteAsset(widget.asset!.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('已删除')));
+          .showSnackBar(SnackBar(content: Text(L10n.tr('已删除'))));
       Navigator.of(context).pop();
     } catch (_) {
-      _showError(_isLocalRepo ? '删除失败,请重试' : '删除失败,请检查网络后重试');
+      _showError(
+        _isLocalRepo
+            ? L10n.tr('删除失败,请重试')
+            : L10n.tr('删除失败,请检查网络后重试'),
+      );
     }
   }
 
@@ -293,7 +304,11 @@ class _AssetEditPageState extends State<AssetEditPage> {
       if (limit != null) {
         final count = (await widget.repository.listAssets()).length;
         if (count >= limit) {
-          _showError('已达资产上限 $limit 条,升级会员可解锁');
+          _showError(
+            L10n.trp('已达资产上限 {limit} 条,升级会员可解锁', {
+              'limit': '$limit',
+            }),
+          );
           return;
         }
       }
@@ -358,12 +373,16 @@ class _AssetEditPageState extends State<AssetEditPage> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(_isEdit ? '已保存' : '已添加')));
+          .showSnackBar(SnackBar(content: Text(_isEdit ? L10n.tr('已保存') : L10n.tr('已添加'))));
       Navigator.of(context).pop();
     } on ApiException catch (e) {
       _showError(e.message);
     } catch (_) {
-      _showError(_isLocalRepo ? '保存失败,请重试' : '保存失败,请检查网络后重试');
+      _showError(
+        _isLocalRepo
+            ? L10n.tr('保存失败,请重试')
+            : L10n.tr('保存失败,请检查网络后重试'),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -403,7 +422,9 @@ class _AssetEditPageState extends State<AssetEditPage> {
               initialValue: TextEditingValue(text: f.key.text),
               optionsBuilder: (TextEditingValue editing) {
                 if (editing.text.isEmpty) return const Iterable<String>.empty();
-                return _credentialSuggestions.where(
+                // 建议项先按当前语言解析,再在解析后的文案上匹配(中文原样)。
+                final translated = _credentialSuggestions.map(L10n.tr);
+                return translated.where(
                   (s) => s.contains(editing.text) || editing.text.contains(s),
                 );
               },
@@ -417,9 +438,9 @@ class _AssetEditPageState extends State<AssetEditPage> {
                   controller: controller,
                   focusNode: focusNode,
                   onChanged: (v) => f.key.text = v,
-                  decoration: const InputDecoration(
-                    labelText: '属性名称',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: L10n.tr('属性名称'),
+                    border: const OutlineInputBorder(),
                     isDense: true,
                   ),
                 );
@@ -430,15 +451,15 @@ class _AssetEditPageState extends State<AssetEditPage> {
           Expanded(
             child: TextField(
               controller: f.value,
-              decoration: const InputDecoration(
-                labelText: '属性值',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('属性值'),
+                border: const OutlineInputBorder(),
                 isDense: true,
               ),
             ),
           ),
           IconButton(
-            tooltip: '删除',
+            tooltip: L10n.tr('删除'),
             icon: const Icon(Icons.remove_circle_outline),
             onPressed: () => _removeCredentialField(index),
           ),
@@ -451,11 +472,11 @@ class _AssetEditPageState extends State<AssetEditPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEdit ? '编辑资产' : '添加资产'),
+        title: Text(_isEdit ? L10n.tr('编辑资产') : L10n.tr('添加资产')),
         actions: [
           if (_isEdit && !_isLocalRepo)
             IconButton(
-              tooltip: '设置继承人',
+              tooltip: L10n.tr('设置继承人'),
               icon: const Icon(Icons.people_outline),
               onPressed: () async {
                 final asset = widget.asset;
@@ -473,7 +494,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
             ),
           if (_isEdit)
             IconButton(
-              tooltip: '删除资产',
+              tooltip: L10n.tr('删除资产'),
               icon: const Icon(Icons.delete_outline),
               onPressed: _deleteAsset,
             ),
@@ -490,30 +511,32 @@ class _AssetEditPageState extends State<AssetEditPage> {
                   children: [
                     TextFormField(
                       controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: '名称 *',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: L10n.tr('名称 *'),
+                        border: const OutlineInputBorder(),
                       ),
                       validator: (value) =>
-                          (value == null || value.trim().isEmpty) ? '请输入名称' : null,
+                          (value == null || value.trim().isEmpty)
+                          ? L10n.tr('请输入名称')
+                          : null,
                     ),
                     const SizedBox(height: 16),
                     InkWell(
                       onTap: _showCategoryPicker,
                       child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: '分组',
-                          border: OutlineInputBorder(),
-                          suffixIcon: Icon(Icons.search),
+                        decoration: InputDecoration(
+                          labelText: L10n.tr('分组'),
+                          border: const OutlineInputBorder(),
+                          suffixIcon: const Icon(Icons.search),
                         ),
                         child: Text(
                           _categoryValue.isEmpty
-                              ? '未分组'
+                              ? L10n.tr('未分组')
                               : (_categories
                                       .where((c) => c.id == _categoryValue)
                                       .firstOrNull
                                       ?.name ??
-                                  '未分组'),
+                                  L10n.tr('未分组')),
                           style: const TextStyle(fontSize: 16),
                         ),
                       ),
@@ -521,15 +544,15 @@ class _AssetEditPageState extends State<AssetEditPage> {
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       initialValue: _statusValue,
-                      decoration: const InputDecoration(
-                        labelText: '状态',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: L10n.tr('状态'),
+                        border: const OutlineInputBorder(),
                       ),
-                      items: const [
-                        DropdownMenuItem(value: 'active', child: Text('正常')),
-                        DropdownMenuItem(value: 'inactive', child: Text('停用')),
-                        DropdownMenuItem(value: 'pending', child: Text('待处理')),
-                        DropdownMenuItem(value: 'expired', child: Text('已过期')),
+                      items: [
+                        DropdownMenuItem(value: 'active', child: Text(L10n.tr('正常'))),
+                        DropdownMenuItem(value: 'inactive', child: Text(L10n.tr('停用'))),
+                        DropdownMenuItem(value: 'pending', child: Text(L10n.tr('待处理'))),
+                        DropdownMenuItem(value: 'expired', child: Text(L10n.tr('已过期'))),
                       ],
                       onChanged: (value) =>
                           setState(() => _statusValue = value ?? 'active'),
@@ -537,16 +560,16 @@ class _AssetEditPageState extends State<AssetEditPage> {
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Text(
-                            '属性',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                            L10n.tr('属性'),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
                         TextButton.icon(
                           onPressed: _addCredentialField,
                           icon: const Icon(Icons.add, size: 18),
-                          label: const Text('添加'),
+                          label: Text(L10n.tr('添加')),
                         ),
                       ],
                     ),
@@ -556,7 +579,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Text(
-                          '添加账号、密码、恢复码等(可选)',
+                          L10n.tr('添加账号、密码、恢复码等(可选)'),
                           style: TextStyle(
                             fontSize: 12,
                             color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -567,28 +590,28 @@ class _AssetEditPageState extends State<AssetEditPage> {
                     TextFormField(
                       controller: _notesController,
                       maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: '备注',
-                        hintText: '补充说明,加密保存',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: L10n.tr('备注'),
+                        hintText: L10n.tr('补充说明,加密保存'),
+                        border: const OutlineInputBorder(),
                       ),
                     ),
                     const SizedBox(height: 16),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('到期日'),
-                      subtitle: Text(_expiryDate ?? '未设置(可选)'),
+                      title: Text(L10n.tr('到期日')),
+                      subtitle: Text(_expiryDate ?? L10n.tr('未设置(可选)')),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(
-                            tooltip: '选择日期',
+                            tooltip: L10n.tr('选择日期'),
                             icon: const Icon(Icons.calendar_month),
                             onPressed: _pickExpiryDate,
                           ),
                           if (_expiryDate != null)
                             IconButton(
-                              tooltip: '清除日期',
+                              tooltip: L10n.tr('清除日期'),
                               icon: const Icon(Icons.clear),
                               onPressed: () =>
                                   setState(() => _expiryDate = null),
@@ -600,16 +623,16 @@ class _AssetEditPageState extends State<AssetEditPage> {
                     DropdownButtonFormField<int?>(
                       key: const ValueKey('advance-days'),
                       initialValue: _advanceDays,
-                      decoration: const InputDecoration(
-                        labelText: '到期提醒提前天数',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: L10n.tr('到期提醒提前天数'),
+                        border: const OutlineInputBorder(),
                       ),
-                      items: const [
-                        DropdownMenuItem<int?>(value: null, child: Text('不提醒')),
-                        DropdownMenuItem<int?>(value: 30, child: Text('提前30天')),
-                        DropdownMenuItem<int?>(value: 7, child: Text('提前7天')),
-                        DropdownMenuItem<int?>(value: 1, child: Text('提前1天')),
-                        DropdownMenuItem<int?>(value: 0, child: Text('到期当天')),
+                      items: [
+                        DropdownMenuItem<int?>(value: null, child: Text(L10n.tr('不提醒'))),
+                        DropdownMenuItem<int?>(value: 30, child: Text(L10n.tr('提前30天'))),
+                        DropdownMenuItem<int?>(value: 7, child: Text(L10n.tr('提前7天'))),
+                        DropdownMenuItem<int?>(value: 1, child: Text(L10n.tr('提前1天'))),
+                        DropdownMenuItem<int?>(value: 0, child: Text(L10n.tr('到期当天'))),
                       ],
                       onChanged: (value) =>
                           setState(() => _advanceDays = value),
@@ -623,7 +646,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
                               width: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('保存'),
+                          : Text(L10n.tr('保存')),
                     ),
                   ],
                 ),
@@ -640,7 +663,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('选择分组'),
+          title: Text(L10n.tr('选择分组')),
           content: SizedBox(
             width: 320,
             height: 360,
@@ -650,11 +673,11 @@ class _AssetEditPageState extends State<AssetEditPage> {
                 TextField(
                   controller: searchController,
                   autofocus: true,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
-                    hintText: '搜索分组名称',
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search),
+                    hintText: L10n.tr('搜索分组名称'),
                     isDense: true,
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                   ),
                   onChanged: (value) =>
                       setDialogState(() => query = value.trim()),
@@ -666,7 +689,7 @@ class _AssetEditPageState extends State<AssetEditPage> {
                     children: [
                       ListTile(
                         dense: true,
-                        title: const Text('未分组'),
+                        title: Text(L10n.tr('未分组')),
                         selected: _categoryValue.isEmpty,
                         onTap: () => Navigator.of(context).pop(''),
                       ),
@@ -676,7 +699,9 @@ class _AssetEditPageState extends State<AssetEditPage> {
                         ListTile(
                           dense: true,
                           title: Text(
-                            c.isPreset ? '${c.name}(预设)' : c.name,
+                            c.isPreset
+                                ? L10n.trp('{name}(预设)', {'name': c.name})
+                                : c.name,
                           ),
                           selected: _categoryValue == c.id,
                           onTap: () => Navigator.of(context).pop(c.id),

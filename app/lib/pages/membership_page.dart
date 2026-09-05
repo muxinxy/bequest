@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../models/entitlements.dart';
 import '../storage/secure_store.dart';
 
@@ -104,13 +105,15 @@ class _MembershipPageState extends State<MembershipPage> {
       '${dt.year}-${_two(dt.month)}-${_two(dt.day)} ${_two(dt.hour)}:${_two(dt.minute)}';
 
   String _fmtRemaining(Duration d) {
-    if (d.isNegative) return '已到期';
+    if (d.isNegative) return L10n.tr('已到期');
     // 天数向上取整:到期时间点是当天某时刻,30 天兑换码在任意时刻查看都应显示 30 天,
     // 直到真正跨过到期日才减为 29 天。inDays 向下取整会在兑换后几小时就显示 29 天。
     final days = (d.inMinutes + 1439) ~/ 1440;
-    if (days >= 1) return '$days 天';
-    if (d.inHours >= 1) return '${d.inHours} 小时';
-    return '${d.inMinutes} 分钟';
+    if (days >= 1) return L10n.trp('{days} 天', {'days': '$days'});
+    if (d.inHours >= 1) {
+      return L10n.trp('{hours} 小时', {'hours': '${d.inHours}'});
+    }
+    return L10n.trp('{minutes} 分钟', {'minutes': '${d.inMinutes}'});
   }
 
   /// 会员信息卡片(仅会员显示)。
@@ -134,7 +137,7 @@ class _MembershipPageState extends State<MembershipPage> {
                 Icon(Icons.workspace_premium, color: scheme.primary),
                 const SizedBox(width: 8),
                 Text(
-                  '会员',
+                  L10n.tr('会员'),
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -144,11 +147,14 @@ class _MembershipPageState extends State<MembershipPage> {
               ],
             ),
             const SizedBox(height: 12),
-            _infoRow('用户名', username),
-            _infoRow('到期时间', isPermanent ? '永久' : _fmt(expiry!)),
+            _infoRow(L10n.tr('用户名'), username),
             _infoRow(
-              '剩余时长',
-              isPermanent ? '永久有效' : _fmtRemaining(remaining!),
+              L10n.tr('到期时间'),
+              isPermanent ? L10n.tr('永久') : _fmt(expiry!),
+            ),
+            _infoRow(
+              L10n.tr('剩余时长'),
+              isPermanent ? L10n.tr('永久有效') : _fmtRemaining(remaining!),
             ),
           ],
         ),
@@ -204,38 +210,45 @@ class _MembershipPageState extends State<MembershipPage> {
     final rows = <(IconData, String, Widget, Widget)>[
       (
         Icons.inventory_2,
-        '资产数量',
-        Text('${Entitlements.free.assetLimit} 条'),
-        const Text('不限'),
+        L10n.tr('资产数量'),
+        Text(
+          L10n.trp('{limit} 条', {'limit': '${Entitlements.free.assetLimit}'}),
+        ),
+        Text(L10n.tr('不限')),
       ),
       (
         Icons.cloud_sync,
-        '云端同步',
+        L10n.tr('云端同步'),
         _mark(Entitlements.free.cloudSync, muted: true),
         _mark(Entitlements.member.cloudSync),
       ),
       (
         Icons.family_restroom,
-        '继承交接',
+        L10n.tr('继承交接'),
         _mark(Entitlements.free.inheritance, muted: true),
         _mark(Entitlements.member.inheritance),
       ),
       (
         Icons.notifications,
-        '通知渠道',
-        const Text('邮件+IM'),
-        const Text('邮件+IM+短信'),
+        L10n.tr('通知渠道'),
+        Text(L10n.tr('邮件+IM')),
+        Text(L10n.tr('邮件+IM+短信')),
       ),
       (
         Icons.article,
-        '自定义提醒模板',
+        L10n.tr('自定义提醒模板'),
         _mark(false, muted: true),
         _mark(true),
       ),
-      (Icons.table_chart, 'Excel 导出', _mark(false, muted: true), _mark(true)),
+      (
+        Icons.table_chart,
+        L10n.tr('Excel 导出'),
+        _mark(false, muted: true),
+        _mark(true),
+      ),
       (
         Icons.cloud_off,
-        '离线模式',
+        L10n.tr('离线模式'),
         _mark(Entitlements.free.offlineMode, muted: true),
         _mark(Entitlements.member.offlineMode),
       ),
@@ -264,7 +277,7 @@ class _MembershipPageState extends State<MembershipPage> {
           Icon(Icons.workspace_premium, size: 14, color: scheme.onPrimary),
           const SizedBox(width: 4),
           Text(
-            '会员',
+            L10n.tr('会员'),
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.bold,
@@ -306,8 +319,8 @@ class _MembershipPageState extends State<MembershipPage> {
             TableRow(
               decoration: BoxDecoration(color: scheme.surfaceContainerHighest),
               children: [
-                headerCell('权益'),
-                headerCell('免费'),
+                headerCell(L10n.tr('权益')),
+                headerCell(L10n.tr('免费')),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Align(alignment: Alignment.center, child: memberPill),
@@ -361,16 +374,16 @@ class _MembershipPageState extends State<MembershipPage> {
               children: [
                 Icon(Icons.notifications_outlined, color: scheme.primary),
                 const SizedBox(width: 8),
-                const Text(
-                  '本月通知用量',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                Text(
+                  L10n.tr('本月通知用量'),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 12),
             _usageRow(
               icon: Icons.mail_outline,
-              label: '邮件',
+              label: L10n.tr('邮件'),
               used: emailUsed,
               limit: emailLimit,
             ),
@@ -379,7 +392,7 @@ class _MembershipPageState extends State<MembershipPage> {
               const SizedBox(height: 12),
               _usageRow(
                 icon: Icons.sms_outlined,
-                label: '短信',
+                label: L10n.tr('短信'),
                 used: smsUsed,
                 limit: smsLimit,
               ),
@@ -412,7 +425,10 @@ class _MembershipPageState extends State<MembershipPage> {
                   Text(label, style: const TextStyle(fontSize: 14)),
                   const Spacer(),
                   Text(
-                    '已用 $used / $limit',
+                    L10n.trp('已用 {used} / {limit}', {
+                      'used': '$used',
+                      'limit': '$limit',
+                    }),
                     style: TextStyle(
                       fontSize: 13,
                       color: scheme.onSurfaceVariant,
@@ -439,7 +455,7 @@ class _MembershipPageState extends State<MembershipPage> {
   Future<void> _showRedeemDialog() async {
     if (!_hasJwt) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先登录')),
+        SnackBar(content: Text(L10n.tr('请先登录'))),
       );
       return;
     }
@@ -450,7 +466,7 @@ class _MembershipPageState extends State<MembershipPage> {
       final code = controller.text.trim();
       if (!RegExp(r'^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$').hasMatch(code)) {
         ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(content: Text('兑换码格式不正确')),
+          SnackBar(content: Text(L10n.tr('兑换码格式不正确'))),
         );
         return;
       }
@@ -464,7 +480,7 @@ class _MembershipPageState extends State<MembershipPage> {
         Navigator.of(ctx).pop();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('兑换成功')),
+          SnackBar(content: Text(L10n.tr('兑换成功'))),
         );
         await _load();
       } on ApiException catch (e) {
@@ -475,7 +491,7 @@ class _MembershipPageState extends State<MembershipPage> {
         if (!ctx.mounted) return;
         setDialogState(() => submitting = false);
         ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(content: Text('兑换失败,请检查网络')),
+          SnackBar(content: Text(L10n.tr('兑换失败,请检查网络'))),
         );
       }
     }
@@ -484,21 +500,21 @@ class _MembershipPageState extends State<MembershipPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('兑换会员'),
+          title: Text(L10n.tr('兑换会员')),
           content: TextField(
             controller: controller,
             autofocus: true,
             textCapitalization: TextCapitalization.characters,
             inputFormatters: [_CodeFormatter()],
-            decoration: const InputDecoration(
-              labelText: '兑换码',
+            decoration: InputDecoration(
+              labelText: L10n.tr('兑换码'),
               hintText: 'XXXX-XXXX-XXXX',
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('取消'),
+              child: Text(L10n.tr('取消')),
             ),
             submitting
                 ? const Padding(
@@ -511,7 +527,7 @@ class _MembershipPageState extends State<MembershipPage> {
                   )
                 : FilledButton(
                     onPressed: () => redeem(ctx, setDialogState),
-                    child: const Text('兑换'),
+                    child: Text(L10n.tr('兑换')),
                   ),
           ],
         ),
@@ -524,12 +540,12 @@ class _MembershipPageState extends State<MembershipPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('会员'),
+        title: Text(L10n.tr('会员')),
         actions: [
           TextButton.icon(
             onPressed: _showRedeemDialog,
             icon: const Icon(Icons.card_giftcard),
-            label: const Text('兑换'),
+            label: Text(L10n.tr('兑换')),
           ),
         ],
       ),

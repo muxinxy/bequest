@@ -6,6 +6,7 @@ import '../crypto/asset_crypto.dart';
 import '../crypto/attempt_guard.dart';
 import '../crypto/master_password.dart';
 import '../logger.dart';
+import '../l10n/app_l10n.dart';
 import '../models/asset.dart';
 import '../models/export_format.dart';
 import '../platform/file_share.dart';
@@ -26,7 +27,7 @@ class ExcelExportPage extends StatefulWidget {
 
 class _ExcelExportPageState extends State<ExcelExportPage> {
   final _store = SecureStore();
-  String _status = '准备导出...';
+  String _status = L10n.tr('准备导出...');
 
   @override
   void initState() {
@@ -49,11 +50,11 @@ class _ExcelExportPageState extends State<ExcelExportPage> {
     try {
       final masterKey = await _store.readMasterKey();
       if (masterKey == null) {
-        _showError('未找到主密钥,请重新登录或进入本地模式');
+        _showError(L10n.tr('未找到主密钥,请重新登录或进入本地模式'));
         _finish();
         return;
       }
-      setState(() => _status = '正在生成 Excel...');
+      setState(() => _status = L10n.tr('正在生成 Excel...'));
       final items = await _collectItems(masterKey);
       final bytes = buildExcelBytes(items);
       final now = DateTime.now();
@@ -63,16 +64,18 @@ class _ExcelExportPageState extends State<ExcelExportPage> {
       final ok = await shareBytesFile(
         'bequest_export_$stamp.xlsx',
         bytes,
-        '托孤资产导出(Excel)',
+        L10n.tr('托孤资产导出(Excel)'),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ok ? '导出成功' : '导出失败,请检查网络后重试')),
+        SnackBar(
+          content: Text(ok ? L10n.tr('导出成功') : L10n.tr('导出失败,请检查网络后重试')),
+        ),
       );
       _finish();
     } catch (e) {
       Logger.instance.e('excel export failed: $e');
-      _showError('导出失败,请检查网络后重试');
+      _showError(L10n.tr('导出失败,请检查网络后重试'));
       _finish();
     }
   }
@@ -154,7 +157,7 @@ class _ExcelExportPageState extends State<ExcelExportPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('导出 Excel')),
+      appBar: AppBar(title: Text(L10n.tr('导出 Excel'))),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

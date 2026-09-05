@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../models/inheritor.dart';
 import '../repository/asset_repository.dart';
 import '../storage/secure_store.dart';
@@ -79,7 +80,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('加载失败,请检查网络后重试'))));
       Navigator.of(context).pop();
     }
   }
@@ -100,7 +101,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
     );
     if (ok != true || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已添加继承人,请将访问码线下告知对方')),
+      SnackBar(content: Text(L10n.tr('已添加继承人,请将访问码线下告知对方'))),
     );
     await _load();
   }
@@ -124,23 +125,23 @@ class _InheritorsPageState extends State<InheritorsPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('继承码已复制')));
+    ).showSnackBar(SnackBar(content: Text(L10n.tr('继承码已复制'))));
   }
 
   Future<void> _deleteInheritor(Inheritor inheritor) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除继承人'),
-        content: Text('确定删除继承人「${inheritor.name}」吗?'),
+        title: Text(L10n.tr('删除继承人')),
+        content: Text(L10n.trp('确定删除继承人「{name}」吗?', {'name': inheritor.name})),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除'),
+            child: Text(L10n.tr('删除')),
           ),
         ],
       ),
@@ -154,7 +155,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
     } on ApiException catch (e) {
       _showError(e.message);
     } catch (_) {
-      _showError('删除失败,请检查网络后重试');
+      _showError(L10n.tr('删除失败,请检查网络后重试'));
     }
   }
 
@@ -175,17 +176,20 @@ class _InheritorsPageState extends State<InheritorsPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('设为默认继承人'),
-        content: Text('确定将「${inheritor.name}」设为默认继承人吗?\n'
-            '继承触发时未指定继承人的资产将优先交接给 TA。'),
+        title: Text(L10n.tr('设为默认继承人')),
+        content: Text(L10n.trp(
+          '确定将「{name}」设为默认继承人吗?\n'
+          '继承触发时未指定继承人的资产将优先交接给 TA。',
+          {'name': inheritor.name},
+        )),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('设为默认'),
+            child: Text(L10n.tr('设为默认')),
           ),
         ],
       ),
@@ -197,9 +201,9 @@ class _InheritorsPageState extends State<InheritorsPage> {
       await (await _api).putDefaultInheritor(jwt, int.tryParse(inheritor.id));
       await _load();
       if (!mounted) return;
-      _showError('已设为默认继承人');
+      _showError(L10n.tr('已设为默认继承人'));
     } catch (_) {
-      _showError('保存失败,请检查网络后重试');
+      _showError(L10n.tr('保存失败,请检查网络后重试'));
     }
   }
 
@@ -233,9 +237,9 @@ class _InheritorsPageState extends State<InheritorsPage> {
       });
     final shown = sorted.take(_visibleCount).toList();
     return Scaffold(
-      appBar: AppBar(title: const Text('继承人管理')),
+      appBar: AppBar(title: Text(L10n.tr('继承人管理'))),
       floatingActionButton: FloatingActionButton(
-        tooltip: '添加继承人',
+        tooltip: L10n.tr('添加继承人'),
         onPressed: _addInheritor,
         child: const Icon(Icons.add),
       ),
@@ -245,10 +249,12 @@ class _InheritorsPageState extends State<InheritorsPage> {
             width: double.infinity,
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             padding: const EdgeInsets.all(12),
-            child: const Text(
-              '继承码用于触发继承后领取资产密钥,请线下告知继承人;'
-              '列表仅显示掩码,查看/重置请在编辑中点击"生成"。',
-              style: TextStyle(fontSize: 12),
+            child: Text(
+              L10n.tr(
+                '继承码用于触发继承后领取资产密钥,请线下告知继承人;'
+                '列表仅显示掩码,查看/重置请在编辑中点击"生成"。',
+              ),
+              style: const TextStyle(fontSize: 12),
             ),
           ),
           // 搜索框:按姓名/邮箱本地过滤。
@@ -258,13 +264,13 @@ class _InheritorsPageState extends State<InheritorsPage> {
               controller: _searchController,
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
-                hintText: '搜索姓名或邮箱',
+                hintText: L10n.tr('搜索姓名或邮箱'),
                 isDense: true,
                 border: const OutlineInputBorder(),
                 suffixIcon: _search.isEmpty
                     ? null
                     : IconButton(
-                        tooltip: '清空',
+                        tooltip: L10n.tr('清空'),
                         icon: const Icon(Icons.clear),
                         onPressed: () {
                           _searchController.clear();
@@ -285,9 +291,9 @@ class _InheritorsPageState extends State<InheritorsPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _inheritors.isEmpty
-                ? const Center(child: Text('暂无继承人,点击右下角 + 添加'))
+                ? Center(child: Text(L10n.tr('暂无继承人,点击右下角 + 添加')))
                 : filtered.isEmpty
-                ? const Center(child: Text('没有匹配的继承人'))
+                ? Center(child: Text(L10n.tr('没有匹配的继承人')))
                 : ListView.separated(
                     controller: _scroll,
                     itemCount: shown.length,
@@ -315,7 +321,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
-                                  '默认',
+                                  L10n.tr('默认'),
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: Theme.of(
@@ -331,16 +337,17 @@ class _InheritorsPageState extends State<InheritorsPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '${inheritor.email.isEmpty ? '未填写邮箱' : inheritor.email}'
+                              '${inheritor.email.isEmpty ? L10n.tr('未填写邮箱') : inheritor.email}'
                               '${inheritor.phone.isEmpty ? '' : ' · ${inheritor.phone}'}'
-                              '${inheritor.priority == null ? '' : ' · 优先级 ${inheritor.priority}'}'
-                              ' · ${inheritor.categoryCount} 个分组 · ${inheritor.assetCount} 个资产',
+                              '${inheritor.priority == null ? '' : ' · ${L10n.trp('优先级 {n}', {'n': '${inheritor.priority}'})}'}'
+                              ' · ${L10n.trp('{n} 个分组', {'n': '${inheritor.categoryCount}'})}'
+                              ' · ${L10n.trp('{n} 个资产', {'n': '${inheritor.assetCount}'})}',
                             ),
                             Row(
                               children: [
                                 Flexible(
                                   child: Text(
-                                    '继承码:${inheritor.accessCode.isEmpty ? '未设置' : inheritor.accessCode}',
+                                    '${L10n.tr('继承码:')}${inheritor.accessCode.isEmpty ? L10n.tr('未设置') : inheritor.accessCode}',
                                     style: const TextStyle(
                                       fontSize: 12,
                                       color: Colors.grey,
@@ -352,7 +359,7 @@ class _InheritorsPageState extends State<InheritorsPage> {
                                 if (inheritor.accessCode.isNotEmpty &&
                                     !inheritor.accessCode.contains('*'))
                                   IconButton(
-                                    tooltip: '复制继承码',
+                                    tooltip: L10n.tr('复制继承码'),
                                     visualDensity: VisualDensity.compact,
                                     icon: const Icon(
                                       Icons.copy_outlined,
@@ -369,7 +376,9 @@ class _InheritorsPageState extends State<InheritorsPage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
-                              tooltip: isDefault ? '当前默认继承人' : '设为默认继承人',
+                              tooltip: isDefault
+                                  ? L10n.tr('当前默认继承人')
+                                  : L10n.tr('设为默认继承人'),
                               icon: Icon(
                                 isDefault
                                     ? Icons.star
@@ -383,17 +392,17 @@ class _InheritorsPageState extends State<InheritorsPage> {
                                   : () => _setDefaultInheritor(inheritor),
                             ),
                             IconButton(
-                              tooltip: '查看绑定资产',
+                              tooltip: L10n.tr('查看绑定资产'),
                               icon: const Icon(Icons.inventory_2_outlined),
                               onPressed: () => _openAssets(inheritor),
                             ),
                             IconButton(
-                              tooltip: '编辑',
+                              tooltip: L10n.tr('编辑'),
                               icon: const Icon(Icons.edit_outlined),
                               onPressed: () => _editInheritor(inheritor),
                             ),
                             IconButton(
-                              tooltip: '删除',
+                              tooltip: L10n.tr('删除'),
                               icon: const Icon(Icons.delete_outline),
                               onPressed: () => _deleteInheritor(inheritor),
                             ),
@@ -459,15 +468,15 @@ class _InheritorDialogState extends State<_InheritorDialog> {
     final code = _codeController.text.trim();
     String? error;
     if (name.isEmpty) {
-      error = '请输入姓名';
+      error = L10n.tr('请输入姓名');
     } else if (email.isEmpty && phone.isEmpty) {
-      error = '邮箱或手机号至少填一个';
+      error = L10n.tr('邮箱或手机号至少填一个');
     } else if (email.isNotEmpty && !isValidEmail(email)) {
-      error = '邮箱格式不正确';
+      error = L10n.tr('邮箱格式不正确');
     } else if (phone.isNotEmpty && !isValidPhone(phone)) {
-      error = '手机号格式不正确(5-20 位数字)';
+      error = L10n.tr('手机号格式不正确(5-20 位数字)');
     } else if (code.isEmpty && !_isEdit) {
-      error = '请输入或生成继承码';
+      error = L10n.tr('请输入或生成继承码');
     }
     if (error != null) {
       setState(() => _error = error);
@@ -506,7 +515,7 @@ class _InheritorDialogState extends State<_InheritorDialog> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = '保存失败,请检查网络后重试';
+        _error = L10n.tr('保存失败,请检查网络后重试');
       });
     }
   }
@@ -515,7 +524,7 @@ class _InheritorDialogState extends State<_InheritorDialog> {
   Widget build(BuildContext context) {
     final inheritor = widget.inheritor;
     return AlertDialog(
-      title: Text(_isEdit ? '编辑继承人' : '添加继承人'),
+      title: Text(_isEdit ? L10n.tr('编辑继承人') : L10n.tr('添加继承人')),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -524,28 +533,28 @@ class _InheritorDialogState extends State<_InheritorDialog> {
             TextField(
               controller: _nameController,
               autofocus: true,
-              decoration: const InputDecoration(
-                labelText: '姓名 *',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('姓名 *'),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: '邮箱(可选)',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('邮箱(可选)'),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _phoneController,
               keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: '手机号(可选)',
-                helperText: '邮箱或手机号至少填一个',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('手机号(可选)'),
+                helperText: L10n.tr('邮箱或手机号至少填一个'),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -556,13 +565,17 @@ class _InheritorDialogState extends State<_InheritorDialog> {
                   child: TextField(
                     controller: _codeController,
                     decoration: InputDecoration(
-                      labelText: _isEdit ? '新继承码' : '访问码 *',
+                      labelText: _isEdit
+                          ? L10n.tr('新继承码')
+                          : L10n.tr('访问码 *'),
                       hintText: _isEdit
                           ? (inheritor!.accessCode.isEmpty
-                              ? '8 位字母数字'
-                              : '留空则不修改')
-                          : '8 位字母数字',
-                      helperText: _isEdit ? '留空表示不修改继承码' : null,
+                              ? L10n.tr('8 位字母数字')
+                              : L10n.tr('留空则不修改'))
+                          : L10n.tr('8 位字母数字'),
+                      helperText: _isEdit
+                          ? L10n.tr('留空表示不修改继承码')
+                          : null,
                       border: const OutlineInputBorder(),
                     ),
                   ),
@@ -575,7 +588,7 @@ class _InheritorDialogState extends State<_InheritorDialog> {
                     setState(() {});
                   },
                   icon: const Icon(Icons.refresh),
-                  label: const Text('生成'),
+                  label: Text(L10n.tr('生成')),
                 ),
               ],
             ),
@@ -583,9 +596,11 @@ class _InheritorDialogState extends State<_InheritorDialog> {
               const SizedBox(height: 12),
               Text(
                 _isEdit
-                    ? '请立即将新的继承码线下告知继承人。'
-                    : '请立即将访问码线下告知继承人,此码仅现在可见,'
+                    ? L10n.tr('请立即将新的继承码线下告知继承人。')
+                    : L10n.tr(
+                        '请立即将访问码线下告知继承人,此码仅现在可见,'
                         '触发继承后凭此码领取密钥。',
+                      ),
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
@@ -605,11 +620,11 @@ class _InheritorDialogState extends State<_InheritorDialog> {
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(L10n.tr('取消')),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,
-          child: Text(_saving ? '保存中...' : '保存'),
+          child: Text(_saving ? L10n.tr('保存中...') : L10n.tr('保存')),
         ),
       ],
     );

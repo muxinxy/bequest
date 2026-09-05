@@ -2,6 +2,8 @@
 
 数字资产保险箱 + 数字遗嘱。管理实体/虚拟资产，号主超时未登录时升级提醒，最终交接给继承人。
 
+> English: [README.en.md](README.en.md)
+
 ## 结构
 
 - `app/` — Flutter 客户端（Android + Web，同一套代码编译两个平台）
@@ -21,6 +23,24 @@
 - 继承交接：继承人可访问 `http://服务器/claim` 凭 event_key + 访问码**网页领取**密钥；领取后 72h 内号主登录可反悔
 - 本地模式：**多本地账户**（各自独立主密码与加密数据），进入需验证账户主密码，云端/本地密钥隔离互不覆盖
 - 分组：自定义排序、删除保护（资产移入目标分组/合并）、未分类批量整理、30 天内到期预警
+
+## 数据库
+
+后端支持 **SQLite(默认)**、**MySQL 8 / MariaDB**、**PostgreSQL**。通过 `DB_DRIVER` 选择后端，连接参数用 `DB_DSN` 或 `DB_HOST/DB_PORT/DB_USER/DB_PASS/DB_NAME`。迁移脚本按方言分目录，启动时自动执行（已编译进二进制）。详见 [`server/README-deploy.md`](server/README-deploy.md)。
+
+```bash
+# 例:PostgreSQL
+DB_DRIVER=postgres DB_USER=bequest DB_PASS=secret DB_NAME=bequest go run .
+# 例:MySQL
+DB_DRIVER=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_USER=bequest DB_PASS=secret DB_NAME=bequest go run .
+```
+
+## 界面语言
+
+客户端、Web 管理后台、继承人领取页与 API 错误消息均支持**中英文**：
+- App:设置 → 语言 切换简体中文/English（或跟随系统）
+- 管理后台 / 领取页:页面右上角 中文/English 切换（记忆选择）
+- API 错误消息:按请求 `Accept-Language` 头返回中文或英文
 
 ## 运行
 
@@ -78,6 +98,9 @@ VERSION=1.0.0 ./scripts/build.sh   # → dist/bequest-server-1.0.0-<os>-<arch>
 
 | 变量 | 说明 |
 |---|---|
+| `DB_DRIVER` | 数据库驱动:`sqlite`(默认)/ `mysql` / `postgres` |
+| `DB_DSN` | 完整连接串(设置后忽略下方 DB_* 单变量) |
+| `DB_HOST/DB_PORT/DB_USER/DB_PASS/DB_NAME` | MySQL/PostgreSQL 连接参数 |
 | `JWT_SECRET` | JWT 签名密钥（生产必填） |
 | `ENCRYPTION_KEY` | SMTP 密码 AES 加密密钥（生产必填，dev 有默认值） |
 | `SMTP_HOST/PORT/USER/PASS/FROM` | 系统邮件（单服务器，或多 SMTP 用 `config.json`） |

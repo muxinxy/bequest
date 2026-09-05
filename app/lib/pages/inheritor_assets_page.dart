@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../repository/asset_repository.dart';
 import '../storage/secure_store.dart';
 
@@ -59,7 +60,7 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
     for (final i in _inheritors) {
       if ('${i['id']}' == id) return '${i['name']}';
     }
-    return '该继承人';
+    return L10n.tr('该继承人');
   }
 
   Future<void> _select(String id) async {    setState(() {
@@ -84,7 +85,7 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
         });
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+        ).showSnackBar(SnackBar(content: Text(L10n.tr('加载失败,请检查网络后重试'))));
       }
     }
   }
@@ -103,12 +104,16 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
       await showDialog<void>(
         context: context,
         builder: (context) => SimpleDialog(
-          title: Text('「${group['category_name'] ?? ''}」经分组继承的资产'),
+          title: Text(
+            L10n.trp('「{name}」经分组继承的资产', {
+              'name': group['category_name']?.toString() ?? '',
+            }),
+          ),
           children: [
             if (assets.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('该分组下暂无资产'),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(L10n.tr('该分组下暂无资产')),
               ),
             for (final a in assets)
               SimpleDialogOption(
@@ -120,7 +125,7 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
                     Expanded(child: Text('${a['name'] ?? ''}')),
                     if (a['expiry_date'] != null)
                       Text(
-                        '到期 ${a['expiry_date']}',
+                        L10n.trp('到期 {date}', {'date': '${a['expiry_date']}'}),
                         style: TextStyle(
                           fontSize: 12,
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -135,7 +140,7 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('预览失败,请检查网络后重试')));
+          .showSnackBar(SnackBar(content: Text(L10n.tr('预览失败,请检查网络后重试'))));
     }
   }
 
@@ -144,17 +149,22 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('解绑所选资产?'),
-        content: Text('将解绑 ${_selected.length} 个资产的继承人绑定,解绑后这些资产'
-            '继承触发时随全量交接。'),
+        title: Text(L10n.tr('解绑所选资产?')),
+        content: Text(
+          L10n.trp(
+            '将解绑 {n} 个资产的继承人绑定,解绑后这些资产'
+            '继承触发时随全量交接。',
+            {'n': '${_selected.length}'},
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('解绑'),
+            child: Text(L10n.tr('解绑')),
           ),
         ],
       ),
@@ -180,21 +190,21 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('已解绑')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('已解绑'))));
       final sel = _selectedId;
       if (sel != null) await _select(sel);
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('解绑失败,请检查网络后重试')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('解绑失败,请检查网络后重试'))));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('继承人绑定资产')),
+      appBar: AppBar(title: Text(L10n.tr('继承人绑定资产'))),
       body: Column(
         children: [
           Padding(
@@ -202,21 +212,21 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
             child: widget.initialInheritorId != null
                 // 固定继承人:只显示姓名,不提供下拉选择。
                 ? Text(
-                    '继承人:$_inheritorName',
+                    L10n.trp('继承人:{name}', {'name': _inheritorName}),
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   )
                 : _inheritors.isEmpty
                     ? Text(
-                        '暂无继承人,请先在「继承人」中创建',
+                        L10n.tr('暂无继承人,请先在「继承人」中创建'),
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       )
                     : DropdownButtonFormField<String>(
                     initialValue: _selectedId,
-                    decoration: const InputDecoration(
-                      labelText: '选择继承人',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: L10n.tr('选择继承人'),
+                      border: const OutlineInputBorder(),
                     ),
                     items: [
                       for (final i in _inheritors)
@@ -231,7 +241,10 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
                                 ),
                               ),
                               Text(
-                                '${i['category_count'] ?? 0} 个分组 · ${i['asset_count'] ?? 0} 个资产',
+                                L10n.trp('{n} 个分组 · {m} 个资产', {
+                                  'n': '${i['category_count'] ?? 0}',
+                                  'm': '${i['asset_count'] ?? 0}',
+                                }),
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Theme.of(
@@ -252,7 +265,7 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _assets.isEmpty
-                    ? const Center(child: Text('该继承人暂无绑定'))
+                    ? Center(child: Text(L10n.tr('该继承人暂无绑定')))
                     : ListView.builder(
                         itemCount: _assets.length,
                         itemBuilder: (context, index) {
@@ -263,14 +276,25 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
                           final days = a['trigger_days'];
                           // 分组行显示分组实体(含经分组继承的资产数);资产行显示资产。
                           final title = viaGroup
-                              ? '分组「${a['category_name'] ?? ''}」'
+                              ? L10n.trp('分组「{name}」', {
+                                  'name': a['category_name']?.toString() ?? '',
+                                })
                               : '${a['asset_name'] ?? ''}';
                           final subtitle = viaGroup
-                              ? '经分组继承 · ${a['asset_count'] ?? 0} 个资产'
-                                  '${days == null ? '' : ' · $days 天触发'}'
-                              : '直接绑定'
-                                  '${a['category_name'] == null || (a['category_name'] as String).isEmpty ? '' : ' · ${a['category_name']}'}'
-                                  '${days == null ? '' : ' · $days 天触发'}';
+                              ? L10n.trp('经分组继承 · {n} 个资产', {
+                                  'n': '${a['asset_count'] ?? 0}',
+                                }) +
+                                    (days == null
+                                        ? ''
+                                        : L10n.trp(' · {n} 天触发', {'n': '$days'}))
+                              : L10n.tr('直接绑定') +
+                                    (a['category_name'] == null ||
+                                            (a['category_name'] as String).isEmpty
+                                        ? ''
+                                        : ' · ${a['category_name']}') +
+                                    (days == null
+                                        ? ''
+                                        : L10n.trp(' · {n} 天触发', {'n': '$days'}));
                           return ListTile(
                             leading: Checkbox(
                               value: isSelected,
@@ -286,7 +310,7 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
                             subtitle: Text(subtitle),
                             trailing: viaGroup
                                 ? IconButton(
-                                    tooltip: '预览资产',
+                                    tooltip: L10n.tr('预览资产'),
                                     icon: const Icon(Icons.visibility_outlined),
                                     onPressed: () => _previewGroupAssets(a),
                                   )
@@ -303,7 +327,7 @@ class _InheritorAssetsPageState extends State<InheritorAssetsPage> {
                   width: double.infinity,
                   child: FilledButton.icon(
                     icon: const Icon(Icons.link_off),
-                    label: Text('解绑所选 (${_selected.length})'),
+                    label: Text(L10n.trp('解绑所选 ({n})', {'n': '${_selected.length}'})),
                     onPressed: _unbindSelected,
                   ),
                 ),

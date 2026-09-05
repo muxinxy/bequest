@@ -9,6 +9,7 @@ import '../api/api_config.dart';
 import '../crypto/attempt_guard.dart';
 import '../crypto/key_derivation.dart';
 import '../crypto/master_password.dart';
+import '../l10n/app_l10n.dart';
 import '../logger.dart';
 import '../storage/secure_store.dart';
 import '../sync/auto_backup.dart';
@@ -220,26 +221,26 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     // 重启自动备份调度(间隔/最大数量变更即时生效)。
     await AutoBackupScheduler.instance.onConfigChanged();
     if (!mounted) return;
-    _snack('配置已保存');
+    _snack(L10n.tr('配置已保存'));
   }
 
   Future<void> _testConnection() async {
     final provider = syncProviderFromConfig(_formConfig());
     if (provider == null) {
-      _snack('请先填写完整的连接信息');
+      _snack(L10n.tr('请先填写完整的连接信息'));
       return;
     }
     setState(() => _busy = true);
     try {
       final ok = await provider.testConnection();
-      _snack(ok ? '连接成功' : '连接失败');
+      _snack(ok ? L10n.tr('连接成功') : L10n.tr('连接失败'));
     } on SyncException catch (e) {
-      // 显示具体原因(认证/目录/路径),便于用户定位配置问题。
+      // 显示具体原因(认证/目录/路径);消息已在 lib/sync 抛出点按当前语言生成。
       Logger.instance.e('sync testConnection failed: ${e.message}');
       _snack(e.message);
     } catch (e) {
       Logger.instance.e('sync testConnection failed: $e');
-      _snack('连接失败');
+      _snack(L10n.tr('连接失败'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -248,12 +249,12 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   Future<void> _syncNow() async {
     final provider = syncProviderFromConfig(_formConfig());
     if (provider == null) {
-      _snack('请先填写完整的连接信息');
+      _snack(L10n.tr('请先填写完整的连接信息'));
       return;
     }
     final masterKey = await _store.readMasterKey();
     if (masterKey == null) {
-      _snack('请先注册并设置主密码');
+      _snack(L10n.tr('请先注册并设置主密码'));
       return;
     }
     final jwt = await _store.readJwt();
@@ -285,13 +286,13 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       await _rotateBackups(provider);
       _lastBackupName = name;
       if (mounted) setState(() {});
-      _snack('备份完成: $name');
+      _snack(L10n.trp('备份完成: {name}', {'name': name}));
     } on StateError catch (e) {
       Logger.instance.e('sync failed: ${e.message}');
       _snack(e.message);
     } catch (e) {
       Logger.instance.e('sync failed: $e');
-      _snack('同步失败,请检查网络与连接配置');
+      _snack(L10n.tr('同步失败,请检查网络与连接配置'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -347,7 +348,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   Future<void> _restore() async {
     final provider = syncProviderFromConfig(_formConfig());
     if (provider == null) {
-      _snack('请先填写完整的连接信息');
+      _snack(L10n.tr('请先填写完整的连接信息'));
       return;
     }
     while (mounted) {
@@ -371,7 +372,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       if (!mounted) return;
       setState(() => _busy = false);
       if (files.isEmpty) {
-        _snack('没有找到备份文件');
+        _snack(L10n.tr('没有找到备份文件'));
         return;
       }
       final result = await showBackupListDialog(
@@ -381,11 +382,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
           try {
             await provider.delete(f.name);
             if (!mounted) return true;
-            _snack('已删除 ${f.name}');
+            _snack(L10n.trp('已删除 {name}', {'name': f.name}));
             return true;
           } catch (_) {
             if (!mounted) return false;
-            _snack('删除失败');
+            _snack(L10n.tr('删除失败'));
             return false;
           }
         },
@@ -419,7 +420,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       final guard = AttemptGuard(store: _store, prefix: 'master');
       if (jwt == null || backupJson == null) {
         if (await guard.checkLocked()) {
-          _snack('尝试次数过多,请等待 ${await guard.remainingSeconds()} 秒后重试');
+          _snack(
+            L10n.trp('尝试次数过多,请等待 {n} 秒后重试', {
+              'n': '${await guard.remainingSeconds()}',
+            }),
+          );
           return;
         }
         if (!mounted) return;
@@ -433,8 +438,10 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         final locked = await guard.checkLocked();
         _snack(
           locked
-              ? '尝试次数过多,请等待 ${await guard.remainingSeconds()} 秒后重试'
-              : '解密失败(主密码错误或数据被篡改)',
+              ? L10n.trp('尝试次数过多,请等待 {n} 秒后重试', {
+                  'n': '${await guard.remainingSeconds()}',
+                })
+              : L10n.tr('解密失败(主密码错误或数据被篡改)'),
         );
         return;
       }
@@ -454,22 +461,28 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       }
       if (jwt != null) {
         final result = await restoreAssets(backupJson, jwt, await _api);
-        _snack('恢复完成: 成功 ${result.ok} 失败 ${result.fail}');
+        _snack(
+          L10n.trp('恢复完成: 成功 {ok} 失败 {fail}', {
+            'ok': '${result.ok}',
+            'fail': '${result.fail}',
+          }),
+        );
       } else {
         final masterKey = await _store.readMasterKey();
         if (masterKey == null) {
-          _snack('未找到主密钥,无法写入本机');
+          _snack(L10n.tr('未找到主密钥,无法写入本机'));
           return;
         }
         await restoreToLocal(backupJson, masterKey);
-        _snack('已恢复,可在本地模式使用');
+        _snack(L10n.tr('已恢复,可在本地模式使用'));
       }
     } catch (e) {
       Logger.instance.e('restore failed: $e');
-      // 显示具体错误(如 HTTP 302/网络异常),便于定位。
+      // SyncException 消息已在 lib/sync 抛出点按当前语言生成;
+      // 其余异常显示具体错误(如 HTTP 302/网络异常),便于定位。
       final msg = e is SyncException
           ? e.message
-          : '恢复失败: $e';
+          : L10n.trp('恢复失败: {err}', {'err': '$e'});
       _snack(msg);
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -491,15 +504,17 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('同步设置')),
+      appBar: AppBar(title: Text(L10n.tr('同步设置'))),
       body: _busy
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 Text(
-                  '无需登录:备份与恢复均在本地完成,数据只存在您的存储中;'
-                  '同步配置仅保存在本机,不会发送到托孤服务端,备份使用主密钥加密。',
+                  L10n.tr(
+                    '无需登录:备份与恢复均在本地完成,数据只存在您的存储中;'
+                    '同步配置仅保存在本机,不会发送到托孤服务端,备份使用主密钥加密。',
+                  ),
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontSize: 12,
@@ -536,7 +551,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                 if (kIsWeb) ...[
                   const SizedBox(height: 4),
                   Text(
-                    'FTP/SFTP 为 socket 协议,仅桌面/移动端支持;Web 端仅可用 WebDAV/S3。',
+                    L10n.tr('FTP/SFTP 为 socket 协议,仅桌面/移动端支持;Web 端仅可用 WebDAV/S3。'),
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -545,43 +560,43 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                 ],
                 const SizedBox(height: 16),
                 if (_protocol == 'webdav') ...[
-                  _field(_wdUrl, '服务器地址', hint: 'https://dav.example.com/'),
-                  _field(_wdUser, '用户名'),
-                  _field(_wdPass, '密码', obscure: true),
-                  _field(_wdBasePath, '基础路径', hint: '/bequest'),
+                  _field(_wdUrl, L10n.tr('服务器地址'), hint: 'https://dav.example.com/'),
+                  _field(_wdUser, L10n.tr('用户名')),
+                  _field(_wdPass, L10n.tr('密码'), obscure: true),
+                  _field(_wdBasePath, L10n.tr('基础路径'), hint: '/bequest'),
                 ] else if (_protocol == 's3') ...[
-                  _field(_s3Endpoint, '端点', hint: 'https://s3.amazonaws.com'),
-                  _field(_s3Bucket, 'Bucket'),
-                  _field(_s3Region, 'Region'),
-                  _field(_s3AccessKey, 'Access Key'),
-                  _field(_s3SecretKey, 'Secret Key', obscure: true),
-                  _field(_s3Prefix, '前缀', hint: 'bequest/'),
+                  _field(_s3Endpoint, L10n.tr('端点'), hint: 'https://s3.amazonaws.com'),
+                  _field(_s3Bucket, L10n.tr('Bucket')),
+                  _field(_s3Region, L10n.tr('Region')),
+                  _field(_s3AccessKey, L10n.tr('Access Key')),
+                  _field(_s3SecretKey, L10n.tr('Secret Key'), obscure: true),
+                  _field(_s3Prefix, L10n.tr('前缀'), hint: 'bequest/'),
                 ] else ...[
-                  _field(_ftpHost, '服务器地址', hint: 'ftp.example.com'),
-                  _field(_ftpPort, '端口', hint: _protocol == 'sftp' ? '22' : '21'),
-                  _field(_ftpUser, '用户名'),
-                  _field(_ftpPass, '密码', obscure: true),
-                  _field(_ftpBasePath, '基础路径', hint: '/bequest'),
+                  _field(_ftpHost, L10n.tr('服务器地址'), hint: 'ftp.example.com'),
+                  _field(_ftpPort, L10n.tr('端口'), hint: _protocol == 'sftp' ? '22' : '21'),
+                  _field(_ftpUser, L10n.tr('用户名')),
+                  _field(_ftpPass, L10n.tr('密码'), obscure: true),
+                  _field(_ftpBasePath, L10n.tr('基础路径'), hint: '/bequest'),
                   if (_protocol == 'ftp') ...[
                     DropdownButtonFormField<FtpSecurity>(
                       initialValue: _ftpSecurity,
-                      decoration: const InputDecoration(
-                        labelText: '加密',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: L10n.tr('加密'),
+                        border: const OutlineInputBorder(),
                         isDense: true,
                       ),
-                      items: const [
+                      items: [
                         DropdownMenuItem(
                           value: FtpSecurity.plain,
-                          child: Text('禁用(明文)'),
+                          child: Text(L10n.tr('禁用(明文)')),
                         ),
                         DropdownMenuItem(
                           value: FtpSecurity.explicitTls,
-                          child: Text('显式 SSL/TLS(FTPES)'),
+                          child: Text(L10n.tr('显式 SSL/TLS(FTPES)')),
                         ),
                         DropdownMenuItem(
                           value: FtpSecurity.implicitTls,
-                          child: Text('隐式 SSL/TLS(FTPS)'),
+                          child: Text(L10n.tr('隐式 SSL/TLS(FTPS)')),
                         ),
                       ],
                       onChanged: (v) => setState(() {
@@ -595,7 +610,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
-                      '最近备份: $_lastBackupName',
+                      L10n.trp('最近备份: {name}', {'name': _lastBackupName}),
                       style: TextStyle(
                         fontSize: 12,
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -604,9 +619,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   ),
                 const SizedBox(height: 8),
                 const Divider(),
-                _sectionTitle('自动备份'),
+                _sectionTitle(L10n.tr('自动备份')),
                 Text(
-                  '按间隔自动备份到上述存储;备份文件名自动生成(bequest_用户名_设备名_时间戳)。',
+                  L10n.tr(
+                    '按间隔自动备份到上述存储;备份文件名自动生成(bequest_用户名_设备名_时间戳)。',
+                  ),
                   style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -615,15 +632,17 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   initialValue: _autoBackupInterval,
-                  decoration: const InputDecoration(
-                    labelText: '备份间隔',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: L10n.tr('备份间隔'),
+                    border: const OutlineInputBorder(),
                     isDense: true,
                   ),
                   items: kAutoBackupIntervals.keys
                       .map((k) => DropdownMenuItem(
                             value: k,
-                            child: Text(kAutoBackupIntervalLabels[k] ?? k),
+                            child: Text(
+                              L10n.tr(kAutoBackupIntervalLabels[k] ?? k),
+                            ),
                           ))
                       .toList(),
                   onChanged: (v) => setState(() {
@@ -633,15 +652,15 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                   initialValue: _autoBackupMax,
-                  decoration: const InputDecoration(
-                    labelText: '最大备份数量',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: L10n.tr('最大备份数量'),
+                    border: const OutlineInputBorder(),
                     isDense: true,
                   ),
                   items: kAutoBackupMaxCounts
                       .map((n) => DropdownMenuItem(
                             value: n,
-                            child: Text('$n 份(超出自动删除最旧)'),
+                            child: Text(L10n.trp('{n} 份(超出自动删除最旧)', {'n': '$n'})),
                           ))
                       .toList(),
                   onChanged: (v) => setState(() {
@@ -656,14 +675,14 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                     Expanded(
                       child: FilledButton(
                         onPressed: _busy ? null : _testConnection,
-                        child: const Text('测试连接'),
+                        child: Text(L10n.tr('测试连接')),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: FilledButton.tonal(
                         onPressed: _busy ? null : _syncNow,
-                        child: const Text('立即备份'),
+                        child: Text(L10n.tr('立即备份')),
                       ),
                     ),
                   ],
@@ -674,14 +693,14 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                     Expanded(
                       child: OutlinedButton(
                         onPressed: _busy ? null : _restore,
-                        child: const Text('从备份恢复'),
+                        child: Text(L10n.tr('从备份恢复')),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: OutlinedButton(
                         onPressed: _busy ? null : _save,
-                        child: const Text('保存配置'),
+                        child: Text(L10n.tr('保存配置')),
                       ),
                     ),
                   ],
@@ -740,33 +759,34 @@ Future<String?> showManualRestoreDialog(
   return showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('输入备份文件名'),
+      title: Text(L10n.tr('输入备份文件名')),
       content: TextField(
         controller: controller,
         autofocus: true,
-        decoration: const InputDecoration(
-          labelText: '备份文件名',
-          hintText: '如 bequest_alice_device_20260812_100000.json',
-          border: OutlineInputBorder(),
+        decoration: InputDecoration(
+          labelText: L10n.tr('备份文件名'),
+          hintText: L10n.tr('如 bequest_alice_device_20260812_100000.json'),
+          border: const OutlineInputBorder(),
         ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(L10n.tr('取消')),
         ),
         FilledButton(
           onPressed: () {
             final name = controller.text.trim();
             // 校验失败不关闭弹框:空文件名提示并留在对话框内。
             if (name.isEmpty) {
-              ScaffoldMessenger.of(context)
-                  .showSnackBar(const SnackBar(content: Text('请输入备份文件名')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(L10n.tr('请输入备份文件名'))),
+              );
               return;
             }
             Navigator.of(context).pop(name);
           },
-          child: const Text('恢复'),
+          child: Text(L10n.tr('恢复')),
         ),
       ],
     ),
@@ -784,7 +804,7 @@ Future<String?> showBackupListDialog(
   return showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text('备份文件(${files.length})'),
+      title: Text(L10n.trp('备份文件({count})', {'count': '${files.length}'})),
       content: SizedBox(
         width: double.maxFinite,
         child: ListView.builder(
@@ -795,9 +815,9 @@ Future<String?> showBackupListDialog(
               return ListTile(
                 dense: true,
                 leading: const Icon(Icons.edit_outlined),
-                title: const Text(
-                  '手动输入文件名',
-                  style: TextStyle(fontSize: 13),
+                title: Text(
+                  L10n.tr('手动输入文件名'),
+                  style: const TextStyle(fontSize: 13),
                 ),
                 onTap: () => Navigator.of(context).pop(_kManualSentinel),
               );
@@ -805,7 +825,7 @@ Future<String?> showBackupListDialog(
             final f = files[index];
             final modified = f.modified?.toLocal();
             final timeText = modified == null
-                ? '未知时间'
+                ? L10n.tr('未知时间')
                 : '${modified.year}-${modified.month.toString().padLeft(2, '0')}-'
                     '${modified.day.toString().padLeft(2, '0')} '
                     '${modified.hour.toString().padLeft(2, '0')}:'
@@ -822,12 +842,12 @@ Future<String?> showBackupListDialog(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    tooltip: '恢复',
+                    tooltip: L10n.tr('恢复'),
                     icon: const Icon(Icons.restore, size: 20),
                     onPressed: () => Navigator.of(context).pop(f.name),
                   ),
                   IconButton(
-                    tooltip: '删除',
+                    tooltip: L10n.tr('删除'),
                     icon: const Icon(Icons.delete_outline, size: 20),
                     onPressed: () async {
                       final ok = await onDelete(f);
@@ -845,7 +865,7 @@ Future<String?> showBackupListDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(L10n.tr('取消')),
         ),
       ],
     ),

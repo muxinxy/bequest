@@ -6,6 +6,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../api/api_client.dart';
 import '../api/api_config.dart';
 import '../crypto/key_derivation.dart';
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 import 'home_page.dart';
 
@@ -138,7 +139,7 @@ class _RegisterPageState extends State<RegisterPage> {
     if (!_formKey.currentState!.validate()) return;
     // 主密码不能与登录密码相同。
     if (_masterPasswordController.text == _passwordController.text) {
-      _showError('主密码不能与登录密码相同');
+      _showError(L10n.tr('主密码不能与登录密码相同'));
       return;
     }
     setState(() => _submitting = true);
@@ -178,7 +179,7 @@ class _RegisterPageState extends State<RegisterPage> {
       if (e.message.contains('验证码')) await _refreshCaptcha();
       _showError(e.message);
     } catch (_) {
-      _showError('注册失败,请检查网络后重试');
+      _showError(L10n.tr('注册失败,请检查网络后重试'));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -201,7 +202,7 @@ class _RegisterPageState extends State<RegisterPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('注册')),
+      appBar: AppBar(title: Text(L10n.tr('注册'))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -214,8 +215,8 @@ class _RegisterPageState extends State<RegisterPage> {
               TextFormField(
                 controller: _usernameController,
                 decoration: InputDecoration(
-                  labelText: '用户名',
-                  helperText: '3-20 位,字母/数字/下划线',
+                  labelText: L10n.tr('用户名'),
+                  helperText: L10n.tr('3-20 位,字母/数字/下划线'),
                   border: const OutlineInputBorder(),
                   suffixIcon: _usernameAvailable == null
                       ? null
@@ -230,11 +231,11 @@ class _RegisterPageState extends State<RegisterPage> {
                 ),
                 validator: (value) {
                   final v = value?.trim() ?? '';
-                  if (v.isEmpty) return '请输入用户名';
+                  if (v.isEmpty) return L10n.tr('请输入用户名');
                   if (!_validUsername(v)) {
-                    return '用户名需 3-20 位字母/数字/下划线';
+                    return L10n.tr('用户名需 3-20 位字母/数字/下划线');
                   }
-                  if (_usernameAvailable == false) return '用户名已被占用';
+                  if (_usernameAvailable == false) return L10n.tr('用户名已被占用');
                   return null;
                 },
               ),
@@ -243,7 +244,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
-                  labelText: '邮箱',
+                  labelText: L10n.tr('邮箱'),
                   border: const OutlineInputBorder(),
                   suffixIcon: _emailAvailable == null
                       ? null
@@ -258,9 +259,9 @@ class _RegisterPageState extends State<RegisterPage> {
                 ),
                 validator: (value) {
                   final v = value?.trim() ?? '';
-                  if (v.isEmpty) return '请输入邮箱';
-                  if (!_validEmail(v)) return '邮箱格式不正确';
-                  if (_emailAvailable == false) return '邮箱已被注册';
+                  if (v.isEmpty) return L10n.tr('请输入邮箱');
+                  if (!_validEmail(v)) return L10n.tr('邮箱格式不正确');
+                  if (_emailAvailable == false) return L10n.tr('邮箱已被注册');
                   return null;
                 },
               ),
@@ -268,39 +269,43 @@ class _RegisterPageState extends State<RegisterPage> {
               TextFormField(
                 controller: _passwordController,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '登录密码',
-                  helperText: '至少 8 位;用于登录账号',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('登录密码'),
+                  helperText: L10n.tr('至少 8 位;用于登录账号'),
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) => (value == null || value.length < 8)
-                    ? '密码至少 8 位'
+                    ? L10n.tr('密码至少 8 位')
                     : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _passwordConfirmController,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '确认登录密码',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('确认登录密码'),
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) => value != _passwordController.text
-                    ? '两次输入的密码不一致'
+                    ? L10n.tr('两次输入的密码不一致')
                     : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _masterPasswordController,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '主密码',
-                  helperText: '用于加密资产数据,务必牢记;不能与登录密码相同',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('主密码'),
+                  helperText: L10n.tr('用于加密资产数据,务必牢记;不能与登录密码相同'),
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) {
-                  if (value == null || value.length < 8) return '主密码至少 8 位';
-                  if (value == _passwordController.text) return '主密码不能与登录密码相同';
+                  if (value == null || value.length < 8) {
+                    return L10n.tr('主密码至少 8 位');
+                  }
+                  if (value == _passwordController.text) {
+                    return L10n.tr('主密码不能与登录密码相同');
+                  }
                   return null;
                 },
               ),
@@ -308,20 +313,22 @@ class _RegisterPageState extends State<RegisterPage> {
               TextFormField(
                 controller: _masterPasswordConfirmController,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '确认主密码',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('确认主密码'),
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) =>
-                    value != _masterPasswordController.text ? '两次输入的主密码不一致' : null,
+                    value != _masterPasswordController.text
+                        ? L10n.tr('两次输入的主密码不一致')
+                        : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _hintController,
-                decoration: const InputDecoration(
-                  labelText: '主密码提示语(可选)',
-                  helperText: '忘记主密码时帮助回忆,不暴露密码本身',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: L10n.tr('主密码提示语(可选)'),
+                  helperText: L10n.tr('忘记主密码时帮助回忆,不暴露密码本身'),
+                  border: const OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 16),
@@ -330,14 +337,14 @@ class _RegisterPageState extends State<RegisterPage> {
                   Expanded(
                     child: TextFormField(
                       controller: _captchaController,
-                      decoration: const InputDecoration(
-                        labelText: '验证码',
-                        hintText: '输入图形验证码',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: L10n.tr('验证码'),
+                        hintText: L10n.tr('输入图形验证码'),
+                        border: const OutlineInputBorder(),
                       ),
                       validator: (value) =>
                           (value == null || value.trim().isEmpty)
-                              ? '请输入验证码'
+                              ? L10n.tr('请输入验证码')
                               : null,
                     ),
                   ),
@@ -358,7 +365,9 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                       child: _captchaSvg.isEmpty
                           ? Text(
-                              _captchaFailed ? '加载失败,点此重试' : '加载中',
+                              _captchaFailed
+                                  ? L10n.tr('加载失败,点此重试')
+                                  : L10n.tr('加载中'),
                               style: const TextStyle(fontSize: 13),
                             )
                           : SvgPicture.string(
@@ -386,7 +395,7 @@ class _RegisterPageState extends State<RegisterPage> {
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('注册'),
+                    : Text(L10n.tr('注册')),
               ),
             ],
           ),

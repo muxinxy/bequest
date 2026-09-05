@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
+import '../l10n/app_l10n.dart';
 import '../platform/no_referrer_fetch_io.dart'
     if (dart.library.js_interop) '../platform/no_referrer_fetch_web.dart';
 import 'sync_provider_platform_io.dart'
@@ -150,7 +151,10 @@ class WebDavSyncProvider implements SyncProvider {
         () => fetchBodyNoReferer(uri, headers: _headers(), client: _client),
       );
     } catch (e) {
-      throw SyncException('下载 $remotePath 失败: $e');
+      // 同步失败类异常会显示在 UI,文案由用户语言决定。
+      throw SyncException(
+        L10n.trp('下载 {name} 失败: {err}', {'name': remotePath, 'err': '$e'}),
+      );
     }
   }
 
@@ -183,18 +187,26 @@ class WebDavSyncProvider implements SyncProvider {
       // 部分服务器(如某些 NAS)不支持 PROPFIND:回退为空列表,
       // 恢复页提示"无法列出"而非崩溃。
       if (response.statusCode == 405 || response.statusCode == 501) {
-        throw SyncException('服务器不支持文件列表(PROPFIND),请直接填写文件名恢复');
+        throw SyncException(
+          L10n.tr('服务器不支持文件列表(PROPFIND),请直接填写文件名恢复'),
+        );
       }
-      throw SyncException('列出备份失败: HTTP ${response.statusCode}');
+      throw SyncException(
+        L10n.trp('列出备份失败: HTTP {code}', {'code': '${response.statusCode}'}),
+      );
     }
     final body = await response.stream.bytesToString();
     if (body.trim().isEmpty) {
-      throw SyncException('服务器返回空列表(PROPFIND 未启用),请直接填写文件名恢复');
+      throw SyncException(
+        L10n.tr('服务器返回空列表(PROPFIND 未启用),请直接填写文件名恢复'),
+      );
     }
     final files = _parseMultistatus(body, dir.path);
     if (files.isEmpty && body.contains('multistatus') && !body.contains('href')) {
       // 207 且 multistatus 但无 href:服务器未按请求返回属性,解析必然为空。
-      throw SyncException('服务器未返回文件属性(PROPFIND 异常),请直接填写文件名恢复');
+      throw SyncException(
+        L10n.tr('服务器未返回文件属性(PROPFIND 异常),请直接填写文件名恢复'),
+      );
     }
     return files;
   }
@@ -255,7 +267,9 @@ class WebDavSyncProvider implements SyncProvider {
     // 404 = 文件本就不存在,视为成功。
     if (response.statusCode >= 200 && response.statusCode < 300) return;
     if (response.statusCode == 404) return;
-    throw SyncException('删除备份失败: HTTP ${response.statusCode}');
+    throw SyncException(
+      L10n.trp('删除备份失败: HTTP {code}', {'code': '${response.statusCode}'}),
+    );
   }
 
   @override
@@ -276,13 +290,17 @@ class WebDavSyncProvider implements SyncProvider {
       // 2xx/3xx/409 表示可达(409=目录不存在但服务在线,上传时自动建目录)。
       // 不清理 .probe:残留文件无害,下次覆盖;避免串行 DELETE 拖慢响应。
       if (response.statusCode == 401 || response.statusCode == 403) {
-        throw SyncException('认证失败: HTTP ${response.statusCode},请检查用户名/密码');
+        throw SyncException(
+          L10n.trp('认证失败: HTTP {code},请检查用户名/密码', {
+            'code': '${response.statusCode}',
+          }),
+        );
       }
       return response.statusCode < 500;
     } on SyncException {
       rethrow;
     } catch (e) {
-      throw SyncException('连接失败: $e');
+      throw SyncException(L10n.trp('连接失败: {err}', {'err': '$e'}));
     }
   }
 
@@ -309,7 +327,10 @@ class WebDavSyncProvider implements SyncProvider {
       return;
     }
     throw SyncException(
-      '创建备份目录失败: HTTP ${response.statusCode} $path',
+      L10n.trp('创建备份目录失败: HTTP {code} {path}', {
+        'code': '${response.statusCode}',
+        'path': path,
+      }),
     );
   }
 
@@ -394,7 +415,10 @@ class S3SyncProvider implements SyncProvider {
         () => fetchBodyNoReferer(uri, headers: headers, client: _client),
       );
     } catch (e) {
-      throw SyncException('下载 $remotePath 失败: $e');
+      // 同步失败类异常会显示在 UI,文案由用户语言决定。
+      throw SyncException(
+        L10n.trp('下载 {name} 失败: {err}', {'name': remotePath, 'err': '$e'}),
+      );
     }
   }
 
@@ -422,7 +446,7 @@ class S3SyncProvider implements SyncProvider {
     } on SyncException {
       rethrow;
     } catch (e) {
-      throw SyncException('列出备份失败: $e');
+      throw SyncException(L10n.trp('列出备份失败: {err}', {'err': '$e'}));
     }
   }
 
@@ -475,7 +499,9 @@ class S3SyncProvider implements SyncProvider {
     );
     if (response.statusCode >= 200 && response.statusCode < 300) return;
     if (response.statusCode == 404) return;
-    throw SyncException('删除备份失败: HTTP ${response.statusCode}');
+    throw SyncException(
+      L10n.trp('删除备份失败: HTTP {code}', {'code': '${response.statusCode}'}),
+    );
   }
 
   @override
@@ -495,11 +521,13 @@ class S3SyncProvider implements SyncProvider {
       if (response.statusCode == 200 || response.statusCode == 403) {
         return true;
       }
-      throw SyncException('S3 连接失败: HTTP ${response.statusCode}');
+      throw SyncException(
+        L10n.trp('S3 连接失败: HTTP {code}', {'code': '${response.statusCode}'}),
+      );
     } on SyncException {
       rethrow;
     } catch (e) {
-      throw SyncException('S3 连接失败: $e');
+      throw SyncException(L10n.trp('S3 连接失败: {err}', {'err': '$e'}));
     }
   }
 

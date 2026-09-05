@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../logger.dart';
 import '../platform/file_share.dart';
 import '../storage/secure_store.dart';
@@ -58,7 +59,7 @@ class _AboutPageState extends State<AboutPage> {
   Future<void> _copyGitHubUrl() async {
     await Clipboard.setData(const ClipboardData(text: _githubUrl));
     if (!mounted) return;
-    _snack('链接已复制到剪贴板');
+    _snack(L10n.tr('链接已复制到剪贴板'));
   }
 
   /// 导出日志:优先导出云端全部日志(审计+应用,含 detail)供排查;
@@ -81,12 +82,12 @@ class _AboutPageState extends State<AboutPage> {
           buf.writeln('$kind,${esc('${l['created_at'] ?? ''}')},'
               '${esc('${l['action'] ?? ''}')},${esc('${l['detail'] ?? ''}')}');
         }
-        final ok = await shareTextFile(fname, buf.toString(), '托孤日志导出(CSV)');
+        final ok = await shareTextFile(fname, buf.toString(), L10n.tr('托孤日志导出(CSV)'));
         if (!mounted) return;
         if (ok) {
-          _snack('已导出 ${logs.length} 条日志');
+          _snack(L10n.trp('已导出 {n} 条日志', {'n': '${logs.length}'}));
         } else {
-          _snack('导出日志失败');
+          _snack(L10n.tr('导出日志失败'));
         }
         return;
       }
@@ -96,18 +97,18 @@ class _AboutPageState extends State<AboutPage> {
     try {
       final log = await Logger.instance.readLog();
       if (log.trim().isEmpty) {
-        _snack('暂无日志');
+        _snack(L10n.tr('暂无日志'));
         return;
       }
       final now = DateTime.now();
       String two(int n) => n.toString().padLeft(2, '0');
       final fname = 'bequest_logs-${now.year}${two(now.month)}${two(now.day)}'
           '-${two(now.hour)}${two(now.minute)}.txt';
-      final ok = await shareTextFile(fname, log, '托孤调试日志');
-      if (!ok && mounted) _snack('导出日志失败');
+      final ok = await shareTextFile(fname, log, L10n.tr('托孤调试日志'));
+      if (!ok && mounted) _snack(L10n.tr('导出日志失败'));
     } catch (_) {
       if (!mounted) return;
-      _snack('导出日志失败');
+      _snack(L10n.tr('导出日志失败'));
     }
   }
 
@@ -116,23 +117,23 @@ class _AboutPageState extends State<AboutPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('清空日志'),
-        content: const Text('确定要清空本地调试日志吗?此操作不可撤销。'),
+        title: Text(L10n.tr('清空日志')),
+        content: Text(L10n.tr('确定要清空本地调试日志吗?此操作不可撤销。')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('清空'),
+            child: Text(L10n.tr('清空')),
           ),
         ],
       ),
     );
     if (ok == true) {
       await Logger.instance.clear();
-      _snack('日志已清空');
+      _snack(L10n.tr('日志已清空'));
     }
   }
 
@@ -146,15 +147,18 @@ class _AboutPageState extends State<AboutPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('关于本应用')),
+      appBar: AppBar(title: Text(L10n.tr('关于本应用'))),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           const SizedBox(height: 8),
-          const Text(
-            '托孤',
+          Text(
+            L10n.tr('托孤'),
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           Text(
             'bequest',
@@ -165,27 +169,26 @@ class _AboutPageState extends State<AboutPage> {
             ),
           ),
           const SizedBox(height: 16),
-          _infoRow('应用版本', _productVersion),
-          _infoRow('构建版本', _buildVersion),
+          _infoRow(L10n.tr('应用版本'), _productVersion),
+          _infoRow(L10n.tr('构建版本'), _buildVersion),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.info_outline),
-            title: const Text('包名'),
+            title: Text(L10n.tr('包名')),
             trailing: SelectableText(_packageName),
           ),
           const SizedBox(height: 8),
           Text(
-            '简介',
+            L10n.tr('简介'),
             style: TextStyle(
               fontSize: 13,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
-            '数字资产保险箱 + 数字遗嘱。端到端加密,自托管同步,继承交接。'
-            '您的资产信息只属于您自己。',
-            style: TextStyle(fontSize: 14, height: 1.5),
+          Text(
+            L10n.tr('数字资产保险箱 + 数字遗嘱。端到端加密,自托管同步,继承交接。您的资产信息只属于您自己。'),
+            style: const TextStyle(fontSize: 14, height: 1.5),
           ),
           const SizedBox(height: 16),
           ListTile(
@@ -195,7 +198,7 @@ class _AboutPageState extends State<AboutPage> {
             subtitle: SelectableText(_githubUrl),
             trailing: IconButton(
               icon: const Icon(Icons.copy),
-              tooltip: '复制链接',
+              tooltip: L10n.tr('复制链接'),
               onPressed: _copyGitHubUrl,
             ),
             onTap: _openGitHub,
@@ -203,13 +206,13 @@ class _AboutPageState extends State<AboutPage> {
           const SizedBox(height: 24),
           FilledButton.icon(
             icon: const Icon(Icons.file_upload_outlined),
-            label: const Text('导出日志'),
+            label: Text(L10n.tr('导出日志')),
             onPressed: _exportLog,
           ),
           const SizedBox(height: 8),
           TextButton.icon(
             icon: const Icon(Icons.delete_outline),
-            label: const Text('清空日志'),
+            label: Text(L10n.tr('清空日志')),
             onPressed: _clearLog,
           ),
         ],

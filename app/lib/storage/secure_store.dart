@@ -27,6 +27,7 @@ class SecureStore {
   static const _storageModeKey = 'bequest_storage_mode';
   static const _masterHintKey = 'bequest_master_hint';
   static const _themeModeKey = 'bequest_theme_mode';
+  static const _localeKey = 'bequest_locale';
 
   // ---- 本地账户(多账户本地模式) ----
   static const _localProfilesKey = 'bequest_local_profiles';
@@ -255,6 +256,12 @@ class SecureStore {
 
   Future<void> saveThemeMode(String mode) =>
       _storage.write(key: _themeModeKey, value: mode);
+
+  /// 界面语言:'zh' | 'en' | null(默认 zh)。
+  Future<String?> readLocale() => _storage.read(key: _localeKey);
+
+  Future<void> saveLocale(String locale) =>
+      _storage.write(key: _localeKey, value: locale);
 
   // ---------- 本地账户(多账户本地模式) ----------
 

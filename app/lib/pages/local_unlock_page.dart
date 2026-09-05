@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../crypto/key_derivation.dart';
+import '../l10n/app_l10n.dart';
 import '../storage/secure_store.dart';
 import '../sync/local_vault.dart';
 import '../widgets/text_save_dialog.dart';
@@ -99,7 +100,7 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
       await _store.saveStorageMode('local');
       _enterLocalHome();
     } catch (_) {
-      _showError('创建本地账户失败,请重试');
+      _showError(L10n.tr('创建本地账户失败,请重试'));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -131,19 +132,19 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
       final salt = profile.salt;
       final mk = profile.mk;
       if (salt == null || salt.isEmpty || mk == null || mk.isEmpty) {
-        setState(() => _verifyError = '账户数据缺失,请删除后重建');
+        setState(() => _verifyError = L10n.tr('账户数据缺失,请删除后重建'));
         return;
       }
       final derived = await deriveMasterKey(password, salt);
       if (derived != mk) {
-        setState(() => _verifyError = '主密码错误,请重试');
+        setState(() => _verifyError = L10n.tr('主密码错误,请重试'));
         return;
       }
       await _store.activateLocalProfile(_verifyProfile['id'] ?? '');
       await _store.saveStorageMode('local');
       _enterLocalHome();
     } catch (_) {
-      setState(() => _verifyError = '验证失败,请重试');
+      setState(() => _verifyError = L10n.tr('验证失败,请重试'));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -154,16 +155,18 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('删除本地账户「${profile['name'] ?? ''}」?'),
-        content: const Text('该账户的本地数据将被移除(不可恢复)。'),
+        title: Text(
+          L10n.trp('删除本地账户「{name}」?', {'name': profile['name'] ?? ''}),
+        ),
+        content: Text(L10n.tr('该账户的本地数据将被移除(不可恢复)。')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除'),
+            child: Text(L10n.tr('删除')),
           ),
         ],
       ),
@@ -178,12 +181,12 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => TextSaveDialog(
-        title: '重命名账户',
-        labelText: '账户名称',
+        title: L10n.tr('重命名账户'),
+        labelText: L10n.tr('账户名称'),
         initialValue: profile['name'] ?? '',
         onSave: (n) async {
           final ok = await _store.renameLocalProfile(profile['id'] ?? '', n);
-          if (!ok) throw ApiException('名称已被其他账户使用');
+          if (!ok) throw ApiException(L10n.tr('名称已被其他账户使用'));
         },
       ),
     );
@@ -224,7 +227,7 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
     // 用户可能只是进来看看,不该被困在列表页。
     return Scaffold(
       appBar: AppBar(
-        title: const Text('进入本地模式'),
+        title: Text(L10n.tr('进入本地模式')),
         automaticallyImplyLeading: true,
       ),
       body: switch (_step) {
@@ -239,11 +242,11 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Padding(
-          padding: EdgeInsets.only(bottom: 12),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
           child: Text(
-            '选择本地账户',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            L10n.tr('选择本地账户'),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
         ),
         for (final p in _profiles)
@@ -256,12 +259,12 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    tooltip: '重命名',
+                    tooltip: L10n.tr('重命名'),
                     icon: const Icon(Icons.edit_outlined),
                     onPressed: () => _renameAccount(p),
                   ),
                   IconButton(
-                    tooltip: '删除账户',
+                    tooltip: L10n.tr('删除账户'),
                     icon: const Icon(Icons.delete_outline),
                     onPressed: () => _deleteAccount(p),
                   ),
@@ -276,13 +279,13 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
             _step = LocalUnlockStep.setup;
           }),
           icon: const Icon(Icons.add),
-          label: const Text('新建本地账户'),
+          label: Text(L10n.tr('新建本地账户')),
         ),
         const SizedBox(height: 4),
         TextButton(
           onPressed: _goRestore,
           child: Text(
-            '从备份恢复(需主密码)',
+            L10n.tr('从备份恢复(需主密码)'),
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -301,13 +304,13 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
           const Icon(Icons.lock_outline, size: 64),
           const SizedBox(height: 8),
           Text(
-            '验证「${_verifyProfile['name'] ?? ''}」主密码',
+            L10n.trp('验证「{name}」主密码', {'name': _verifyProfile['name'] ?? ''}),
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
           ),
           const SizedBox(height: 4),
           Text(
-            '本地数据由主密码加密,验证后进入',
+            L10n.tr('本地数据由主密码加密,验证后进入'),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -316,7 +319,7 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
           if (_verifyHint.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
-              '主密码提示: $_verifyHint',
+              L10n.trp('主密码提示: {hint}', {'hint': _verifyHint}),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
@@ -330,7 +333,7 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
             obscureText: true,
             autofocus: true,
             decoration: InputDecoration(
-              labelText: '主密码',
+              labelText: L10n.tr('主密码'),
               border: const OutlineInputBorder(),
               errorText: _verifyError,
             ),
@@ -345,17 +348,17 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('进入'),
+                : Text(L10n.tr('进入')),
           ),
           const SizedBox(height: 8),
           TextButton(
             onPressed: () => setState(() => _step = LocalUnlockStep.pick),
             child: Text(
-                  '返回账户列表',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
+              L10n.tr('返回账户列表'),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
         ],
       ),
@@ -372,14 +375,14 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
           children: [
             const Icon(Icons.offline_pin_outlined, size: 64),
             const SizedBox(height: 8),
-            const Text(
-              '新建本地账户',
+            Text(
+              L10n.tr('新建本地账户'),
               textAlign: TextAlign.center,
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
             ),
             const SizedBox(height: 4),
             Text(
-              '本地模式无需登录,数据加密保存在本机;可创建多个账户',
+              L10n.tr('本地模式无需登录,数据加密保存在本机;可创建多个账户'),
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -389,46 +392,47 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
             TextFormField(
               controller: _nameController,
               maxLength: 20,
-              decoration: const InputDecoration(
-                labelText: '账户名称',
-                hintText: '如:张三 / 家人共用的保险箱',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('账户名称'),
+                hintText: L10n.tr('如:张三 / 家人共用的保险箱'),
+                border: const OutlineInputBorder(),
               ),
               validator: (value) =>
-                  (value == null || value.trim().isEmpty) ? '请输入账户名称' : null,
+                  (value == null || value.trim().isEmpty) ? L10n.tr('请输入账户名称') : null,
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _passwordController,
               obscureText: true,
-              decoration: const InputDecoration(
-                labelText: '主密码',
-                helperText: '至少 8 位,用于加密本地数据',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('主密码'),
+                helperText: L10n.tr('至少 8 位,用于加密本地数据'),
+                border: const OutlineInputBorder(),
               ),
-              validator: (value) =>
-                  (value == null || value.length < 8) ? '主密码至少 8 位' : null,
+              validator: (value) => (value == null || value.length < 8)
+                  ? L10n.tr('主密码至少 8 位')
+                  : null,
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _confirmController,
               obscureText: true,
-              decoration: const InputDecoration(
-                labelText: '确认主密码',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('确认主密码'),
+                border: const OutlineInputBorder(),
               ),
               validator: (value) => value != _passwordController.text
-                  ? '两次输入的主密码不一致'
+                  ? L10n.tr('两次输入的主密码不一致')
                   : null,
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _hintController,
               maxLength: 50,
-              decoration: const InputDecoration(
-                labelText: '主密码提示语(可选)',
-                hintText: '帮助回忆的提示,仅保存在本机',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('主密码提示语(可选)'),
+                hintText: L10n.tr('帮助回忆的提示,仅保存在本机'),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 24),
@@ -440,18 +444,18 @@ class _LocalUnlockPageState extends State<LocalUnlockPage> {
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('创建并进入'),
+                  : Text(L10n.tr('创建并进入')),
             ),
             if (_profiles.isNotEmpty) ...[
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => setState(() => _step = LocalUnlockStep.pick),
-child: Text(
-              '返回账户列表',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
+                child: Text(
+                  L10n.tr('返回账户列表'),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ),
             ],
           ],

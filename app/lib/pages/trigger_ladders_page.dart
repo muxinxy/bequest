@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/api_config.dart';
+import '../l10n/app_l10n.dart';
 import '../models/trigger_ladder.dart';
 import '../storage/secure_store.dart';
 import '../widgets/ladder_dropdown.dart';
@@ -55,7 +56,7 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('加载失败,请检查网络后重试')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('加载失败,请检查网络后重试'))));
       Navigator.of(context).pop();
     }
   }
@@ -90,19 +91,26 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除阶梯'),
+        title: Text(L10n.tr('删除阶梯')),
         content: Text(
-          '确定删除所选 ${_selected.length} 个阶梯?\n'
-          '该阶梯绑定 $boundAssets 个资产、$boundCategories 个分组,删除后它们将使用全局阶梯。',
+          L10n.trp(
+            '确定删除所选 {n} 个阶梯?\n'
+            '该阶梯绑定 {a} 个资产、{c} 个分组,删除后它们将使用全局阶梯。',
+            {
+              'n': '${_selected.length}',
+              'a': '$boundAssets',
+              'c': '$boundCategories',
+            },
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除'),
+            child: Text(L10n.tr('删除')),
           ),
         ],
       ),
@@ -118,7 +126,7 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
     } on ApiException catch (e) {
       _showError(e.message);
     } catch (_) {
-      _showError('删除失败,请检查网络后重试');
+      _showError(L10n.tr('删除失败,请检查网络后重试'));
     }
   }
 
@@ -149,16 +157,20 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
     final shown = filtered.take(_visibleCount).toList();
     return Scaffold(
       appBar: AppBar(
-        title: Text(_multiSelect ? '已选 ${_selected.length} 项' : '触发阶梯'),
+        title: Text(
+          _multiSelect
+              ? L10n.trp('已选 {n} 项', {'n': '${_selected.length}'})
+              : L10n.tr('触发阶梯'),
+        ),
         actions: _multiSelect
             ? [
                 IconButton(
-                  tooltip: '删除',
+                  tooltip: L10n.tr('删除'),
                   icon: const Icon(Icons.delete_outline),
                   onPressed: _selected.isEmpty ? null : _deleteSelected,
                 ),
                 IconButton(
-                  tooltip: '取消',
+                  tooltip: L10n.tr('取消'),
                   icon: const Icon(Icons.close),
                   onPressed: () => setState(() {
                     _multiSelect = false;
@@ -173,7 +185,7 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
           : FloatingActionButton.extended(
               onPressed: () => _editLadder(),
               icon: const Icon(Icons.add),
-              label: const Text('新增阶梯'),
+              label: Text(L10n.tr('新增阶梯')),
             ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -185,13 +197,13 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                     controller: _searchController,
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.search),
-                      hintText: '搜索阶梯名称',
+                      hintText: L10n.tr('搜索阶梯名称'),
                       isDense: true,
                       border: const OutlineInputBorder(),
                       suffixIcon: _search.isEmpty
                           ? null
                           : IconButton(
-                              tooltip: '清空',
+                              tooltip: L10n.tr('清空'),
                               icon: const Icon(Icons.clear),
                               onPressed: () {
                                 _searchController.clear();
@@ -210,9 +222,9 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                 ),
                 Expanded(
                   child: _ladders.isEmpty
-                      ? const Center(child: Text('暂无阶梯,点击右下角 + 新增'))
+                      ? Center(child: Text(L10n.tr('暂无阶梯,点击右下角 + 新增')))
                       : filtered.isEmpty
-                      ? const Center(child: Text('没有匹配的阶梯'))
+                      ? Center(child: Text(L10n.tr('没有匹配的阶梯')))
                       : ListView.separated(
                           itemCount:
                               shown.length +
@@ -226,7 +238,7 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                                   onPressed: () => setState(
                                     () => _visibleCount += _pageSize,
                                   ),
-                                  child: const Text('加载更多'),
+                                  child: Text(L10n.tr('加载更多')),
                                 ),
                               );
                             }
@@ -271,7 +283,7 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Text(
-                                        '全局',
+                                        L10n.tr('全局'),
                                         style: TextStyle(
                                           fontSize: 11,
                                           color: Theme.of(
@@ -285,7 +297,10 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                               ),
                               subtitle: Text(
                                 l.days.length >= 2
-                                    ? '一级 ${l.days[0]} 天 / 二级 ${l.days[1]} 天'
+                                    ? L10n.trp('一级 {a} 天 / 二级 {b} 天', {
+                                        'a': '${l.days[0]}',
+                                        'b': '${l.days[1]}',
+                                      })
                                     : l.daysLabel,
                               ),
                               onLongPress: l.isGlobal || _multiSelect
@@ -309,12 +324,12 @@ class _TriggerLaddersPageState extends State<TriggerLaddersPage> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         IconButton(
-                                          tooltip: '查看绑定',
+                                          tooltip: L10n.tr('查看绑定'),
                                           icon: const Icon(Icons.link),
                                           onPressed: () => _openBindings(l),
                                         ),
                                         IconButton(
-                                          tooltip: '修改',
+                                          tooltip: L10n.tr('修改'),
                                           icon: const Icon(Icons.edit_outlined),
                                           onPressed: () =>
                                               _editLadder(ladder: l),
@@ -343,8 +358,7 @@ class _LadderEditDialog extends StatefulWidget {
 
 class _LadderEditDialogState extends State<_LadderEditDialog> {
   /// 2 档语义标签(一级:系统通知+IM+邮件;二级:一级+短信)。
-  static const _dayLabels = ['一级(天)', '二级(天)'];
-
+  static List<String> get _dayLabels => [L10n.tr('一级(天)'), L10n.tr('二级(天)')];
   late final TextEditingController _nameController = TextEditingController(
     text: widget.ladder?.name ?? '',
   );
@@ -374,7 +388,7 @@ class _LadderEditDialogState extends State<_LadderEditDialog> {
     for (final c in _dayControllers) {
       final v = int.tryParse(c.text.trim());
       if (v == null || v <= 0 || v > 3650) {
-        setState(() => _error = '天数需为 1-3650 的正整数');
+        setState(() => _error = L10n.tr('天数需为 1-3650 的正整数'));
         return;
       }
       days.add(v);
@@ -382,13 +396,15 @@ class _LadderEditDialogState extends State<_LadderEditDialog> {
     for (var i = 1; i < 2; i++) {
       if (days[i] <= days[i - 1]) {
         setState(
-          () => _error = '需要 2 个依次递增的正整数(一级:IM+邮件, 二级:一级+短信)',
+          () => _error = L10n.tr(
+            '需要 2 个依次递增的正整数(一级:IM+邮件, 二级:一级+短信)',
+          ),
         );
         return;
       }
     }
     if (name.isEmpty) {
-      setState(() => _error = '请输入阶梯名称');
+      setState(() => _error = L10n.tr('请输入阶梯名称'));
       return;
     }
     setState(() {
@@ -417,7 +433,7 @@ class _LadderEditDialogState extends State<_LadderEditDialog> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = '保存失败,请检查网络后重试';
+        _error = L10n.tr('保存失败,请检查网络后重试');
       });
     }
   }
@@ -425,7 +441,9 @@ class _LadderEditDialogState extends State<_LadderEditDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.ladder == null ? '新增阶梯' : '修改阶梯'),
+      title: Text(
+        widget.ladder == null ? L10n.tr('新增阶梯') : L10n.tr('修改阶梯'),
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -435,9 +453,9 @@ class _LadderEditDialogState extends State<_LadderEditDialog> {
               controller: _nameController,
               autofocus: true,
               maxLength: 20,
-              decoration: const InputDecoration(
-                labelText: '阶梯名称 *',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L10n.tr('阶梯名称 *'),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 8),
@@ -454,7 +472,7 @@ class _LadderEditDialogState extends State<_LadderEditDialog> {
             ],
             const SizedBox(height: 4),
             Text(
-              '一级:系统通知+IM+邮件;二级:一级+短信',
+              L10n.tr('一级:系统通知+IM+邮件;二级:一级+短信'),
               style: TextStyle(
                 fontSize: 12,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -476,11 +494,11 @@ class _LadderEditDialogState extends State<_LadderEditDialog> {
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(false),
-          child: const Text('取消'),
+          child: Text(L10n.tr('取消')),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,
-          child: Text(_saving ? '保存中...' : '保存'),
+          child: Text(_saving ? L10n.tr('保存中...') : L10n.tr('保存')),
         ),
       ],
     );
@@ -515,12 +533,12 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
     'pending': Colors.orange,
     'expired': Colors.red,
   };
-  static const _statusLabels = {
-    'active': '正常',
-    'inactive': '停用',
-    'pending': '待处理',
-    'expired': '已过期',
-  };
+  static Map<String, String> get _statusLabels => {
+        'active': L10n.tr('正常'),
+        'inactive': L10n.tr('停用'),
+        'pending': L10n.tr('待处理'),
+        'expired': L10n.tr('已过期'),
+      };
 
   @override
   void initState() {
@@ -556,16 +574,16 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('解绑所选'),
-        content: const Text('解绑后该资产/分组使用全局阶梯,确定解绑?'),
+        title: Text(L10n.tr('解绑所选')),
+        content: Text(L10n.tr('解绑后该资产/分组使用全局阶梯,确定解绑?')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(L10n.tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('解绑'),
+            child: Text(L10n.tr('解绑')),
           ),
         ],
       ),
@@ -595,7 +613,7 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
       setState(() => _unbinding = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('解绑失败,请检查网络后重试')));
+      ).showSnackBar(SnackBar(content: Text(L10n.tr('解绑失败,请检查网络后重试'))));
     }
   }
 
@@ -633,7 +651,10 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
           ],
           Flexible(
             child: Text(
-              '继承人:${inheritorName.isEmpty ? '未指定' : inheritorName}',
+              L10n.trp(
+                '继承人:{name}',
+                {'name': inheritorName.isEmpty ? L10n.tr('未指定') : inheritorName},
+              ),
               style: const TextStyle(fontSize: 12),
               overflow: TextOverflow.ellipsis,
             ),
@@ -649,7 +670,7 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
     // 全局阶梯无需解绑:禁用勾选、不显示"解绑所选"。
     final isGlobal = widget.ladder.isGlobal;
     return AlertDialog(
-      title: Text('${widget.ladder.name} · 绑定管理'),
+      title: Text(L10n.trp('{name} · 绑定管理', {'name': widget.ladder.name})),
       content: SizedBox(
         width: double.maxFinite,
         child: _loading
@@ -659,17 +680,20 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '资产',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    Text(
+                      L10n.tr('资产'),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     if (_assets.isEmpty)
-                      const Text('暂无绑定资产', style: TextStyle(fontSize: 13))
+                      Text(
+                        L10n.tr('暂无绑定资产'),
+                        style: const TextStyle(fontSize: 13),
+                      )
                     else
                       for (final a in _assets)
                         _bindingTile(
                           id: (a['binding_id'] as num).toInt(),
-                          name: a['name']?.toString() ?? '未命名',
+                          name: a['name']?.toString() ?? L10n.tr('未命名'),
                           inheritorName: a['inheritor_name']?.toString() ?? '',
                           status: a['status']?.toString() ?? '',
                           selected: _selAssets.contains(
@@ -687,17 +711,20 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
                                 }),
                         ),
                     const Divider(height: 24),
-                    const Text(
-                      '分组',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    Text(
+                      L10n.tr('分组'),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     if (_categories.isEmpty)
-                      const Text('暂无绑定分组', style: TextStyle(fontSize: 13))
+                      Text(
+                        L10n.tr('暂无绑定分组'),
+                        style: const TextStyle(fontSize: 13),
+                      )
                     else
                       for (final c in _categories)
                         _bindingTile(
                           id: (c['binding_id'] as num).toInt(),
-                          name: c['name']?.toString() ?? '未命名',
+                          name: c['name']?.toString() ?? L10n.tr('未命名'),
                           inheritorName: c['inheritor_name']?.toString() ?? '',
                           selected: _selCategories.contains(
                             (c['binding_id'] as num).toInt(),
@@ -715,7 +742,9 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
                         ),
                     const SizedBox(height: 8),
                     Text(
-                      isGlobal ? '全局阶梯无需解绑' : '解绑后该资产/分组使用全局阶梯',
+                      isGlobal
+                          ? L10n.tr('全局阶梯无需解绑')
+                          : L10n.tr('解绑后该资产/分组使用全局阶梯'),
                       style: TextStyle(
                         fontSize: 12,
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -728,12 +757,16 @@ class _LadderBindingsDialogState extends State<_LadderBindingsDialog> {
       actions: [
         TextButton(
           onPressed: _unbinding ? null : () => Navigator.of(context).pop(false),
-          child: const Text('关闭'),
+          child: Text(L10n.tr('关闭')),
         ),
         if (!isGlobal)
           FilledButton(
             onPressed: selCount == 0 || _unbinding ? null : _unbind,
-            child: Text(_unbinding ? '解绑中...' : '解绑所选($selCount)'),
+            child: Text(
+              _unbinding
+                  ? L10n.tr('解绑中...')
+                  : L10n.trp('解绑所选({n})', {'n': '$selCount'}),
+            ),
           ),
       ],
     );
