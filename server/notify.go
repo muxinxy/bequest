@@ -45,7 +45,7 @@ func sendCustomForUser(db *sql.DB, uid int64, to, subject, body string) bool {
 	var host, user, from string
 	var port, enabled int
 	var enc []byte
-	err := db.QueryRow(`SELECT host, port, user, password_enc, from_addr, enabled FROM user_smtp WHERE user_id = ?`, uid).
+	err := db.QueryRow(`SELECT host, port, `+smtpUserCol()+`, password_enc, from_addr, enabled FROM user_smtp WHERE user_id = ?`, uid).
 		Scan(&host, &port, &user, &enc, &from, &enabled)
 	if errors.Is(err, sql.ErrNoRows) || host == "" || enabled == 0 {
 		return false
@@ -96,9 +96,10 @@ func notifyEscalation(db *sql.DB, uid int64, tier string, daysSince int, ladder 
 		return
 	}
 	title, body := renderTemplate(db, uid, "escalation", map[string]string{"days": fmt.Sprint(daysSince)})
-	if title == "" { // 模板缺失:回退硬编码
-		title = "长时间未登录提醒"
-		body = fmt.Sprintf("您已 %d 天未登录,资产安全提醒升级。", daysSince)
+	if title == "" { // 模板缺失:回退硬编码(按用户语言偏好)
+		lang := userLang(db, uid)
+		title = userMsg(lang, "长时间未登录提醒")
+		body = fmt.Sprintf(userMsg(lang, "您已 %d 天未登录,资产安全提醒升级。"), daysSince)
 	}
 	// 系统通知当天已插入则跳过邮件/短信/IM(防刷屏)。
 	if !insertReminder(db, uid, "escalation", nil, title, body,

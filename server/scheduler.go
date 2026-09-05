@@ -20,11 +20,18 @@ func scan(db *sql.DB, now time.Time) {
 }
 
 // insertReminder inserts a reminder; the UNIQUE(user_id, dedup_key) index
-// makes re-runs no-ops (ON CONFLICT DO NOTHING). Returns true when a new row
-// was actually inserted (callers use it to gate once-per-day sends).
+// makes re-runs no-ops (ON CONFLICT DO NOTHING / INSERT IGNORE on MySQL).
+// Returns true when a new row was actually inserted (callers use it to gate
+// once-per-day sends).
 func insertReminder(db *sql.DB, uid int64, rtype string, assetID *int64, title, body, dedup string) bool {
-	res, err := db.Exec(`INSERT INTO reminders (user_id, type, asset_id, title, body, dedup_key) VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(user_id, dedup_key) DO NOTHING`, uid, rtype, assetID, title, body, dedup)
+	var insertSQL string
+	if currentDialect == dialectMySQL {
+		insertSQL = `INSERT IGNORE INTO reminders (user_id, type, asset_id, title, body, dedup_key) VALUES (?, ?, ?, ?, ?, ?)`
+	} else {
+		insertSQL = `INSERT INTO reminders (user_id, type, asset_id, title, body, dedup_key) VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT(user_id, dedup_key) DO NOTHING`
+	}
+	res, err := db.Exec(insertSQL, uid, rtype, assetID, title, body, dedup)
 	if err != nil {
 		log.Printf("insert reminder: %v", err)
 		return false
@@ -78,9 +85,10 @@ func processExpiryReminders(db *sql.DB, now time.Time) {
 				if !expDate.After(now.AddDate(0, 0, adv)) {
 					title, body := renderTemplate(db, a.uid, "expiry",
 						map[string]string{"name": a.name, "date": a.exp, "days": fmt.Sprint(daysLeft)})
-					if title == "" { // 模板缺失:回退硬编码
-						title = fmt.Sprintf("资产「%s」即将到期", a.name)
-						body = fmt.Sprintf("您的资产 %s 将于 %s 到期,剩余 %d 天,请及时处理续费或迁移。", a.name, a.exp, daysLeft)
+					if title == "" { // 模板缺失:回退硬编码(按用户语言偏好)
+						lang := userLang(db, a.uid)
+						title = fmt.Sprintf(userMsg(lang, "资产「%s」即将到期"), a.name)
+						body = fmt.Sprintf(userMsg(lang, "您的资产 %s 将于 %s 到期,剩余 %d 天,请及时处理续费或迁移。"), a.name, a.exp, daysLeft)
 					}
 					notifyUser(db, a.uid, a.tier, "expiry", title, body, fmt.Sprintf("exp:%d:%d", a.id, adv))
 				}
@@ -89,8 +97,9 @@ func processExpiryReminders(db *sql.DB, now time.Time) {
 			title, body := renderTemplate(db, a.uid, "expiry",
 				map[string]string{"name": a.name, "date": a.exp})
 			if title == "" {
-				title = fmt.Sprintf("资产「%s」已到期", a.name)
-				body = fmt.Sprintf("您的资产 %s 已于 %s 到期,请及时处理续费或迁移。", a.name, a.exp)
+				lang := userLang(db, a.uid)
+				title = fmt.Sprintf(userMsg(lang, "资产「%s」已到期"), a.name)
+				body = fmt.Sprintf(userMsg(lang, "您的资产 %s 已于 %s 到期,请及时处理续费或迁移。"), a.name, a.exp)
 			}
 			notifyUser(db, a.uid, a.tier, "expiry", title, body, fmt.Sprintf("exp:%d:past", a.id))
 		}
@@ -342,17 +351,19 @@ func createInheritanceEvent(db *sql.DB, uid, inID int64, inEmail, codeHash strin
 	}
 	assetNote := ""
 	assetName := ""
+	// 交接文案按资产所有者的语言偏好(继承人是外部联系人,无账号语言)。
+	lang := userLang(db, uid)
 	if assetID != nil {
 		var name string
 		if err := db.QueryRow(`SELECT name FROM assets WHERE id = ?`, *assetID).Scan(&name); err == nil {
 			assetName = name
-			assetNote = " (资产: " + name + ")"
+			assetNote = userMsg(lang, " (资产: ") + name + ")"
 		}
 	}
 	title, body := renderTemplate(db, uid, "inheritance", map[string]string{"name": assetName})
-	if title == "" { // 模板缺失:回退硬编码
-		title = "继承交接已触发" + assetNote
-		body = "继承交接已触发,事件密钥: " + eventKey
+	if title == "" { // 模板缺失:回退硬编码(按用户语言偏好)
+		title = userMsg(lang, "继承交接已触发") + assetNote
+		body = userMsg(lang, "继承交接已触发,事件密钥: ") + eventKey
 	}
 	insertReminder(db, uid, "inheritance", assetID, title, body, fmt.Sprintf("inherit:%d:%v", uid, assetID))
 	// event_key is written to the audit detail so it stays retrievable in dev
@@ -361,6 +372,6 @@ func createInheritanceEvent(db *sql.DB, uid, inID int64, inEmail, codeHash strin
 		uid, "event_key="+eventKey+assetNote); err != nil {
 		log.Printf("audit trigger: %v", err)
 	}
-	sendMail(inEmail, "托孤: 继承交接已触发"+assetNote,
-		fmt.Sprintf("继承交接已触发。事件密钥: %s\n请通过 App/API 使用该密钥与您的访问码完成继承领取。", eventKey))
+	sendMail(inEmail, "托孤: "+userMsg(lang, "继承交接已触发")+assetNote,
+		fmt.Sprintf(userMsg(lang, "继承交接已触发。事件密钥: %s\n请通过 App/API 使用该密钥与您的访问码完成继承领取。"), eventKey))
 }

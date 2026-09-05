@@ -87,7 +87,7 @@ func verifyPassword(encoded, password string) (bool, error) {
 
 type claims struct {
 	UserID       int64 `json:"user_id"`
-	TokenVersion int   `json:"token_version"` // 改密后旧 token 失效
+	TokenVersion int   `json:"token_version"`         // 改密后旧 token 失效
 	Pending2FA   bool  `json:"pending_2fa,omitempty"` // 2FA 待验证短命令牌
 	jwt.RegisteredClaims
 }
@@ -144,13 +144,13 @@ func verifyToken(tokenStr string) (*claims, error) {
 // ---------- handlers ----------
 
 type userJSON struct {
-	ID               int64  `json:"id"`
-	Username         string `json:"username"`
-	Email            string `json:"email"`
-	Tier             string `json:"tier"`
-	Role             string `json:"role"`
-	Disabled         bool   `json:"disabled"`
-	MemberExpiresAt  string `json:"member_expires_at"` // 空串=非会员(或永久会员)
+	ID              int64  `json:"id"`
+	Username        string `json:"username"`
+	Email           string `json:"email"`
+	Tier            string `json:"tier"`
+	Role            string `json:"role"`
+	Disabled        bool   `json:"disabled"`
+	MemberExpiresAt string `json:"member_expires_at"` // 空串=非会员(或永久会员)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -160,7 +160,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+	// Localize Chinese error messages to the request language (resolved from
+	// Accept-Language by the localize middleware). Untranslated strings pass
+	// through unchanged.
+	writeJSON(w, status, map[string]string{"error": translateErr(responseLang(w), msg)})
 }
 
 func validateCredentials(username, email, password string) string {
@@ -226,7 +229,7 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		res, err := tx.Exec(`INSERT INTO users (username, email, password_hash, master_key_wrapped, master_salt) VALUES (?, ?, ?, ?, ?)`,
+		id, err := execInsert(tx, `INSERT INTO users (username, email, password_hash, master_key_wrapped, master_salt) VALUES (?, ?, ?, ?, ?)`,
 			req.Username, req.Email, hash, mkw, nullable(req.MasterSalt))
 		if err != nil {
 			tx.Rollback()
@@ -238,7 +241,6 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		id, _ := res.LastInsertId()
 		// 每用户一条全局触发阶梯(免费档默认天数;会员开通后由 handleListTriggerLadders 补建)。
 		if _, err := tx.Exec(`INSERT INTO trigger_ladders (user_id, name, is_global, days) VALUES (?, '全局', 1, ?)`,
 			id, defaultLadderDays("free")); err != nil {
@@ -333,7 +335,7 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 				}
 				var failCnt int
 				if err := db.QueryRow(`SELECT login_fail_count FROM users WHERE id = ?`, id).Scan(&failCnt); err == nil && failCnt >= 5 {
-					if _, uerr := db.Exec(`UPDATE users SET locked_until = datetime('now', '+5 minutes'), login_fail_count = 0 WHERE id = ?`, id); uerr != nil {
+					if _, uerr := db.Exec(`UPDATE users SET locked_until = `+dbNowAdd("+5 minutes")+`, login_fail_count = 0 WHERE id = ?`, id); uerr != nil {
 						log.Printf("admin lock: %v", uerr)
 					}
 				}
@@ -361,17 +363,17 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 			log.Printf("query inherit stage: %v", err)
 			stage = "inactive"
 		}
-		if _, err := db.Exec(`UPDATE users SET last_login_at = datetime('now'), inherit_stage = 'inactive', escalation_level = 0 WHERE id = ?`, id); err != nil {
+		if _, err := db.Exec(`UPDATE users SET last_login_at = `+dbNow()+`, inherit_stage = 'inactive', escalation_level = 0 WHERE id = ?`, id); err != nil {
 			log.Printf("update login state: %v", err)
 		}
 		if stage != "" && stage != "inactive" {
 			// 第三重窗口:登录即反转。pending 事件无条件反转;claimed 事件
 			// 仅在 72h 反悔期内可反转(交接最终完成),无截止时间的历史事件可反转。
-			if _, err := db.Exec(`UPDATE inheritance_events SET status = 'reversed', reversed_at = datetime('now')
+			if _, err := db.Exec(`UPDATE inheritance_events SET status = 'reversed', reversed_at = `+dbNow()+`
 				WHERE user_id = ? AND (
 					status = 'pending'
-					OR (status = 'claimed' AND (reversable_until IS NULL OR reversable_until > datetime('now')))
-				)`, id, id); err != nil {
+					OR (status = 'claimed' AND (reversable_until IS NULL OR reversable_until > `+dbNow()+`))
+				)`, id); err != nil {
 				log.Printf("reverse inheritance events: %v", err)
 			}
 			if _, err := db.Exec(`INSERT INTO audit_logs (user_id, actor, action, detail) VALUES (?, 'owner', 'login_reset', ?)`,
@@ -498,7 +500,8 @@ func mustSign(id int64, version int) string {
 	return s
 }
 
-// isUniqueViolation detects SQLite UNIQUE constraint errors.
+// isUniqueViolation detects unique-constraint violations across dialects
+// (SQLite "UNIQUE constraint failed", MySQL duplicate entry, PG duplicate key).
 func isUniqueViolation(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
+	return uniqueViolation(err)
 }

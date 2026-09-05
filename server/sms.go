@@ -293,7 +293,7 @@ func handleAdminCreateSMSProvider(db *sql.DB) http.HandlerFunc {
 		if req.Enabled != nil {
 			enabled = *req.Enabled
 		}
-		res, err := db.Exec(`INSERT INTO sms_providers (provider, name, access_key, secret_key, extra, enabled)
+		id, err := execInsert(db, `INSERT INTO sms_providers (provider, name, access_key, secret_key, extra, enabled)
 			VALUES (?, ?, ?, ?, ?, ?)`, req.Provider, strings.TrimSpace(req.Name),
 			strings.TrimSpace(req.AccessKey), strings.TrimSpace(req.SecretKey), req.Extra, enabled)
 		if err != nil {
@@ -301,7 +301,6 @@ func handleAdminCreateSMSProvider(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		id, _ := res.LastInsertId()
 		auditAdmin(db, userID(r), "sms_provider_create", fmt.Sprintf("id=%d name=%s", id, req.Name))
 		p, err := scanSMSProvider(db.QueryRow(`SELECT id, provider, name, access_key, secret_key, COALESCE(extra, ''), enabled, created_at
 			FROM sms_providers WHERE id = ?`, id))

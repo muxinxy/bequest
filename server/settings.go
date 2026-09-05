@@ -92,7 +92,7 @@ type smtpSettingsJSON struct {
 func scanSMTPSettings(w http.ResponseWriter, uid int64, db *sql.DB) (smtpSettingsJSON, bool) {
 	var s smtpSettingsJSON
 	var enabled int
-	err := db.QueryRow(`SELECT host, port, user, from_addr, enabled FROM user_smtp WHERE user_id = ?`, uid).
+	err := db.QueryRow(`SELECT host, port, `+smtpUserCol()+`, from_addr, enabled FROM user_smtp WHERE user_id = ?`, uid).
 		Scan(&s.Host, &s.Port, &s.User, &s.FromAddr, &enabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return smtpSettingsJSON{Configured: false}, true
@@ -154,6 +154,38 @@ func handlePutInheritanceToggle(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// handleGetLang: GET /api/v1/settings/lang -> 200 {"lang":"zh"|"en"}.
+// 用户界面语言偏好(默认 zh);调度器提醒/邮件等服务端生成的用户可见文案据此输出。
+func handleGetLang(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"lang": userLang(db, userID(r))})
+	}
+}
+
+// handlePutLang: PUT /api/v1/settings/lang {"lang":"zh"|"en"} -> 200 {"lang":...}.
+// 仅接受 zh/en,其余返回 400。
+func handlePutLang(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Lang string `json:"lang"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "请求数据格式错误")
+			return
+		}
+		if req.Lang != "zh" && req.Lang != "en" {
+			writeError(w, http.StatusBadRequest, "无效的语言")
+			return
+		}
+		if _, err := db.Exec(`UPDATE users SET lang = ? WHERE id = ?`, req.Lang, userID(r)); err != nil {
+			log.Printf("update lang: %v", err)
+			writeError(w, http.StatusInternalServerError, "服务器内部错误")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"lang": req.Lang})
+	}
+}
+
 type smtpPutRequest struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
@@ -207,12 +239,32 @@ func handlePutSMTP(db *sql.DB) http.HandlerFunc {
 		if req.Enabled != nil && !*req.Enabled {
 			enabled = 0
 		}
-		if _, err := db.Exec(`INSERT INTO user_smtp (user_id, host, port, user, password_enc, from_addr, enabled, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-			ON CONFLICT(user_id) DO UPDATE SET
-				host = excluded.host, port = excluded.port, user = excluded.user,
-				password_enc = excluded.password_enc, from_addr = excluded.from_addr,
-				enabled = excluded.enabled, updated_at = datetime('now')`,
+		var upsertSQL string
+		ucol := smtpUserCol() // "user" quoted on postgres
+		switch currentDialect {
+		case dialectMySQL:
+			upsertSQL = `INSERT INTO user_smtp (user_id, host, port, ` + ucol + `, password_enc, from_addr, enabled, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ` + dbNow() + `)
+				ON DUPLICATE KEY UPDATE
+					host = VALUES(host), port = VALUES(port), ` + ucol + ` = VALUES(` + ucol + `),
+					password_enc = VALUES(password_enc), from_addr = VALUES(from_addr),
+					enabled = VALUES(enabled), updated_at = ` + dbNow()
+		case dialectPostgres:
+			upsertSQL = `INSERT INTO user_smtp (user_id, host, port, ` + ucol + `, password_enc, from_addr, enabled, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ` + dbNow() + `)
+				ON CONFLICT(user_id) DO UPDATE SET
+					host = excluded.host, port = excluded.port, ` + ucol + ` = excluded.` + ucol + `,
+					password_enc = excluded.password_enc, from_addr = excluded.from_addr,
+					enabled = excluded.enabled, updated_at = ` + dbNow()
+		default:
+			upsertSQL = `INSERT INTO user_smtp (user_id, host, port, ` + ucol + `, password_enc, from_addr, enabled, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ` + dbNow() + `)
+				ON CONFLICT(user_id) DO UPDATE SET
+					host = excluded.host, port = excluded.port, ` + ucol + ` = excluded.` + ucol + `,
+					password_enc = excluded.password_enc, from_addr = excluded.from_addr,
+					enabled = excluded.enabled, updated_at = ` + dbNow()
+		}
+		if _, err := db.Exec(upsertSQL,
 			uid, req.Host, req.Port, req.User, enc, req.FromAddr, enabled); err != nil {
 			log.Printf("upsert smtp settings: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -265,7 +317,7 @@ func handlePutMasterSalt(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "master_salt 必填")
 			return
 		}
-		if _, err := db.Exec(`UPDATE users SET master_salt = ?, updated_at = datetime('now') WHERE id = ?`,
+		if _, err := db.Exec(`UPDATE users SET master_salt = ?, updated_at = `+dbNow()+` WHERE id = ?`,
 			req.MasterSalt, uid); err != nil {
 			log.Printf("update master salt: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -309,7 +361,7 @@ func handlePutMasterKey(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "master_key_wrapped 必须为 base64 编码")
 			return
 		}
-		if _, err := db.Exec(`UPDATE users SET master_key_wrapped = ?, updated_at = datetime('now') WHERE id = ?`, decoded, uid); err != nil {
+		if _, err := db.Exec(`UPDATE users SET master_key_wrapped = ?, updated_at = `+dbNow()+` WHERE id = ?`, decoded, uid); err != nil {
 			log.Printf("update master key: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return

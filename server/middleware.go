@@ -56,8 +56,8 @@ func requireAuth(db *sql.DB, next http.Handler) http.Handler {
 // 请求都 UPDATE)。只刷新 last_login_at,不重置 inherit_stage/escalation_level
 // —— 只有登录才重置那些(见 auth.go 登录成功逻辑)。
 func touchLastLogin(db *sql.DB, uid int64) {
-	if _, err := db.Exec(`UPDATE users SET last_login_at = datetime('now')
-		WHERE id = ? AND (last_login_at IS NULL OR last_login_at < datetime('now','-12 hours'))`, uid); err != nil {
+	if _, err := db.Exec(`UPDATE users SET last_login_at = `+dbNow()+`
+		WHERE id = ? AND (last_login_at IS NULL OR last_login_at < `+dbNowAdd("-12 hours")+`)`, uid); err != nil {
 		log.Printf("touch last_login: %v", err)
 	}
 }

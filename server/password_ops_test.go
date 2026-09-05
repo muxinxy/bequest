@@ -47,12 +47,11 @@ func TestPasswordResetFlow(t *testing.T) {
 	insertCode := func(code string) int64 {
 		t.Helper()
 		h := sha256.Sum256([]byte(code))
-		res, err := db.Exec(`INSERT INTO password_resets (user_id, code_hash, expires_at) VALUES (?, ?, datetime('now','+10 minutes'))`,
+		id, err := execInsert(db, `INSERT INTO password_resets (user_id, code_hash, expires_at) VALUES (?, ?, `+dbNowAdd("+10 minutes")+`)`,
 			userIDOf(t, ts, token), hex.EncodeToString(h[:]))
 		if err != nil {
 			t.Fatalf("insert reset code: %v", err)
 		}
-		id, _ := res.LastInsertId()
 		return id
 	}
 
@@ -124,8 +123,8 @@ func TestRequestPasswordResetEmits(t *testing.T) {
 
 	// 用户配置了自定义 SMTP(host 非空)时,仍 200 且发码路径不 panic。
 	if _, err := db.Exec(
-		`INSERT INTO user_smtp (user_id, host, port, user, password_enc, from_addr, enabled)
-		 VALUES (?, 'smtp.test', 587, 'u', x'00', 'a@b.c', 1)`, uid); err != nil {
+		`INSERT INTO user_smtp (user_id, host, port, `+smtpUserCol()+`, password_enc, from_addr, enabled)
+		 VALUES (?, 'smtp.test', 587, 'u', ?, 'a@b.c', 1)`, uid, []byte{0}); err != nil {
 		t.Fatalf("insert user smtp: %v", err)
 	}
 	rr = doReq(t, ts, http.MethodPost, "/api/v1/auth/reset-request",

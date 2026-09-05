@@ -25,7 +25,11 @@ func main() {
 	}
 
 	// 备份子命令:VACUUM INTO 生成一致性快照(含 WAL 数据,可直接冷启动)。
+	// VACUUM INTO 是 SQLite 专有语法;MySQL/PostgreSQL 请用 mysqldump/pg_dump。
 	if len(os.Args) > 1 && os.Args[1] == "backup" {
+		if currentDialect != dialectSQLite {
+			log.Fatalf("backup subcommand requires sqlite (current driver %s); use mysqldump/pg_dump", currentDialect)
+		}
 		out := "bequest-backup-" + time.Now().Format("20060102-150405") + ".db"
 		if _, err := db.Exec("VACUUM INTO '" + out + "'"); err != nil {
 			log.Fatalf("backup: %v", err)
@@ -43,7 +47,7 @@ func main() {
 		addr = ":" + p
 	}
 	log.Printf("bequest server listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, cors(rateLimit(newMux(db)))))
+	log.Fatal(http.ListenAndServe(addr, localize(cors(rateLimit(newMux(db))))))
 }
 
 // runScheduler ticks the dead-man's-switch scan every 60s; pruneLogs runs
@@ -168,6 +172,8 @@ func newMux(db *sql.DB) *http.ServeMux {
 	mux.Handle("DELETE /api/v1/settings/smtp", auth(handleDeleteSMTP(db)))
 	mux.Handle("GET /api/v1/settings/inheritance", auth(handleGetInheritanceToggle(db)))
 	mux.Handle("PUT /api/v1/settings/inheritance", auth(handlePutInheritanceToggle(db)))
+	mux.Handle("GET /api/v1/settings/lang", auth(handleGetLang(db)))
+	mux.Handle("PUT /api/v1/settings/lang", auth(handlePutLang(db)))
 	mux.Handle("PUT /api/v1/settings/master-key", auth(handlePutMasterKey(db)))
 	mux.Handle("PUT /api/v1/settings/master-salt", auth(handlePutMasterSalt(db)))
 	// 管理后台 API（requireAdmin）。

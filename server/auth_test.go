@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,25 +15,153 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// newTestServer builds the full app wiring against a throwaway temp DB file
-// (never touches data/bequest.db).
+// newTestServer builds the full app wiring against a throwaway DB.
+// TEST_DB_DRIVER selects the backend: empty/"sqlite" uses a temp file DB;
+// "mysql"/"postgres" connect to the live server described by TEST_DB_DSN
+// (or the standard DB_HOST/DB_PORT/DB_USER/DB_PASS/DB_NAME envs) and wipe
+// + recreate the schema so every run starts clean. Never touches data/.
 func newTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	t.Helper()
-	dir := t.TempDir()
-	db, err := sql.Open("sqlite", "file:"+filepath.Join(dir, "test.db")+
-		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
-	if err != nil {
-		t.Fatalf("open test db: %v", err)
+	driverName := os.Getenv("TEST_DB_DRIVER")
+	if driverName == "" {
+		driverName = "sqlite"
 	}
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
+	switch driverName {
+	case "sqlite":
+		dir := t.TempDir()
+		db, err := sql.Open("sqlite", "file:"+filepath.Join(dir, "test.db")+
+			"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open test db: %v", err)
+		}
+		db.SetMaxOpenConns(1)
+		t.Cleanup(func() { db.Close() })
+		if err := runMigrations(db); err != nil {
+			t.Fatalf("run migrations: %v", err)
+		}
+		ts := httptest.NewServer(newMux(db))
+		t.Cleanup(ts.Close)
+		return ts, db
+	case "mysql":
+		old := currentDialect
+		currentDialect = dialectMySQL
+		t.Cleanup(func() { currentDialect = old })
+		db := openTestMySQL(t)
+		if err := dropAllTables(t, db); err != nil {
+			t.Fatalf("reset mysql schema: %v", err)
+		}
+		if err := runMigrations(db); err != nil {
+			t.Fatalf("run mysql migrations: %v", err)
+		}
+		ts := httptest.NewServer(newMux(db))
+		t.Cleanup(func() { ts.Close(); db.Close() })
+		return ts, db
+	case "postgres":
+		old := currentDialect
+		currentDialect = dialectPostgres
+		t.Cleanup(func() { currentDialect = old })
+		db := openTestPostgres(t)
+		if err := dropAllTables(t, db); err != nil {
+			t.Fatalf("reset postgres schema: %v", err)
+		}
+		if err := runMigrations(db); err != nil {
+			t.Fatalf("run postgres migrations: %v", err)
+		}
+		ts := httptest.NewServer(newMux(db))
+		t.Cleanup(func() { ts.Close(); db.Close() })
+		return ts, db
+	default:
+		t.Fatalf("unsupported TEST_DB_DRIVER %q", driverName)
+		return nil, nil
+	}
+}
 
-	if err := runMigrations(db); err != nil {
-		t.Fatalf("run migrations: %v", err)
+// openTestMySQL connects to the MySQL/MariaDB test server.
+func openTestMySQL(t *testing.T) *sql.DB {
+	t.Helper()
+	dsn := os.Getenv("TEST_DB_DSN")
+	if dsn == "" {
+		user := envOr("TEST_DB_USER", "bequest")
+		pass := envOr("TEST_DB_PASS", "bequest")
+		host := envOr("TEST_DB_HOST", "127.0.0.1")
+		port := envOr("TEST_DB_PORT", "3306")
+		name := envOr("TEST_DB_NAME", "bequest_test")
+		dsn = fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&collation=utf8mb4_unicode_ci&parseTime=false&clientFoundRows=true",
+			user, pass, host, port, name)
 	}
-	ts := httptest.NewServer(newMux(db))
-	t.Cleanup(ts.Close)
-	return ts, db
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		t.Fatalf("ping mysql (is the test server up?): %v", err)
+	}
+	return db
+}
+
+// openTestPostgres connects to the PostgreSQL test server through the pgxrw
+// driver so the same '?' rewrite is exercised.
+func openTestPostgres(t *testing.T) *sql.DB {
+	t.Helper()
+	dsn := os.Getenv("TEST_PG_DSN")
+	if dsn == "" {
+		host := envOr("TEST_PG_HOST", "127.0.0.1")
+		port := envOr("TEST_PG_PORT", "5433")
+		user := envOr("TEST_PG_USER", "bequest")
+		pass := envOr("TEST_PG_PASS", "bequest")
+		name := envOr("TEST_PG_NAME", "bequest_test")
+		dsn = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+			host, port, user, pass, name)
+	}
+	db, err := sql.Open("pgxrw", dsn)
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		t.Fatalf("ping postgres (is the test server up?): %v", err)
+	}
+	return db
+}
+
+// dropAllTables removes every table in the public schema so migrations run on
+// an empty database.
+func dropAllTables(t *testing.T, db *sql.DB) error {
+	t.Helper()
+	switch currentDialect {
+	case dialectMySQL:
+		// MySQL/MariaDB: drop everything including FK order via SET FOREIGN_KEY_CHECKS.
+		if _, err := db.Exec(`SET FOREIGN_KEY_CHECKS = 0`); err != nil {
+			return err
+		}
+		rows, err := db.Query(`SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()`)
+		if err != nil {
+			return err
+		}
+		var tables []string
+		for rows.Next() {
+			var tn string
+			if err := rows.Scan(&tn); err != nil {
+				rows.Close()
+				return err
+			}
+			tables = append(tables, tn)
+		}
+		rows.Close()
+		for _, tn := range tables {
+			if _, err := db.Exec("DROP TABLE IF EXISTS `" + tn + "`"); err != nil {
+				return err
+			}
+		}
+		_, err = db.Exec(`SET FOREIGN_KEY_CHECKS = 1`)
+		return err
+	case dialectPostgres:
+		if _, err := db.Exec(`DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
+			return err
+		}
+		return nil
+	default:
+		return nil
+	}
 }
 
 // doReq performs a request against the test server through the real HTTP stack.

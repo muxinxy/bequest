@@ -167,7 +167,7 @@ func TestNotifyUserPrefersUserSMTP(t *testing.T) {
 		t.Fatalf("encrypt test password: %v", err)
 	}
 	// 127.0.0.1:1 -> connection refused instantly; send fails, notifyUser must survive
-	if _, err := db.Exec(`INSERT INTO user_smtp (user_id, host, port, user, password_enc, from_addr, enabled)
+	if _, err := db.Exec(`INSERT INTO user_smtp (user_id, host, port, `+smtpUserCol()+`, password_enc, from_addr, enabled)
 		VALUES (?, '127.0.0.1', 1, 'own@x.com', ?, 'own@x.com', 1)`, uid, enc); err != nil {
 		t.Fatalf("insert user smtp row: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestSendCustomForUserFallsBackOnFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO user_smtp (user_id, host, port, user, password_enc, from_addr, enabled)
+	if _, err := db.Exec(`INSERT INTO user_smtp (user_id, host, port, `+smtpUserCol()+`, password_enc, from_addr, enabled)
 		VALUES (?, '127.0.0.1', 1, 'fb@x.com', ?, 'fb@x.com', 1)`, regResp.User.ID, enc); err != nil {
 		t.Fatalf("insert user smtp: %v", err)
 	}

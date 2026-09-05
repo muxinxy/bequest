@@ -23,7 +23,7 @@ func TestOverview(t *testing.T) {
 			exp = expiry
 		}
 		if _, err := db.Exec(`INSERT INTO assets (user_id, asset_type, name, encrypted_data, expiry_date, status)
-			VALUES (?, 'virtual', ?, x'00', ?, ?)`, uid, name, exp, status); err != nil {
+			VALUES (?, 'virtual', ?, ?, ?, ?)`, uid, name, []byte{0}, exp, status); err != nil {
 			t.Fatalf("insert asset %s: %v", name, err)
 		}
 	}

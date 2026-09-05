@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>托孤 · 管理后台</title>
+<title>Bequest Admin · 管理后台</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -47,6 +47,13 @@
   }
   header .spacer { flex: 1; }
   header .who { color: #a5b0c0; font-size: 13px; }
+  .lang-switch { display: inline-flex; align-items: center; border: 1px solid rgba(255,255,255,.18); border-radius: 8px; overflow: hidden; }
+  .lang-switch button {
+    background: none; border: none; color: #a5b0c0; padding: 6px 10px; font-size: 12px;
+    cursor: pointer; border-radius: 0; line-height: 1; box-shadow: none; min-width: 46px;
+  }
+  .lang-switch button:hover { background: rgba(255,255,255,.14); color: #fff; border-color: transparent; }
+  .lang-switch button.active { background: rgba(255,255,255,.22); color: #fff; }
   header .logout {
     background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.18); color: #dbe2ec;
     border-radius: 8px; padding: 6px 14px; font-size: 13px; cursor: pointer;
@@ -190,35 +197,39 @@
 <header id="appbar" class="hidden">
   <div class="logo">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
-    <h1>托孤 · 管理后台</h1>
+    <h1 data-i18n="appTitle">托孤 · 管理后台</h1>
   </div>
   <nav id="tabs">
-    <button data-tab="dash" class="active">仪表盘</button>
-    <button data-tab="users">用户</button>
-    <button data-tab="config">系统配置</button>
-    <button data-tab="codes">兑换码</button>
-    <button data-tab="audit">审计日志</button>
-    <button data-tab="about">关于</button>
+    <button data-tab="dash" class="active" data-i18n="tabDash">仪表盘</button>
+    <button data-tab="users" data-i18n="tabUsers">用户</button>
+    <button data-tab="config" data-i18n="tabConfig">系统配置</button>
+    <button data-tab="codes" data-i18n="tabCodes">兑换码</button>
+    <button data-tab="audit" data-i18n="tabAudit">审计日志</button>
+    <button data-tab="about" data-i18n="tabAbout">关于</button>
   </nav>
   <div class="spacer"></div>
   <span class="who" id="who"></span>
-  <button class="logout" id="logout">退出登录</button>
+  <div class="lang-switch">
+    <button id="lang-zh" class="active" type="button">中文</button>
+    <button id="lang-en" type="button">English</button>
+  </div>
+  <button class="logout" id="logout" data-i18n="logout">退出登录</button>
 </header>
 <div id="msg" class="msg"></div>
 
 <main id="login-view" class="login-wrap">
   <div id="lg-form">
-    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>管理后台登录</h2>
-    <div class="form-row"><label>账号</label><input id="lg-user" autocomplete="username"></div>
-    <div class="form-row"><label>密码</label><input id="lg-pass" type="password" autocomplete="current-password"></div>
-    <div class="form-row"><label>验证码</label><span id="lg-question" class="muted" style="cursor:pointer" title="点击刷新验证码" onclick="loadCaptcha()"></span></div>
-    <div class="form-row"><label></label><input id="lg-captcha" placeholder="输入图中字符" style="width:140px"></div>
-    <button class="primary" id="lg-btn">登 录</button>
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span data-i18n="loginTitle">管理后台登录</span></h2>
+    <div class="form-row"><label data-i18n="labelUsername">账号</label><input id="lg-user" autocomplete="username"></div>
+    <div class="form-row"><label data-i18n="labelPassword">密码</label><input id="lg-pass" type="password" autocomplete="current-password"></div>
+    <div class="form-row"><label data-i18n="labelCaptcha">验证码</label><span id="lg-question" class="muted" style="cursor:pointer" title="点击刷新验证码" data-i18n-title="captchaTip" onclick="loadCaptcha()"></span></div>
+    <div class="form-row"><label></label><input id="lg-captcha" placeholder="输入图中字符" data-i18n-ph="captchaPh" style="width:140px"></div>
+    <button class="primary" id="lg-btn" data-i18n="loginBtn">登 录</button>
   </div>
   <div id="lg-2fa" class="hidden">
-    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>两步验证</h2>
-    <div class="form-row"><label>动态码</label><input id="lg-totp" inputmode="numeric" maxlength="6" placeholder="6 位数字" style="width:140px"></div>
-    <button class="primary" id="lg-2fa-btn">验 证</button>
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg><span data-i18n="login2faTitle">两步验证</span></h2>
+    <div class="form-row"><label data-i18n="label2faCode">动态码</label><input id="lg-totp" inputmode="numeric" maxlength="6" placeholder="6 位数字" data-i18n-ph="totpPh" style="width:140px"></div>
+    <button class="primary" id="lg-2fa-btn" data-i18n="verifyBtn">验 证</button>
   </div>
 </main>
 
@@ -229,21 +240,21 @@
 
   <section id="tab-users" class="card hidden">
     <div class="toolbar">
-      <input id="u-q" type="text" placeholder="搜索用户名 / 邮箱">
+      <input id="u-q" type="text" placeholder="搜索用户名 / 邮箱" data-i18n-ph="searchUserPh">
       <select id="u-role">
-        <option value="">全部角色</option><option value="admin">管理员</option><option value="user">普通用户</option>
+        <option value="" data-i18n="optAllRoles">全部角色</option><option value="admin" data-i18n="bAdmin">管理员</option><option value="user" data-i18n="optRoleUser">普通用户</option>
       </select>
       <select id="u-tier">
-        <option value="">全部等级</option><option value="member">会员</option><option value="free">免费</option>
+        <option value="" data-i18n="optAllTiers">全部等级</option><option value="member" data-i18n="bMember">会员</option><option value="free" data-i18n="bFree">免费</option>
       </select>
-      <button class="primary" id="u-search">搜索</button>
+      <button class="primary" id="u-search" data-i18n="searchBtn">搜索</button>
     </div>
     <table>
-      <thead><tr><th>ID</th><th>用户名</th><th>邮箱</th><th>等级</th><th>会员到期</th><th>角色</th><th>状态</th><th>资产</th><th>继承人</th><th>最后登录</th><th>注册时间</th><th>操作</th></tr></thead>
+      <thead><tr><th data-i18n="thId">ID</th><th data-i18n="thUsername">用户名</th><th data-i18n="thEmail">邮箱</th><th data-i18n="thTier">等级</th><th data-i18n="thExpiry">会员到期</th><th data-i18n="thRole">角色</th><th data-i18n="thStatus">状态</th><th data-i18n="thAssets">资产</th><th data-i18n="thHeir">继承人</th><th data-i18n="thLastLogin">最后登录</th><th data-i18n="thRegTime">注册时间</th><th data-i18n="thActions">操作</th></tr></thead>
       <tbody id="u-body"></tbody>
     </table>
     <div class="pager">
-      <button id="u-prev">上一页</button><span id="u-info"></span><button id="u-next">下一页</button>
+      <button id="u-prev" data-i18n="prevPage">上一页</button><span id="u-info"></span><button id="u-next" data-i18n="nextPage">下一页</button>
     </div>
   </section>
 
@@ -251,134 +262,134 @@
     <div class="subcard">
       <div class="subcard-title">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M22 6l-10 7L2 6"/></svg>
-        发件服务器 (SMTP)
-        <span class="tag">轮询负载均衡</span>
+        <span data-i18n="cfgSmtpTitle">发件服务器 (SMTP)</span>
+        <span class="tag" data-i18n="tagRoundRobin">轮询负载均衡</span>
       </div>
       <div id="smtp-rows"></div>
-      <button id="smtp-add">+ 添加服务器</button>
+      <button id="smtp-add" data-i18n="addServer">+ 添加服务器</button>
     </div>
 
     <div class="subcard">
       <div class="subcard-title">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        短信服务商
-        <span class="tag">预留</span>
+        <span data-i18n="cfgSmsTitle">短信服务商</span>
+        <span class="tag" data-i18n="tagReserved">预留</span>
       </div>
       <div id="sms-rows"></div>
-      <button id="sms-add">+ 添加服务商</button>
+      <button id="sms-add" data-i18n="addProvider">+ 添加服务商</button>
     </div>
 
     <div class="subcard">
       <div class="subcard-title">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-        电话服务商
-        <span class="tag">预留</span>
+        <span data-i18n="cfgPhoneTitle">电话服务商</span>
+        <span class="tag" data-i18n="tagReserved">预留</span>
       </div>
       <div id="phone-rows"></div>
-      <button id="phone-add">+ 添加服务商</button>
+      <button id="phone-add" data-i18n="addProvider">+ 添加服务商</button>
     </div>
 
     <div class="subcard">
       <div class="subcard-title">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg>
-        免费用户权益
+        <span data-i18n="cfgFreeTitle">免费用户权益</span>
       </div>
       <div class="form-row">
-        <label>资产上限</label>
+        <label data-i18n="labelAssetQuota">资产上限</label>
         <input id="cfg-quota" class="md" type="number" min="1">
-        <span class="muted">免费档最多可创建的资产数;会员不限</span>
+        <span class="muted" data-i18n="hintQuota">免费档最多可创建的资产数;会员不限</span>
       </div>
     </div>
 
     <div class="subcard">
       <div class="subcard-title">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-        通知额度
-        <span class="tag">每月</span>
+        <span data-i18n="cfgNotifyTitle">通知额度</span>
+        <span class="tag" data-i18n="tagMonthly">每月</span>
       </div>
       <div class="form-row">
-        <label>免费用户邮件</label>
+        <label data-i18n="labelFreeEmails">免费用户邮件</label>
         <input id="cfg-free-emails" class="md" type="number" min="0">
-        <span class="muted">免费用户每月系统邮件额度</span>
+        <span class="muted" data-i18n="hintFreeEmails">免费用户每月系统邮件额度</span>
       </div>
       <div class="form-row">
-        <label>会员邮件</label>
+        <label data-i18n="labelMemberEmails">会员邮件</label>
         <input id="cfg-member-emails" class="md" type="number" min="0">
-        <span class="muted">会员每月系统邮件额度</span>
+        <span class="muted" data-i18n="hintMemberEmails">会员每月系统邮件额度</span>
       </div>
       <div class="form-row">
-        <label>会员短信</label>
+        <label data-i18n="labelMemberSms">会员短信</label>
         <input id="cfg-member-sms" class="md" type="number" min="0">
-        <span class="muted">会员每月短信额度</span>
+        <span class="muted" data-i18n="hintMemberSms">会员每月短信额度</span>
       </div>
     </div>
 
     <div class="subcard">
       <div class="subcard-title">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-        默认触发阶梯
-        <span class="tag">天</span>
+        <span data-i18n="cfgLadderTitle">默认触发阶梯</span>
+        <span class="tag" data-i18n="tagDays">天</span>
       </div>
       <div class="form-row">
-        <label>一级 / 二级</label>
+        <label data-i18n="labelLadder">一级 / 二级</label>
         <input id="cfg-ladder-1" class="sm" type="number" min="1" max="3650">
         <span class="muted">,</span>
         <input id="cfg-ladder-2" class="sm" type="number" min="1" max="3650">
-        <span class="muted">一级:IM+邮件;二级:一级+短信,跨过二级触发继承</span>
+        <span class="muted" data-i18n="hintLadder">一级:IM+邮件;二级:一级+短信,跨过二级触发继承</span>
       </div>
     </div>
 
     <div class="subcard">
       <div class="subcard-title">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
-        管理后台两步验证 (2FA)
+        <span data-i18n="cfg2faTitle">管理后台两步验证 (2FA)</span>
       </div>
-      <div id="2fa-box" class="muted">加载中...</div>
+      <div id="2fa-box" class="muted" data-i18n="loading">加载中...</div>
     </div>
 
     <div class="save-bar">
-      <button class="primary" id="cfg-save">保存配置</button>
+      <button class="primary" id="cfg-save" data-i18n="saveConfigBtn">保存配置</button>
     </div>
   </section>
 
   <section id="tab-codes" class="card hidden">
-    <h3 style="margin-bottom:12px">生成兑换码</h3>
+    <h3 style="margin-bottom:12px" data-i18n="rcTitle">生成兑换码</h3>
     <div class="form-row">
-      <label>数量</label><input id="rc-count" class="sm" type="number" min="1" max="100" value="1">
-      <label>时长(天)</label><input id="rc-days" class="sm" type="number" min="1" max="3650" value="30">
-      <button class="primary" id="rc-gen">生成</button>
+      <label data-i18n="labelRcCount">数量</label><input id="rc-count" class="sm" type="number" min="1" max="100" value="1">
+      <label data-i18n="labelRcDays">时长(天)</label><input id="rc-days" class="sm" type="number" min="1" max="3650" value="30">
+      <button class="primary" id="rc-gen" data-i18n="rcGenBtn">生成</button>
     </div>
     <div id="rc-result" class="muted" style="margin-bottom:12px"></div>
     <table>
-      <thead><tr><th>ID</th><th>兑换码</th><th>时长(天)</th><th>使用人</th><th>使用时间</th><th>创建时间</th><th>操作</th></tr></thead>
+      <thead><tr><th data-i18n="thId">ID</th><th data-i18n="thCode">兑换码</th><th data-i18n="thDurationDays">时长(天)</th><th data-i18n="thUsedBy">使用人</th><th data-i18n="thUsedAt">使用时间</th><th data-i18n="thCreatedAt">创建时间</th><th data-i18n="thActions">操作</th></tr></thead>
       <tbody id="rc-body"></tbody>
     </table>
     <div class="pager">
-      <button id="rc-prev">上一页</button><span id="rc-info"></span><button id="rc-next">下一页</button>
+      <button id="rc-prev" data-i18n="prevPage">上一页</button><span id="rc-info"></span><button id="rc-next" data-i18n="nextPage">下一页</button>
     </div>
   </section>
 
   <section id="tab-audit" class="card hidden">
     <div class="toolbar">
-      <input id="a-uid" type="text" placeholder="按 user_id 筛选">
-      <input id="a-from" type="date" title="开始日期">
-      <input id="a-to" type="date" title="结束日期">
-      <button class="primary" id="a-search">筛选</button>
-      <button id="a-reset">重置</button>
-      <button id="a-export">导出 CSV</button>
+      <input id="a-uid" type="text" placeholder="按 user_id 筛选" data-i18n-ph="auditUidPh">
+      <input id="a-from" type="date" title="开始日期" data-i18n-title="auditFromTitle">
+      <input id="a-to" type="date" title="结束日期" data-i18n-title="auditToTitle">
+      <button class="primary" id="a-search" data-i18n="auditFilterBtn">筛选</button>
+      <button id="a-reset" data-i18n="auditResetBtn">重置</button>
+      <button id="a-export" data-i18n="auditExportBtn">导出 CSV</button>
     </div>
     <table>
-      <thead><tr><th>ID</th><th>user_id</th><th>actor</th><th>action</th><th>detail</th><th>时间</th></tr></thead>
+      <thead><tr><th data-i18n="thId">ID</th><th>user_id</th><th>actor</th><th>action</th><th>detail</th><th data-i18n="thTime">时间</th></tr></thead>
       <tbody id="a-body"></tbody>
     </table>
     <div class="pager">
-      <button id="a-prev">上一页</button><span id="a-info"></span><button id="a-next">下一页</button>
+      <button id="a-prev" data-i18n="prevPage">上一页</button><span id="a-info"></span><button id="a-next" data-i18n="nextPage">下一页</button>
     </div>
   </section>
 
   <section id="tab-about" class="card hidden">
-    <h3 style="margin-bottom:12px">关于</h3>
-    <div id="about-box" class="muted">加载中...</div>
+    <h3 style="margin-bottom:12px" data-i18n="tabAbout">关于</h3>
+    <div id="about-box" class="muted" data-i18n="loading">加载中...</div>
   </section>
 </main>
 
@@ -386,6 +397,182 @@
 'use strict';
 var TOKEN_KEY = 'bequest_admin_token';
 var state = { users: { page: 1, q: '', role: '', tier: '' }, audit: { page: 1, uid: '', from: '', to: '' }, codes: { page: 1 }, pendingToken: '' };
+var currentTab = 'dash';
+var I18N = {
+  zh: {
+    /* ---------- app chrome ---------- */
+    appTitle: '托孤 · 管理后台',
+    tabDash: '仪表盘', tabUsers: '用户', tabConfig: '系统配置', tabCodes: '兑换码', tabAudit: '审计日志', tabAbout: '关于',
+    logout: '退出登录',
+    /* ---------- login ---------- */
+    loginTitle: '管理后台登录', labelUsername: '账号', labelPassword: '密码', labelCaptcha: '验证码',
+    captchaTip: '点击刷新验证码', captchaPh: '输入图中字符', loginBtn: '登 录',
+    login2faTitle: '两步验证', label2faCode: '动态码', totpPh: '6 位数字', verifyBtn: '验 证',
+    sessionExpired: '登录已过期', enterCredentials: '请输入账号和密码', notAdmin: '该账号不是管理员',
+    enterTotp: '请输入动态码', captchaFail: '验证码加载失败,请刷新页面',
+    /* ---------- dashboard ---------- */
+    statUsers: '用户总数', statMembers: '会员', statAdmins: '管理员', statDisabled: '已禁用',
+    statAssets: '资产总数', statCategories: '分类', statHeirs: '继承人', statPendingEvents: '待领取继承事件', statUnread: '未读提醒',
+    pagerInfo: '第 {p} / 共 {t} 页 · {n} 条',
+    /* ---------- users ---------- */
+    searchUserPh: '搜索用户名 / 邮箱', searchBtn: '搜索',
+    optAllRoles: '全部角色', optAllTiers: '全部等级', optRoleUser: '普通用户',
+    thId: 'ID', thUsername: '用户名', thEmail: '邮箱', thTier: '等级', thExpiry: '会员到期', thRole: '角色',
+    thStatus: '状态', thAssets: '资产', thHeir: '继承人', thLastLogin: '最后登录', thRegTime: '注册时间', thActions: '操作',
+    prevPage: '上一页', nextPage: '下一页',
+    bMember: '会员', bFree: '免费', bAdmin: '管理员', bUser: '用户',
+    bDisabled: '禁用', bActive: '正常', bPermanent: '永久', bUsed: '已用', bUnused: '未用',
+    noUsers: '无匹配用户',
+    actMember: '设会员', actUnmember: '取消会员', actAdmin: '设管理员', actUnadmin: '取消管理员',
+    actDisable: '禁用', actEnable: '启用', actDelete: '删除',
+    confirmDelUser: '确定删除用户 #{id}？其资产、分类、继承人将一并删除！',
+    toastDel: '已删除', toastUpdated: '已更新',
+    /* ---------- config ---------- */
+    cfgSmtpTitle: '发件服务器 (SMTP)', tagRoundRobin: '轮询负载均衡', addServer: '+ 添加服务器',
+    cfgSmsTitle: '短信服务商', cfgPhoneTitle: '电话服务商', tagReserved: '预留', addProvider: '+ 添加服务商',
+    cfgFreeTitle: '免费用户权益', labelAssetQuota: '资产上限', hintQuota: '免费档最多可创建的资产数;会员不限',
+    cfgNotifyTitle: '通知额度', tagMonthly: '每月',
+    labelFreeEmails: '免费用户邮件', hintFreeEmails: '免费用户每月系统邮件额度',
+    labelMemberEmails: '会员邮件', hintMemberEmails: '会员每月系统邮件额度',
+    labelMemberSms: '会员短信', hintMemberSms: '会员每月短信额度',
+    cfgLadderTitle: '默认触发阶梯', tagDays: '天', labelLadder: '一级 / 二级',
+    hintLadder: '一级:IM+邮件;二级:一级+短信,跨过二级触发继承',
+    cfg2faTitle: '管理后台两步验证 (2FA)',
+    saveConfigBtn: '保存配置', configSavedToast: '配置已保存',
+    loading: '加载中...',
+    smtpPassNote: '已设置（留空保持不变）', setNote: '已设置', removeBtn: '移除',
+    phApiKey: 'api_key(留空保留)', phApiSecret: 'api_secret(留空保留)',
+    /* ---------- 2FA ---------- */
+    bEnabled: '已启用', bOff: '未启用',
+    twofaEnabledNote: '登录管理后台需身份验证器动态码',
+    phCurrentCode: '输入当前动态码', btnOff2fa: '停用 2FA', twofaOffToast: '已停用 2FA',
+    btnOn2fa: '启用 2FA',
+    twofaManualIntro: '用身份验证器 App(Google Authenticator / Authy 等)手动添加,密钥:',
+    phVerifierCode: '输入验证器中的 6 位动态码', btnConfirm2fa: '确认启用', twofaOnToast: '2FA 已启用',
+    /* ---------- redemption codes ---------- */
+    rcTitle: '生成兑换码', labelRcCount: '数量', labelRcDays: '时长(天)', rcGenBtn: '生成',
+    noCodes: '暂无兑换码', rcGenerated: '已生成 {n} 个:', rcGenToast: '已生成',
+    confirmDelCode: '确定删除兑换码 #{id}?',
+    thCode: '兑换码', thDurationDays: '时长(天)', thUsedBy: '使用人', thUsedAt: '使用时间', thCreatedAt: '创建时间',
+    /* ---------- audit ---------- */
+    auditUidPh: '按 user_id 筛选', auditFromTitle: '开始日期', auditToTitle: '结束日期',
+    auditFilterBtn: '筛选', auditResetBtn: '重置', auditExportBtn: '导出 CSV',
+    noRecords: '无记录', exportFail: '导出失败', thTime: '时间',
+    /* ---------- about ---------- */
+    aboutBrand: '托孤 (bequest)',
+    aboutDesc: '数字资产保险箱 + 数字遗嘱:管理实体/虚拟资产,号主超时未登录时升级提醒,最终交接给继承人。',
+    aboutVersion: '版本:',
+  },
+  en: {
+    /* ---------- app chrome ---------- */
+    appTitle: 'Bequest · Admin',
+    tabDash: 'Dashboard', tabUsers: 'Users', tabConfig: 'Settings', tabCodes: 'Codes', tabAudit: 'Audit Log', tabAbout: 'About',
+    logout: 'Sign out',
+    /* ---------- login ---------- */
+    loginTitle: 'Admin sign in', labelUsername: 'Username', labelPassword: 'Password', labelCaptcha: 'Captcha',
+    captchaTip: 'Click to refresh captcha', captchaPh: 'Enter the characters shown', loginBtn: 'Sign in',
+    login2faTitle: 'Two-factor auth', label2faCode: 'Code', totpPh: '6-digit code', verifyBtn: 'Verify',
+    sessionExpired: 'Login expired', enterCredentials: 'Please enter username and password',
+    notAdmin: 'This account is not an admin', enterTotp: 'Please enter the code',
+    captchaFail: 'Failed to load captcha. Please refresh the page',
+    /* ---------- dashboard ---------- */
+    statUsers: 'Total users', statMembers: 'Members', statAdmins: 'Admins', statDisabled: 'Disabled',
+    statAssets: 'Total assets', statCategories: 'Categories', statHeirs: 'Heirs',
+    statPendingEvents: 'Pending claims', statUnread: 'Unread reminders',
+    pagerInfo: 'Page {p} of {t} · {n} items',
+    /* ---------- users ---------- */
+    searchUserPh: 'Search username / email', searchBtn: 'Search',
+    optAllRoles: 'All roles', optAllTiers: 'All tiers', optRoleUser: 'User',
+    thId: 'ID', thUsername: 'Username', thEmail: 'Email', thTier: 'Tier', thExpiry: 'Expires', thRole: 'Role',
+    thStatus: 'Status', thAssets: 'Assets', thHeir: 'Heirs', thLastLogin: 'Last login', thRegTime: 'Registered', thActions: 'Actions',
+    prevPage: 'Prev', nextPage: 'Next',
+    bMember: 'Member', bFree: 'Free', bAdmin: 'Admin', bUser: 'User',
+    bDisabled: 'Disabled', bActive: 'Active', bPermanent: 'Lifetime', bUsed: 'Used', bUnused: 'Unused',
+    noUsers: 'No matching users',
+    actMember: 'Make member', actUnmember: 'Remove membership', actAdmin: 'Make admin', actUnadmin: 'Remove admin',
+    actDisable: 'Disable', actEnable: 'Enable', actDelete: 'Delete',
+    confirmDelUser: 'Delete user #{id}? Their assets, categories and heirs will also be deleted.',
+    toastDel: 'Deleted', toastUpdated: 'Updated',
+    /* ---------- config ---------- */
+    cfgSmtpTitle: 'Mail server (SMTP)', tagRoundRobin: 'Round robin', addServer: '+ Add server',
+    cfgSmsTitle: 'SMS provider', cfgPhoneTitle: 'Phone provider', tagReserved: 'Reserved', addProvider: '+ Add provider',
+    cfgFreeTitle: 'Free-tier benefits', labelAssetQuota: 'Asset limit', hintQuota: 'Max assets a free account can create; unlimited for members',
+    cfgNotifyTitle: 'Notification quotas', tagMonthly: 'per month',
+    labelFreeEmails: 'Free-user emails', hintFreeEmails: 'Monthly system email quota for free users',
+    labelMemberEmails: 'Member emails', hintMemberEmails: 'Monthly system email quota for members',
+    labelMemberSms: 'Member SMS', hintMemberSms: 'Monthly SMS quota for members',
+    cfgLadderTitle: 'Default escalation ladder', tagDays: 'days', labelLadder: 'Tier 1 / Tier 2',
+    hintLadder: 'L1: IM + email. L2: L1 + SMS; skipping past L2 triggers inheritance',
+    cfg2faTitle: 'Admin two-factor auth (2FA)',
+    saveConfigBtn: 'Save settings', configSavedToast: 'Settings saved',
+    loading: 'Loading...',
+    smtpPassNote: 'Set (blank = keep current)', setNote: 'Set', removeBtn: 'Remove',
+    phApiKey: 'api_key (blank = keep current)', phApiSecret: 'api_secret (blank = keep current)',
+    /* ---------- 2FA ---------- */
+    bEnabled: 'Enabled', bOff: 'Not enabled',
+    twofaEnabledNote: 'Signing in to the admin console requires an authenticator code',
+    phCurrentCode: 'Enter current code', btnOff2fa: 'Disable 2FA', twofaOffToast: '2FA disabled',
+    btnOn2fa: 'Enable 2FA',
+    twofaManualIntro: 'Manually add the account in an authenticator app (Google Authenticator / Authy etc.). Secret:',
+    phVerifierCode: 'Enter the 6-digit code from your authenticator', btnConfirm2fa: 'Confirm', twofaOnToast: '2FA enabled',
+    /* ---------- redemption codes ---------- */
+    rcTitle: 'Generate redemption codes', labelRcCount: 'Count', labelRcDays: 'Duration (days)', rcGenBtn: 'Generate',
+    noCodes: 'No redemption codes', rcGenerated: 'Generated {n} codes:', rcGenToast: 'Generated',
+    confirmDelCode: 'Delete redemption code #{id}?',
+    thCode: 'Code', thDurationDays: 'Days', thUsedBy: 'Used by', thUsedAt: 'Used at', thCreatedAt: 'Created',
+    /* ---------- audit ---------- */
+    auditUidPh: 'Filter by user_id', auditFromTitle: 'Start date', auditToTitle: 'End date',
+    auditFilterBtn: 'Filter', auditResetBtn: 'Reset', auditExportBtn: 'Export CSV',
+    noRecords: 'No records', exportFail: 'Export failed', thTime: 'Time',
+    /* ---------- about ---------- */
+    aboutBrand: 'Bequest',
+    aboutDesc: 'A digital asset safe and digital will: manage physical and virtual assets, escalate reminders when the owner goes inactive, and hand everything over to heirs.',
+    aboutVersion: 'Version:',
+  },
+};
+var lang = 'zh';
+function t(key, params) {
+  var s = (I18N[lang] && I18N[lang][key]) || (I18N.zh && I18N.zh[key]) || key;
+  if (params) {
+    Object.keys(params).forEach(function (k) {
+      s = s.split('{' + k + '}').join(params[k]);
+    });
+  }
+  return s;
+}
+function applyLang() {
+  document.getElementById('lang-zh').className = lang === 'zh' ? 'active' : '';
+  document.getElementById('lang-en').className = lang === 'en' ? 'active' : '';
+  document.querySelectorAll('[data-i18n]').forEach(function (el) {
+    var key = el.getAttribute('data-i18n');
+    if (I18N[lang] && I18N[lang][key] != null) el.textContent = I18N[lang][key];
+  });
+  document.querySelectorAll('[data-i18n-ph]').forEach(function (el) {
+    var key = el.getAttribute('data-i18n-ph');
+    if (I18N[lang] && I18N[lang][key] != null) el.placeholder = I18N[lang][key];
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(function (el) {
+    var key = el.getAttribute('data-i18n-title');
+    if (I18N[lang] && I18N[lang][key] != null) el.title = I18N[lang][key];
+  });
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  try { localStorage.setItem('admin_lang', lang); } catch (e) {}
+  if (currentTab) refreshTab();
+}
+document.getElementById('lang-zh').addEventListener('click', function () { lang = 'zh'; applyLang(); });
+document.getElementById('lang-en').addEventListener('click', function () { lang = 'en'; applyLang(); });
+// Default from the browser language when no stored preference.
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem('admin_lang'); } catch (e) {}
+  if (saved === 'zh' || saved === 'en') {
+    lang = saved;
+  } else {
+    var nav = (navigator.language || '').toLowerCase();
+    if (nav.indexOf('en') === 0) lang = 'en';
+  }
+  applyLang();
+})();
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -414,9 +601,11 @@ function api(path, opts) {
   var token = localStorage.getItem(TOKEN_KEY);
   if (token) opts.headers.Authorization = 'Bearer ' + token;
   if (opts.body) opts.headers['Content-Type'] = 'application/json';
+  // Server messages are localized via Accept-Language to match the current UI language.
+  opts.headers['Accept-Language'] = lang === 'zh' ? 'zh-CN,zh;q=0.9' : 'en;q=0.9';
   return fetch('/api/v1' + path, opts).then(function (resp) {
     return resp.json().catch(function () { return {}; }).then(function (data) {
-      if (resp.status === 401) { logout(); throw new Error('登录已过期'); }
+      if (resp.status === 401) { logout(); throw new Error(t('sessionExpired')); }
       if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
       return data;
     });
@@ -437,7 +626,7 @@ function loadCaptcha() {
     document.getElementById('lg-question').innerHTML = d.image_svg;
     document.getElementById('lg-captcha').value = '';
   }).catch(function () {
-    document.getElementById('lg-question').textContent = '验证码加载失败,请刷新页面';
+    document.getElementById('lg-question').textContent = t('captchaFail');
   });
 }
 function enterApp(d) {
@@ -452,7 +641,7 @@ function enterApp(d) {
 function doLogin() {
   var u = document.getElementById('lg-user').value.trim();
   var p = document.getElementById('lg-pass').value;
-  if (!u || !p) return toast('请输入账号和密码', false);
+  if (!u || !p) return toast(t('enterCredentials'), false);
   api('/auth/login', {
     method: 'POST',
     body: JSON.stringify({
@@ -469,14 +658,14 @@ function doLogin() {
         document.getElementById('lg-totp').focus();
         return;
       }
-      if (d.user && d.user.role !== 'admin') throw new Error('该账号不是管理员');
+      if (d.user && d.user.role !== 'admin') throw new Error(t('notAdmin'));
       enterApp(d);
     })
     .catch(function (e) { toast(e.message, false); loadCaptcha(); }); // 验证码一次性,失败即换
 }
 function verify2FA() {
   var code = document.getElementById('lg-totp').value.trim();
-  if (!code) return toast('请输入动态码', false);
+  if (!code) return toast(t('enterTotp'), false);
   api('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ pending_token: state.pendingToken, code: code }) })
     .then(function (d) { enterApp(d); })
     .catch(function (e) { toast(e.message, false); });
@@ -491,6 +680,7 @@ document.getElementById('logout').addEventListener('click', logout);
 
 /* ---------- tabs ---------- */
 function switchTab(name) {
+  currentTab = name;
   document.querySelectorAll('#tabs button').forEach(function (b) {
     b.classList.toggle('active', b.dataset.tab === name);
   });
@@ -508,15 +698,26 @@ document.querySelectorAll('#tabs button').forEach(function (b) {
   b.addEventListener('click', function () { switchTab(b.dataset.tab); });
 });
 
+// Re-render the currently visible tab's dynamic content after a language switch.
+function refreshTab() {
+  if (document.getElementById('app').classList.contains('hidden')) return;
+  if (currentTab === 'dash') loadStats();
+  else if (currentTab === 'users') loadUsers();
+  else if (currentTab === 'config') loadConfig();
+  else if (currentTab === 'codes') loadCodes();
+  else if (currentTab === 'audit') loadAudit();
+  else if (currentTab === 'about') loadAbout();
+}
+
 /* ---------- dashboard ---------- */
 var STAT_LABELS = {
-  users: '用户总数', members: '会员', admins: '管理员', disabled_users: '已禁用',
-  assets: '资产总数', categories: '分类', inheritors: '继承人', pending_inheritance_events: '待领取继承事件', unread_reminders: '未读提醒'
+  users: 'statUsers', members: 'statMembers', admins: 'statAdmins', disabled_users: 'statDisabled',
+  assets: 'statAssets', categories: 'statCategories', inheritors: 'statHeirs', pending_inheritance_events: 'statPendingEvents', unread_reminders: 'statUnread'
 };
 function loadStats() {
   api('/admin/stats').then(function (s) {
     var html = Object.keys(STAT_LABELS).map(function (k) {
-      return '<div class="stat"><div class="n">' + esc(s[k] || 0) + '</div><div class="l">' + STAT_LABELS[k] + '</div></div>';
+      return '<div class="stat"><div class="n">' + esc(s[k] || 0) + '</div><div class="l">' + I18N[lang][STAT_LABELS[k]] + '</div></div>';
     }).join('');
     document.getElementById('stats').innerHTML = html;
   }).catch(function (e) { toast(e.message, false); });
@@ -526,7 +727,7 @@ function loadStats() {
 // 分页信息:显示"第 p / 共 T 页 · N 条",并给出总页数供按钮禁用判断。
 function pagerInfo(total, page, pageSize) {
   var pages = Math.max(1, Math.ceil(total / pageSize));
-  return { text: '第 ' + page + ' / 共 ' + pages + ' 页 · ' + total + ' 条', pages: pages };
+  return { text: t('pagerInfo', { p: page, t: pages, n: total }), pages: pages };
 }
 function loadUsers(page) {
   if (page) state.users.page = page;
@@ -537,11 +738,11 @@ function loadUsers(page) {
   api('/admin/users?q=' + q + '&role=' + role + '&tier=' + tier + '&page=' + p + '&page_size=20')
     .then(function (d) {
       var rows = d.users.map(function (u) {
-        var tierB = u.tier === 'member' ? '<span class="badge member">会员</span>' : '<span class="badge free">免费</span>';
-        var roleB = u.role === 'admin' ? '<span class="badge admin">管理员</span>' : '<span class="badge user">用户</span>';
-        var stB = u.disabled ? '<span class="badge off">禁用</span>' : '<span class="badge on">正常</span>';
+        var tierB = u.tier === 'member' ? '<span class="badge member">' + t('bMember') + '</span>' : '<span class="badge free">' + t('bFree') + '</span>';
+        var roleB = u.role === 'admin' ? '<span class="badge admin">' + t('bAdmin') + '</span>' : '<span class="badge user">' + t('bUser') + '</span>';
+        var stB = u.disabled ? '<span class="badge off">' + t('bDisabled') + '</span>' : '<span class="badge on">' + t('bActive') + '</span>';
         var expB = u.tier === 'member'
-          ? (u.member_expires_at ? esc(fmtTime(u.member_expires_at)) : '<span class="badge on">永久</span>')
+          ? (u.member_expires_at ? esc(fmtTime(u.member_expires_at)) : '<span class="badge on">' + t('bPermanent') + '</span>')
           : '<span class="muted">—</span>';
         return '<tr><td>' + u.id + '</td><td>' + esc(u.username) + '</td><td>' + esc(u.email) + '</td>' +
           '<td>' + tierB + '</td><td>' + expB + '</td><td>' + roleB + '</td><td>' + stB + '</td>' +
@@ -549,7 +750,7 @@ function loadUsers(page) {
           '<td>' + esc(fmtTime(u.last_login_at)) + '</td><td>' + esc(fmtTime(u.created_at)) + '</td>' +
           '<td>' + userActions(u) + '</td></tr>';
       }).join('');
-      document.getElementById('u-body').innerHTML = rows || '<tr><td colspan="12" class="muted">无匹配用户</td></tr>';
+      document.getElementById('u-body').innerHTML = rows || '<tr><td colspan="12" class="muted">' + t('noUsers') + '</td></tr>';
       var pi = pagerInfo(d.total, d.page, d.page_size || 20);
       document.getElementById('u-info').textContent = pi.text;
       document.getElementById('u-prev').disabled = d.page <= 1;
@@ -559,13 +760,13 @@ function loadUsers(page) {
 }
 function userActions(u) {
   var a = [];
-  if (u.tier !== 'member') a.push('<button data-act="member" data-id="' + u.id + '">设会员</button>');
-  else a.push('<button data-act="unmember" data-id="' + u.id + '">取消会员</button>');
-  if (u.role !== 'admin') a.push('<button data-act="admin" data-id="' + u.id + '">设管理员</button>');
-  else a.push('<button data-act="unadmin" data-id="' + u.id + '">取消管理员</button>');
-  if (!u.disabled) a.push('<button data-act="disable" data-id="' + u.id + '">禁用</button>');
-  else a.push('<button data-act="enable" data-id="' + u.id + '">启用</button>');
-  a.push('<button class="danger" data-act="del" data-id="' + u.id + '">删除</button>');
+  if (u.tier !== 'member') a.push('<button data-act="member" data-id="' + u.id + '">' + t('actMember') + '</button>');
+  else a.push('<button data-act="unmember" data-id="' + u.id + '">' + t('actUnmember') + '</button>');
+  if (u.role !== 'admin') a.push('<button data-act="admin" data-id="' + u.id + '">' + t('actAdmin') + '</button>');
+  else a.push('<button data-act="unadmin" data-id="' + u.id + '">' + t('actUnadmin') + '</button>');
+  if (!u.disabled) a.push('<button data-act="disable" data-id="' + u.id + '">' + t('actDisable') + '</button>');
+  else a.push('<button data-act="enable" data-id="' + u.id + '">' + t('actEnable') + '</button>');
+  a.push('<button class="danger" data-act="del" data-id="' + u.id + '">' + t('actDelete') + '</button>');
   return a.join(' ');
 }
 document.getElementById('u-body').addEventListener('click', function (e) {
@@ -579,10 +780,10 @@ document.getElementById('u-body').addEventListener('click', function (e) {
   if (act === 'unadmin') body = { role: 'user' };
   if (act === 'disable') body = { disabled: true };
   if (act === 'enable') body = { disabled: false };
-  if (act === 'del' && !confirm('确定删除用户 #' + id + '？其资产、分类、继承人将一并删除！')) return;
+  if (act === 'del' && !confirm(t('confirmDelUser', { id: id }))) return;
   var req = body ? { method: 'PUT', body: JSON.stringify(body) } : { method: 'DELETE' };
   api('/admin/users/' + id, req).then(function () {
-    toast(act === 'del' ? '已删除' : '已更新', true);
+    toast(act === 'del' ? t('toastDel') : t('toastUpdated'), true);
     loadUsers();
   }).catch(function (er) { toast(er.message, false); });
 });
@@ -603,7 +804,7 @@ document.getElementById('u-next').addEventListener('click', function () { loadUs
 /* ---------- config ---------- */
 function smtpRow(s, hasPass) {
   s = s || {};
-  var passNote = hasPass ? '<span class="muted">已设置（留空保持不变）</span>' : '';
+  var passNote = hasPass ? '<span class="muted">' + t('smtpPassNote') + '</span>' : '';
   var row = document.createElement('div');
   row.className = 'form-row';
   row.innerHTML =
@@ -612,7 +813,7 @@ function smtpRow(s, hasPass) {
     '<input class="md" placeholder="user" value="' + esc(s.user || '') + '">' +
     '<input class="md" type="password" placeholder="password" value="">' + passNote +
     '<input class="md" placeholder="from_addr" value="' + esc(s.from_addr || '') + '">' +
-    '<button type="button">移除</button>';
+    '<button type="button">' + t('removeBtn') + '</button>';
   return row;
 }
 function loadConfig() {
@@ -639,15 +840,15 @@ function loadConfig() {
 }
 function providerRow(p) {
   p = p || {};
-  var keyNote = p.api_key_set ? '<span class="muted">已设置</span>' : '';
-  var secNote = p.api_secret_set ? '<span class="muted">已设置</span>' : '';
+  var keyNote = p.api_key_set ? '<span class="muted">' + t('setNote') + '</span>' : '';
+  var secNote = p.api_secret_set ? '<span class="muted">' + t('setNote') + '</span>' : '';
   var row = document.createElement('div');
   row.className = 'form-row';
   row.innerHTML =
     '<input class="md" placeholder="name" value="' + esc(p.name || '') + '">' +
-    '<input class="md" type="password" placeholder="api_key(留空保留)" value="">' + keyNote +
-    '<input class="md" type="password" placeholder="api_secret(留空保留)" value="">' + secNote +
-    '<button type="button">移除</button>';
+    '<input class="md" type="password" placeholder="' + t('phApiKey') + '" value="">' + keyNote +
+    '<input class="md" type="password" placeholder="' + t('phApiSecret') + '" value="">' + secNote +
+    '<button type="button">' + t('removeBtn') + '</button>';
   return row;
 }
 function collectRows(boxId) {
@@ -673,7 +874,7 @@ document.getElementById('phone-add').addEventListener('click', function () {
 });
 document.querySelectorAll('#smtp-rows, #sms-rows, #phone-rows').forEach(function (box) {
   box.addEventListener('click', function (e) {
-    if (e.target.textContent === '移除') e.target.closest('.form-row').remove();
+    if (e.target.textContent === t('removeBtn')) e.target.closest('.form-row').remove();
   });
 });
 document.getElementById('cfg-save').addEventListener('click', function () {
@@ -693,7 +894,7 @@ document.getElementById('cfg-save').addEventListener('click', function () {
       ]
     })
   })
-    .then(function () { toast('配置已保存', true); loadConfig(); })
+    .then(function () { toast(t('configSavedToast'), true); loadConfig(); })
     .catch(function (e) { toast(e.message, false); });
 });
 
@@ -704,32 +905,32 @@ function load2FA() {
     box.innerHTML = '';
     if (s.enabled) {
       box.innerHTML =
-        '<span class="badge on">已启用</span> ' +
-        '<span class="muted">登录管理后台需身份验证器动态码</span>' +
-        '<div class="form-row" style="margin-top:10px"><input id="2fa-off-code" class="md" placeholder="输入当前动态码" inputmode="numeric" maxlength="6">' +
-        '<button class="danger" id="2fa-off-btn">停用 2FA</button></div>';
+        '<span class="badge on">' + t('bEnabled') + '</span> ' +
+        '<span class="muted">' + t('twofaEnabledNote') + '</span>' +
+        '<div class="form-row" style="margin-top:10px"><input id="2fa-off-code" class="md" placeholder="' + t('phCurrentCode') + '" inputmode="numeric" maxlength="6">' +
+        '<button class="danger" id="2fa-off-btn">' + t('btnOff2fa') + '</button></div>';
       document.getElementById('2fa-off-btn').addEventListener('click', function () {
         var code = document.getElementById('2fa-off-code').value.trim();
-        if (!code) return toast('请输入动态码', false);
+        if (!code) return toast(t('enterTotp'), false);
         api('/admin/2fa/disable', { method: 'POST', body: JSON.stringify({ code: code }) })
-          .then(function () { toast('已停用 2FA', true); load2FA(); })
+          .then(function () { toast(t('twofaOffToast'), true); load2FA(); })
           .catch(function (e) { toast(e.message, false); });
       });
     } else {
-      box.innerHTML = '<span class="badge off">未启用</span> ' +
-        '<button id="2fa-on-btn" style="margin-left:8px">启用 2FA</button>';
+      box.innerHTML = '<span class="badge off">' + t('bOff') + '</span> ' +
+        '<button id="2fa-on-btn" style="margin-left:8px">' + t('btnOn2fa') + '</button>';
       document.getElementById('2fa-on-btn').addEventListener('click', function () {
         api('/admin/2fa/setup', { method: 'POST' }).then(function (d) {
           box.innerHTML =
-            '<div class="muted" style="margin-bottom:8px">用身份验证器 App(Google Authenticator / Authy 等)手动添加,密钥: <code>' + esc(d.secret) + '</code></div>' +
+            '<div class="muted" style="margin-bottom:8px">' + t('twofaManualIntro') + ' <code>' + esc(d.secret) + '</code></div>' +
             '<div class="muted" style="margin-bottom:8px;word-break:break-all">' + esc(d.otpauth_uri) + '</div>' +
-            '<div class="form-row"><input id="2fa-on-code" class="md" placeholder="输入验证器中的 6 位动态码" inputmode="numeric" maxlength="6">' +
-            '<button class="primary" id="2fa-on-confirm">确认启用</button></div>';
+            '<div class="form-row"><input id="2fa-on-code" class="md" placeholder="' + t('phVerifierCode') + '" inputmode="numeric" maxlength="6">' +
+            '<button class="primary" id="2fa-on-confirm">' + t('btnConfirm2fa') + '</button></div>';
           document.getElementById('2fa-on-confirm').addEventListener('click', function () {
             var code = document.getElementById('2fa-on-code').value.trim();
-            if (!code) return toast('请输入动态码', false);
+            if (!code) return toast(t('enterTotp'), false);
             api('/admin/2fa/confirm', { method: 'POST', body: JSON.stringify({ secret: d.secret, code: code }) })
-              .then(function () { toast('2FA 已启用', true); load2FA(); })
+              .then(function () { toast(t('twofaOnToast'), true); load2FA(); })
               .catch(function (e) { toast(e.message, false); });
           });
         }).catch(function (e) { toast(e.message, false); });
@@ -745,13 +946,13 @@ function loadCodes(page) {
   var p = state.codes.page;
   api('/admin/redemption-codes?page=' + p + '&page_size=' + RC_PAGE_SIZE).then(function (d) {
     var rows = d.items.map(function (c) {
-      var stB = c.used_by ? '<span class="badge off">已用</span>' : '<span class="badge on">未用</span>';
-      var del = c.used_by ? '' : '<button class="danger" data-del="' + c.id + '">删除</button>';
+      var stB = c.used_by ? '<span class="badge off">' + t('bUsed') + '</span>' : '<span class="badge on">' + t('bUnused') + '</span>';
+      var del = c.used_by ? '' : '<button class="danger" data-del="' + c.id + '">' + t('actDelete') + '</button>';
       return '<tr><td>' + c.id + '</td><td><code>' + esc(c.code) + '</code></td><td>' + c.duration_days + '</td>' +
         '<td>' + esc(c.used_by_username || c.used_by || '') + '</td><td>' + esc(fmtTime(c.used_at)) + '</td><td>' + esc(fmtTime(c.created_at)) + '</td>' +
         '<td>' + stB + ' ' + del + '</td></tr>';
     }).join('');
-    document.getElementById('rc-body').innerHTML = rows || '<tr><td colspan="7" class="muted">暂无兑换码</td></tr>';
+    document.getElementById('rc-body').innerHTML = rows || '<tr><td colspan="7" class="muted">' + t('noCodes') + '</td></tr>';
     var pi = pagerInfo(d.total, d.page, RC_PAGE_SIZE);
     document.getElementById('rc-info').textContent = pi.text;
     document.getElementById('rc-prev').disabled = d.page <= 1;
@@ -765,8 +966,8 @@ document.getElementById('rc-gen').addEventListener('click', function () {
   var days = parseInt(document.getElementById('rc-days').value, 10) || 0;
   api('/admin/redemption-codes', { method: 'POST', body: JSON.stringify({ count: count, duration_days: days }) })
     .then(function (d) {
-      document.getElementById('rc-result').innerHTML = '已生成 ' + d.codes.length + ' 个:<br>' + d.codes.map(esc).join('<br>');
-      toast('已生成', true);
+      document.getElementById('rc-result').innerHTML = t('rcGenerated', { n: d.codes.length }) + '<br>' + d.codes.map(esc).join('<br>');
+      toast(t('rcGenToast'), true);
       loadCodes();
     }).catch(function (e) { toast(e.message, false); });
 });
@@ -774,9 +975,9 @@ document.getElementById('rc-body').addEventListener('click', function (e) {
   var btn = e.target.closest('button[data-del]');
   if (!btn) return;
   var id = btn.dataset.del;
-  if (!confirm('确定删除兑换码 #' + id + '?')) return;
+  if (!confirm(t('confirmDelCode', { id: id }))) return;
   api('/admin/redemption-codes/' + id, { method: 'DELETE' })
-    .then(function () { toast('已删除', true); loadCodes(); })
+    .then(function () { toast(t('toastDel'), true); loadCodes(); })
     .catch(function (e) { toast(e.message, false); });
 });
 
@@ -793,7 +994,7 @@ function loadAudit(page) {
         return '<tr><td>' + e.id + '</td><td>' + e.user_id + '</td><td>' + esc(e.actor) + '</td>' +
           '<td>' + esc(e.action) + '</td><td>' + esc(e.detail) + '</td><td>' + esc(fmtTime(e.created_at)) + '</td></tr>';
       }).join('');
-      document.getElementById('a-body').innerHTML = rows || '<tr><td colspan="6" class="muted">无记录</td></tr>';
+      document.getElementById('a-body').innerHTML = rows || '<tr><td colspan="6" class="muted">' + t('noRecords') + '</td></tr>';
       var pi = pagerInfo(d.total, d.page, d.page_size || 50);
       document.getElementById('a-info').textContent = pi.text;
       document.getElementById('a-prev').disabled = d.page <= 1;
@@ -823,7 +1024,7 @@ document.getElementById('a-export').addEventListener('click', function () {
   fetch('/api/v1/admin/audit-log/export?user_id=' + uid, {
     headers: { Authorization: 'Bearer ' + localStorage.getItem(TOKEN_KEY) }
   }).then(function (resp) {
-    if (!resp.ok) throw new Error('导出失败');
+    if (!resp.ok) throw new Error(t('exportFail'));
     return resp.blob();
   }).then(function (blob) {
     var a = document.createElement('a');
@@ -835,21 +1036,19 @@ document.getElementById('a-export').addEventListener('click', function () {
 });
 
 /* ---------- about ---------- */
+function aboutBox(ver) {
+  return '<p style="font-size:15px;font-weight:600;color:#1f2328">' + t('aboutBrand') + '</p>' +
+    '<p style="margin:8px 0">' + t('aboutDesc') + '</p>' +
+    '<p style="margin:8px 0">' + t('aboutVersion') + ' <code>' + esc(ver || 'dev') + '</code></p>' +
+    '<p style="margin:8px 0">GitHub: <a href="https://github.com/muxinxy/bequest" target="_blank" rel="noopener">https://github.com/muxinxy/bequest</a></p>';
+}
 function loadAbout() {
   var box = document.getElementById('about-box');
-  box.innerHTML = '加载中...';
+  box.innerHTML = t('loading');
   fetch('/api/v1/version').then(function (r) { return r.json(); }).then(function (d) {
-    box.innerHTML =
-      '<p style="font-size:15px;font-weight:600;color:#1f2328">托孤 (bequest)</p>' +
-      '<p style="margin:8px 0">数字资产保险箱 + 数字遗嘱:管理实体/虚拟资产,号主超时未登录时升级提醒,最终交接给继承人。</p>' +
-      '<p style="margin:8px 0">版本: <code>' + esc(d.version || 'dev') + '</code></p>' +
-      '<p style="margin:8px 0">GitHub: <a href="https://github.com/muxinxy/bequest" target="_blank" rel="noopener">https://github.com/muxinxy/bequest</a></p>';
+    box.innerHTML = aboutBox(d.version);
   }).catch(function () {
-    box.innerHTML =
-      '<p style="font-size:15px;font-weight:600;color:#1f2328">托孤 (bequest)</p>' +
-      '<p style="margin:8px 0">数字资产保险箱 + 数字遗嘱:管理实体/虚拟资产,号主超时未登录时升级提醒,最终交接给继承人。</p>' +
-      '<p style="margin:8px 0">版本: <code>dev</code></p>' +
-      '<p style="margin:8px 0">GitHub: <a href="https://github.com/muxinxy/bequest" target="_blank" rel="noopener">https://github.com/muxinxy/bequest</a></p>';
+    box.innerHTML = aboutBox('dev');
   });
 }
 </script>

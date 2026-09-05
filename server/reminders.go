@@ -127,14 +127,13 @@ func handleCreateTemplate(db *sql.DB) http.HandlerFunc {
 		if cnt == 0 {
 			isDefault = 1
 		}
-		res, err := db.Exec(`INSERT INTO reminder_templates (user_id, name, type, title_template, body_template, is_default) VALUES (?, ?, ?, ?, ?, ?)`,
+		id, err := execInsert(db, `INSERT INTO reminder_templates (user_id, name, type, title_template, body_template, is_default) VALUES (?, ?, ?, ?, ?, ?)`,
 			uid, strings.TrimSpace(req.Name), typ, strings.TrimSpace(req.TitleTemplate), strings.TrimSpace(req.BodyTemplate), isDefault)
 		if err != nil {
 			log.Printf("insert template: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		id, _ := res.LastInsertId()
 		var t templateJSON
 		if err := db.QueryRow(`SELECT id, name, type, title_template, body_template, is_preset, is_default, created_at
 			FROM reminder_templates WHERE id = ?`, id).
@@ -395,7 +394,7 @@ func handleAuditLog(db *sql.DB) http.HandlerFunc {
 				writeError(w, http.StatusBadRequest, "to 必须为 YYYY-MM-DD 格式")
 				return
 			}
-			where += " AND created_at < date(?, '+1 day')" // 次日零点为上界,含 to 当天
+			where += " AND created_at < " + dbDateOneDayLater("?") // 次日零点为上界,含 to 当天
 			args = append(args, to)
 		}
 		// 分页:仅当显式传 page 时启用(无参保持数组返回,兼容旧调用)。

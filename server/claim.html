@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>托孤 · 继承交接领取</title>
+<title>Bequest · 继承交接领取 / Claim Key</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: #f4f5f7; color: #1f2328; }
@@ -11,6 +11,9 @@
   .card { background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 28px; }
   h1 { font-size: 18px; margin-bottom: 6px; }
   .sub { color: #57606a; font-size: 13px; margin-bottom: 20px; line-height: 1.6; }
+  .toolbar { text-align: right; margin-bottom: 8px; }
+  .toolbar button { display: inline-block; width: auto; margin: 0 0 0 6px; padding: 4px 10px; font-size: 12px; background: #eef1f4; color: #1f2328; border: 1px solid #d0d7de; }
+  .toolbar button.active { background: #0969da; color: #fff; border-color: #0969da; }
   label { display: block; font-size: 13px; color: #57606a; margin: 14px 0 6px; }
   input { width: 100%; font-size: 14px; padding: 9px 12px; border: 1px solid #d0d7de; border-radius: 6px; }
   button { margin-top: 20px; width: 100%; padding: 10px; font-size: 14px; border-radius: 6px; border: none; background: #0969da; color: #fff; cursor: pointer; }
@@ -26,16 +29,20 @@
 <body>
 <div class="wrap">
   <div class="card">
-    <h1>继承交接领取</h1>
-    <p class="sub">受信人凭交接凭证(事件密钥 + 访问码)领取加密密钥。领取后请妥善保存,离线保管。</p>
-    <label>事件密钥 (event_key)</label>
+    <div class="toolbar">
+      <button id="lang-zh" class="active" type="button">中文</button>
+      <button id="lang-en" type="button">English</button>
+    </div>
+    <h1 data-i18n="title">继承交接领取</h1>
+    <p class="sub" data-i18n="subtitle">受信人凭交接凭证(事件密钥 + 访问码)领取加密密钥。领取后请妥善保存,离线保管。</p>
+    <label data-i18n="labelKey">事件密钥 (event_key)</label>
     <input id="event-key" autocomplete="off" spellcheck="false">
-    <label>访问码</label>
+    <label data-i18n="labelCode">访问码</label>
     <input id="access-code" autocomplete="off" spellcheck="false">
-    <button id="btn">领取密钥</button>
+    <button id="btn" data-i18n="btn">领取密钥</button>
     <p class="err" id="err"></p>
     <div id="result">
-      <h2>领取成功,请复制保存以下密钥</h2>
+      <h2 data-i18n="successTitle">领取成功,请复制保存以下密钥</h2>
       <div id="keys"></div>
       <p class="note" id="note"></p>
     </div>
@@ -43,6 +50,63 @@
 </div>
 <script>
 'use strict';
+var I18N = {
+  zh: {
+    title: '继承交接领取',
+    subtitle: '受信人凭交接凭证(事件密钥 + 访问码)领取加密密钥。领取后请妥善保存,离线保管。',
+    labelKey: '事件密钥 (event_key)',
+    labelCode: '访问码',
+    btn: '领取密钥',
+    claiming: '领取中...',
+    successTitle: '领取成功,请复制保存以下密钥',
+    needBoth: '请填写事件密钥与访问码',
+    fail: '领取失败',
+    noteMaster: '这是被继承包装密钥加密后的主密钥,需与「继承包装密钥 WK」(号主线下交付)配合使用。',
+    noteAsset: '资产 #{id} 的继承包装密钥,同样需配合 WK 使用。',
+    statusClaimed: '状态:已领取 (claimed) · 号主可在 {until} 前登录反悔',
+  },
+  en: {
+    title: 'Claim Inherited Key',
+    subtitle: 'As the designated heir, enter the handover credentials (event key + access code) to receive the encrypted key. Save it securely and keep it offline.',
+    labelKey: 'Event key',
+    labelCode: 'Access code',
+    btn: 'Claim key',
+    claiming: 'Claiming...',
+    successTitle: 'Success. Copy and store the key below',
+    needBoth: 'Please enter the event key and access code',
+    fail: 'Claim failed',
+    noteMaster: 'This is the master key encrypted with the inheritance wrapping key. It must be combined with the WK (inheritance wrapping key) delivered offline by the owner.',
+    noteAsset: 'Asset #{id}\'s wrapped key — also requires the WK to unwrap.',
+    statusClaimed: 'Status: claimed · The owner can log in to reverse before {until}',
+  },
+};
+var lang = 'zh';
+function applyLang() {
+  document.getElementById('lang-zh').className = lang === 'zh' ? 'active' : '';
+  document.getElementById('lang-en').className = lang === 'en' ? 'active' : '';
+  var t = I18N[lang];
+  document.querySelectorAll('[data-i18n]').forEach(function (el) {
+    var key = el.getAttribute('data-i18n');
+    if (t[key]) el.textContent = t[key];
+  });
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  var btn = document.getElementById('btn');
+  if (!btn.disabled) btn.textContent = t.btn;
+}
+document.getElementById('lang-zh').addEventListener('click', function () { lang = 'zh'; applyLang(); });
+document.getElementById('lang-en').addEventListener('click', function () { lang = 'en'; applyLang(); });
+// Default from the browser language when no stored preference.
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem('claim_lang'); } catch (e) {}
+  if (saved === 'zh' || saved === 'en') {
+    lang = saved;
+  } else {
+    var nav = (navigator.language || '').toLowerCase();
+    if (nav.indexOf('en') === 0) lang = 'en';
+  }
+  applyLang();
+})();
 document.getElementById('btn').addEventListener('click', async function () {
   var btn = this;
   var err = document.getElementById('err');
@@ -50,17 +114,21 @@ document.getElementById('btn').addEventListener('click', async function () {
   document.getElementById('result').style.display = 'none';
   var eventKey = document.getElementById('event-key').value.trim();
   var code = document.getElementById('access-code').value.trim();
+  var t = I18N[lang];
   if (!eventKey || !code) {
-    err.textContent = '请填写事件密钥与访问码';
+    err.textContent = t.needBoth;
     err.style.display = 'block';
     return;
   }
   btn.disabled = true;
-  btn.textContent = '领取中...';
+  btn.textContent = t.claiming;
   try {
     var resp = await fetch('/api/v1/inheritance/claim', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept-Language': lang === 'zh' ? 'zh-CN,zh;q=0.9' : 'en;q=0.9',
+      },
       body: JSON.stringify({ event_key: eventKey, access_code: code }),
     });
     var data = await resp.json();
@@ -68,21 +136,23 @@ document.getElementById('btn').addEventListener('click', async function () {
     var html = '';
     if (data.master_key_wrapped) {
       html += '<div class="keybox">' + data.master_key_wrapped + '</div>';
-      html += '<p class="note">这是被继承包装密钥加密后的主密钥,需与「继承包装密钥 WK」(号主线下交付)配合使用。</p>';
+      html += '<p class="note">' + t.noteMaster + '</p>';
     }
     if (data.asset_key_wrapped_wk) {
       html += '<div class="keybox">' + data.asset_key_wrapped_wk + '</div>';
-      html += '<p class="note">资产 #' + data.asset_id + ' 的继承包装密钥,同样需配合 WK 使用。</p>';
+      html += '<p class="note">' + t.noteAsset.replace('{id}', data.asset_id) + '</p>';
     }
     document.getElementById('keys').innerHTML = html;
-    document.getElementById('note').textContent = '状态:已领取 (claimed) · 号主可在 ' + (data.reversable_until || '') + ' 前登录反悔';
+    document.getElementById('note').textContent = t.statusClaimed.replace('{until}', data.reversable_until || '');
     document.getElementById('result').style.display = 'block';
+    // Server error messages are localized via the Accept-Language header below.
+    err.textContent = '';
   } catch (e) {
-    err.textContent = e.message || '领取失败';
+    err.textContent = e.message || t.fail;
     err.style.display = 'block';
   } finally {
     btn.disabled = false;
-    btn.textContent = '领取密钥';
+    btn.textContent = t.btn;
   }
 });
 </script>

@@ -19,7 +19,7 @@ import (
 // member_expires_at 为空视为永久会员(兼容 admin 手动开通的会员),不过期。
 func syncMemberTier(db *sql.DB, uid int64) {
 	if _, err := db.Exec(`UPDATE users SET tier = 'free'
-		WHERE id = ? AND tier = 'member' AND member_expires_at IS NOT NULL AND member_expires_at != '' AND member_expires_at < datetime('now')`, uid); err != nil {
+		WHERE id = ? AND tier = 'member' AND member_expires_at IS NOT NULL AND member_expires_at != '' AND member_expires_at < `+dbNow(), uid); err != nil {
 		log.Printf("sync member tier: %v", err)
 	}
 }
@@ -126,7 +126,7 @@ func handleRedeemMembership(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		if _, err := tx.Exec(`UPDATE redemption_codes SET used_by = ?, used_at = datetime('now') WHERE id = ?`, uid, rcID); err != nil {
+		if _, err := tx.Exec(`UPDATE redemption_codes SET used_by = ?, used_at = `+dbNow()+` WHERE id = ?`, uid, rcID); err != nil {
 			tx.Rollback()
 			log.Printf("redeem mark used: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -158,13 +158,13 @@ func genRedemptionCode() string {
 }
 
 type redemptionCodeJSON struct {
-	ID              int64  `json:"id"`
-	Code            string `json:"code"`
-	DurationDays    int    `json:"duration_days"`
-	UsedBy          any    `json:"used_by"`
-	UsedByUsername  string `json:"used_by_username"`
-	UsedAt          any    `json:"used_at"`
-	CreatedAt       string `json:"created_at"`
+	ID             int64  `json:"id"`
+	Code           string `json:"code"`
+	DurationDays   int    `json:"duration_days"`
+	UsedBy         any    `json:"used_by"`
+	UsedByUsername string `json:"used_by_username"`
+	UsedAt         any    `json:"used_at"`
+	CreatedAt      string `json:"created_at"`
 }
 
 // handleListRedemptionCodes: GET /api/v1/admin/redemption-codes -> 最新在前,

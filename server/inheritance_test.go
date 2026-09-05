@@ -22,10 +22,12 @@ func getUID(t *testing.T, db *sql.DB, username string) int64 {
 	return id
 }
 
-// setLastLogin rewinds last_login_at by a SQLite relative expression like "-40 days".
+// setLastLogin rewinds last_login_at by a relative expression like "-40 days".
+// The expression is spliced via dbNowAdd so it works on sqlite/mysql/postgres.
 func setLastLogin(t *testing.T, db *sql.DB, uid int64, expr string) {
 	t.Helper()
-	if _, err := db.Exec(`UPDATE users SET last_login_at = datetime('now', ?) WHERE id = ?`, expr, uid); err != nil {
+	query := `UPDATE users SET last_login_at = ` + dbNowAdd(expr) + ` WHERE id = ?`
+	if _, err := db.Exec(query, uid); err != nil {
 		t.Fatalf("set last_login_at %s: %v", expr, err)
 	}
 }

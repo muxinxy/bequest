@@ -52,9 +52,22 @@ func quotaAllowed(db *sql.DB, uid int64, tier, typ string) bool {
 // quotaIncr 当月计数 +1(首次插入该月行)。
 func quotaIncr(db *sql.DB, uid int64, typ string) {
 	col := quotaCol(typ)
-	if _, err := db.Exec(`INSERT INTO notification_quota (user_id, month, `+col+`) VALUES (?, ?, 1)
-		ON CONFLICT(user_id, month) DO UPDATE SET `+col+` = `+col+` + 1`,
-		uid, time.Now().Format("2006-01")); err != nil {
+	var insertSQL string
+	switch currentDialect {
+	case dialectMySQL:
+		// 重复键(user_id, month)命中时直接把计数 +1。
+		insertSQL = `INSERT INTO notification_quota (user_id, month, ` + col + `) VALUES (?, ?, 1)
+			ON DUPLICATE KEY UPDATE ` + col + ` = ` + col + ` + 1`
+	case dialectPostgres:
+		// PG 的 ON CONFLICT DO UPDATE 里裸列名在目标表与 excluded 之间歧义,
+		// 需用表名限定。
+		insertSQL = `INSERT INTO notification_quota (user_id, month, ` + col + `) VALUES (?, ?, 1)
+			ON CONFLICT(user_id, month) DO UPDATE SET ` + col + ` = notification_quota.` + col + ` + 1`
+	default:
+		insertSQL = `INSERT INTO notification_quota (user_id, month, ` + col + `) VALUES (?, ?, 1)
+			ON CONFLICT(user_id, month) DO UPDATE SET ` + col + ` = ` + col + ` + 1`
+	}
+	if _, err := db.Exec(insertSQL, uid, time.Now().Format("2006-01")); err != nil {
 		log.Printf("quotaIncr: %v", err)
 	}
 }

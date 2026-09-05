@@ -13,12 +13,12 @@ import (
 // ---------- 回收站(软删除资产/分组的恢复、永久删除、清空) ----------
 
 type recycleItem struct {
-	Kind     string `json:"kind"` // 'asset' | 'category'
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	Detail   string `json:"detail"`
-	Category *string `json:"category,omitempty"` // 资产原分组名(恢复提示用)
-	DeletedAt string `json:"deleted_at"`
+	Kind      string  `json:"kind"` // 'asset' | 'category'
+	ID        int64   `json:"id"`
+	Name      string  `json:"name"`
+	Detail    string  `json:"detail"`
+	Category  *string `json:"category,omitempty"` // 资产原分组名(恢复提示用)
+	DeletedAt string  `json:"deleted_at"`
 }
 
 // handleListRecycleBin: GET /api/v1/recycle-bin -> 200 已软删除的资产与分组。
@@ -252,7 +252,7 @@ func handleBatchDeleteAssets(db *sql.DB) http.HandlerFunc {
 			args = append(args, id)
 		}
 		args = append(args, userID(r))
-		res, err := db.Exec(`UPDATE assets SET deleted_at = datetime('now')
+		res, err := db.Exec(`UPDATE assets SET deleted_at = `+dbNow()+`
 			WHERE id IN (`+placeholders+`) AND user_id = ? AND deleted_at IS NULL`, args...)
 		if err != nil {
 			log.Printf("batch delete assets: %v", err)

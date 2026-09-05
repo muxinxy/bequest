@@ -196,7 +196,7 @@ func Test72hReversalWindow(t *testing.T) {
 	// 事件 B:超过 72h 后登录 → 保持 claimed(交接最终完成,不可反转)。
 	insertEvent("evt-b")
 	claim("evt-b")
-	if _, err := db.Exec(`UPDATE inheritance_events SET reversable_until = datetime('now', '-1 hour') WHERE event_key = 'evt-b'`); err != nil {
+	if _, err := db.Exec(`UPDATE inheritance_events SET reversable_until = ` + dbNowAdd("-1 hour") + ` WHERE event_key = 'evt-b'`); err != nil {
 		t.Fatalf("force expiry: %v", err)
 	}
 	doReq(t, ts, http.MethodPost, "/api/v1/auth/login", `{"username":"alice","password":"password123"}`, "")

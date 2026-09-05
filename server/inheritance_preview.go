@@ -206,14 +206,14 @@ func handleInheritancePreview(db *sql.DB) http.HandlerFunc {
 		note := "失联超过触发阶梯末档后将触发继承:资产级绑定的资产交接给指定继承人,其余资产按用户级全量事件交接。继承人凭继承码领取密钥,原主登录可在 72 小时内撤销。"
 
 		writeJSON(w, http.StatusOK, map[string]any{
-			"ladder":                 ladder,
-			"trigger_days":           triggerDays,
-			"total_assets":           len(assets),
-			"inherited_assets":       len(assets),
-			"assets":                 preview,
-			"inheritors":             inheritors,
-			"user_level_inheritors":  userLevelInheritors,
-			"note":                   note,
+			"ladder":                ladder,
+			"trigger_days":          triggerDays,
+			"total_assets":          len(assets),
+			"inherited_assets":      len(assets),
+			"assets":                preview,
+			"inheritors":            inheritors,
+			"user_level_inheritors": userLevelInheritors,
+			"note":                  note,
 		})
 	}
 }

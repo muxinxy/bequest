@@ -168,7 +168,7 @@ func handleExportLogs(db *sql.DB) http.HandlerFunc {
 // 由 scheduler 每天调用一次;不影响用户手动清除(handleClearLogs)。
 func pruneLogs(db *sql.DB) {
 	if _, err := db.Exec(`DELETE FROM audit_logs
-		WHERE kind = 'app' AND created_at < datetime('now', '-90 days')`); err != nil {
+		WHERE kind = 'app' AND created_at < ` + dbNowAdd("-90 days")); err != nil {
 		log.Printf("prune logs (expired): %v", err)
 	}
 	if _, err := db.Exec(`DELETE FROM audit_logs WHERE kind = 'app' AND id IN (
@@ -214,7 +214,7 @@ func handleClearLogs(db *sql.DB) http.HandlerFunc {
 // GET /api/v1/logs/months -> 200 ["2026-08", ...]
 func handleLogMonths(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rows, err := db.Query(`SELECT DISTINCT substr(created_at, 1, 7) AS ym
+		rows, err := db.Query(`SELECT DISTINCT `+dbMonth("created_at")+` AS ym
 			FROM audit_logs WHERE user_id = ? ORDER BY ym DESC`, userID(r))
 		if err != nil {
 			log.Printf("log months: %v", err)

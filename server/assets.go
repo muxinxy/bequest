@@ -61,7 +61,7 @@ func handleBatchMoveAssets(db *sql.DB) http.HandlerFunc {
 		if req.CategoryID != nil {
 			cat = *req.CategoryID
 		}
-		res, err := db.Exec(`UPDATE assets SET category_id = ?, updated_at = datetime('now')
+		res, err := db.Exec(`UPDATE assets SET category_id = ?, updated_at = `+dbNow()+`
 			WHERE id IN (`+placeholders+`) AND user_id = ?`, append([]any{cat}, args...)...)
 		if err != nil {
 			log.Printf("batch move assets: %v", err)
@@ -91,20 +91,20 @@ type assetListJSON struct {
 // assetJSON is the full shape; EncryptedData is the base64 re-encoded blob.
 type assetJSON struct {
 	assetListJSON
-	EncryptedData      string `json:"encrypted_data"`
-	AssetKeyWrappedMk  string `json:"asset_key_wrapped_mk,omitempty"`
-	AssetKeyWrappedWk  string `json:"asset_key_wrapped_wk,omitempty"`
+	EncryptedData     string `json:"encrypted_data"`
+	AssetKeyWrappedMk string `json:"asset_key_wrapped_mk,omitempty"`
+	AssetKeyWrappedWk string `json:"asset_key_wrapped_wk,omitempty"`
 }
 
 type assetRequest struct {
-	Name               string  `json:"name"`
-	AssetType          string  `json:"asset_type"`
-	CategoryID         *int64  `json:"category_id"`
-	EncryptedData      string  `json:"encrypted_data"`
-	AssetKeyWrappedMk  string  `json:"asset_key_wrapped_mk"`
-	AssetKeyWrappedWk  string  `json:"asset_key_wrapped_wk"`
-	ExpiryDate         *string `json:"expiry_date"`
-	Status             string  `json:"status"`
+	Name              string  `json:"name"`
+	AssetType         string  `json:"asset_type"`
+	CategoryID        *int64  `json:"category_id"`
+	EncryptedData     string  `json:"encrypted_data"`
+	AssetKeyWrappedMk string  `json:"asset_key_wrapped_mk"`
+	AssetKeyWrappedWk string  `json:"asset_key_wrapped_wk"`
+	ExpiryDate        *string `json:"expiry_date"`
+	Status            string  `json:"status"`
 }
 
 // validateAsset returns a 400 message, or ("", err) for internal DB errors.
@@ -362,7 +362,7 @@ func handleCreateAsset(db *sql.DB) http.HandlerFunc {
 			}
 		}
 		data, _ := base64.StdEncoding.DecodeString(req.EncryptedData)
-		res, err := db.Exec(`INSERT INTO assets (user_id, category_id, asset_type, name, encrypted_data, expiry_date,
+		id, err := execInsert(db, `INSERT INTO assets (user_id, category_id, asset_type, name, encrypted_data, expiry_date,
 				asset_key_wrapped_mk, asset_key_wrapped_wk)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			uid, req.CategoryID, req.AssetType, req.Name, data, req.ExpiryDate,
@@ -372,7 +372,6 @@ func handleCreateAsset(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		id, _ := res.LastInsertId()
 		a, err := fetchAsset(db, id, uid)
 		if err != nil {
 			log.Printf("fetch created asset: %v", err)
@@ -416,7 +415,7 @@ func handleUpdateAsset(db *sql.DB) http.HandlerFunc {
 		}
 		data, _ := base64.StdEncoding.DecodeString(req.EncryptedData)
 		res, err := db.Exec(`UPDATE assets SET category_id = ?, asset_type = ?, name = ?, encrypted_data = ?,
-			expiry_date = ?, status = ?, updated_at = datetime('now'), asset_key_wrapped_mk = ?, asset_key_wrapped_wk = ?
+			expiry_date = ?, status = ?, updated_at = `+dbNow()+`, asset_key_wrapped_mk = ?, asset_key_wrapped_wk = ?
 			WHERE id = ? AND user_id = ?`,
 			req.CategoryID, req.AssetType, req.Name, data, req.ExpiryDate, status,
 			nullable(req.AssetKeyWrappedMk), nullable(req.AssetKeyWrappedWk), id, uid)
@@ -460,7 +459,7 @@ func handleDeleteAsset(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		res, err := db.Exec(`UPDATE assets SET deleted_at = datetime('now') WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, id, uid)
+		res, err := db.Exec(`UPDATE assets SET deleted_at = `+dbNow()+` WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, id, uid)
 		if err != nil {
 			log.Printf("soft delete asset: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -506,7 +505,7 @@ func handleCopyAsset(db *sql.DB) http.HandlerFunc {
 		}
 		// 名称加"副本"后缀。
 		newName := src.Name + " 副本"
-		res, err := db.Exec(`INSERT INTO assets (user_id, category_id, asset_type, name, encrypted_data, expiry_date,
+		newID, err := execInsert(db, `INSERT INTO assets (user_id, category_id, asset_type, name, encrypted_data, expiry_date,
 				status, asset_key_wrapped_mk, asset_key_wrapped_wk)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			uid, nullableInt64(catID), src.AssetType, newName, data, nullableStr(exp),
@@ -516,7 +515,6 @@ func handleCopyAsset(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		newID, _ := res.LastInsertId()
 		a, err := fetchAsset(db, newID, uid)
 		if err != nil {
 			log.Printf("fetch copied asset: %v", err)

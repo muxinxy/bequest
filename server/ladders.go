@@ -43,13 +43,12 @@ func ensureGlobalLadder(db *sql.DB, uid int64) int64 {
 	if err := db.QueryRow(`SELECT tier FROM users WHERE id = ?`, uid).Scan(&tier); err != nil {
 		return 0
 	}
-	res, err := db.Exec(`INSERT INTO trigger_ladders (user_id, name, is_global, days) VALUES (?, '全局', 1, ?)`,
+	id, err = execInsert(db, `INSERT INTO trigger_ladders (user_id, name, is_global, days) VALUES (?, '全局', 1, ?)`,
 		uid, defaultLadderDays(tier))
 	if err != nil {
 		log.Printf("ensure global ladder: %v", err)
 		return 0
 	}
-	id, _ = res.LastInsertId()
 	return id
 }
 
@@ -141,14 +140,13 @@ func handleCreateTriggerLadder(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		days, _ := json.Marshal(req.Days)
-		res, err := db.Exec(`INSERT INTO trigger_ladders (user_id, name, is_global, days) VALUES (?, ?, 0, ?)`,
+		id, err := execInsert(db, `INSERT INTO trigger_ladders (user_id, name, is_global, days) VALUES (?, ?, 0, ?)`,
 			uid, strings.TrimSpace(req.Name), string(days))
 		if err != nil {
 			log.Printf("insert ladder: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		id, _ := res.LastInsertId()
 		logAudit(db, uid, fmt.Sprintf("新增触发阶梯「%s」", strings.TrimSpace(req.Name)), map[string]any{"id": id, "days": req.Days})
 		l, err := scanLadder(db.QueryRow(`SELECT id, name, is_global, days, created_at FROM trigger_ladders WHERE id = ?`, id))
 		if err != nil {

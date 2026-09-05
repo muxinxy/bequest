@@ -77,13 +77,13 @@ func TestInheritancePreview(t *testing.T) {
 		t.Fatalf("preview: %d body=%s", rr.Code, rr.Body.String())
 	}
 	var resp struct {
-		Ladder              previewLadder     `json:"ladder"`
-		TriggerDays         int               `json:"trigger_days"`
-		TotalAssets         int               `json:"total_assets"`
-		InheritedAssets     int               `json:"inherited_assets"`
-		Assets              []previewAsset    `json:"assets"`
+		Ladder              previewLadder      `json:"ladder"`
+		TriggerDays         int                `json:"trigger_days"`
+		TotalAssets         int                `json:"total_assets"`
+		InheritedAssets     int                `json:"inherited_assets"`
+		Assets              []previewAsset     `json:"assets"`
 		Inheritors          []previewInheritor `json:"inheritors"`
-		UserLevelInheritors []string          `json:"user_level_inheritors"`
+		UserLevelInheritors []string           `json:"user_level_inheritors"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("parse preview: %v body=%s", err, rr.Body.String())

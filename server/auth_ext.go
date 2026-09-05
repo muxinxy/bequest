@@ -94,7 +94,7 @@ func handleUpdateProfile(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		args = append(args, uid)
-		res, err := db.Exec(fmt.Sprintf(`UPDATE users SET %s, updated_at = datetime('now') WHERE id = ?`,
+		res, err := db.Exec(fmt.Sprintf(`UPDATE users SET %s, updated_at = `+dbNow()+` WHERE id = ?`,
 			strings.Join(updates, ", ")), args...)
 		if err != nil {
 			if isUniqueViolation(err) {
@@ -157,7 +157,7 @@ func handleChangePassword(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		if _, err := db.Exec(`UPDATE users SET password_hash = ?, token_version = token_version + 1, updated_at = datetime('now') WHERE id = ?`,
+		if _, err := db.Exec(`UPDATE users SET password_hash = ?, token_version = token_version + 1, updated_at = `+dbNow()+` WHERE id = ?`,
 			newHash, uid); err != nil {
 			log.Printf("change password: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -209,8 +209,10 @@ func handleRequestPasswordReset(db *sql.DB) http.HandlerFunc {
 		}
 		// 邮件发送:优先用户自配 SMTP,失败回退系统 SMTP(与提醒邮件同策略)。
 		// 全部失败仍返回成功(自托管 SMTP 可能未配,码存审计便于调试)。
-		subject := "托孤: 重置密码验证码"
-		body := fmt.Sprintf("您的验证码是: %s\n10 分钟内有效。若非本人操作请忽略。", code)
+		// 主题/正文按目标账号的语言偏好("托孤: " 品牌前缀保留)。
+		lang := userLang(db, uid)
+		subject := "托孤: " + userMsg(lang, "重置密码验证码")
+		body := fmt.Sprintf(userMsg(lang, "您的验证码是: %s\n10 分钟内有效。若非本人操作请忽略。"), code)
 		if !sendCustomForUser(db, uid, email, subject, body) {
 			sendMail(email, subject, body)
 		}
@@ -244,7 +246,7 @@ func handleResetPassword(db *sql.DB) http.HandlerFunc {
 		var storedHash string
 		err := db.QueryRow(`SELECT pr.user_id, pr.id, pr.attempts, pr.code_hash FROM password_resets pr
 			JOIN users u ON u.id = pr.user_id
-			WHERE u.email = ? AND pr.used = 0 AND pr.expires_at > datetime('now')
+			WHERE u.email = ? AND pr.used = 0 AND pr.expires_at > `+dbNow()+`
 			ORDER BY pr.id DESC LIMIT 1`, email).Scan(&uid, &resetID, &attempts, &storedHash)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusUnauthorized, "无效或已过期的验证码")
@@ -286,7 +288,7 @@ func handleResetPassword(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		if _, err := tx.Exec(`UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?`,
+		if _, err := tx.Exec(`UPDATE users SET password_hash = ?, updated_at = `+dbNow()+` WHERE id = ?`,
 			hash, uid); err != nil {
 			tx.Rollback()
 			log.Printf("update password: %v", err)

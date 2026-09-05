@@ -130,14 +130,13 @@ func handleCreateInheritor(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, msg)
 			return
 		}
-		res, err := db.Exec(`INSERT INTO inheritors (user_id, name, email, phone, access_code_hash, access_code) VALUES (?, ?, ?, ?, ?, ?)`,
+		id, err := execInsert(db, `INSERT INTO inheritors (user_id, name, email, phone, access_code_hash, access_code) VALUES (?, ?, ?, ?, ?, ?)`,
 			userID(r), strings.TrimSpace(req.Name), strings.TrimSpace(req.Email), strings.TrimSpace(req.Phone), hashAccessCode(req.AccessCode), strings.TrimSpace(req.AccessCode))
 		if err != nil {
 			log.Printf("insert inheritor: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		id, _ := res.LastInsertId()
 		in, err := fetchInheritor(db, id, userID(r))
 		if err != nil {
 			log.Printf("fetch created inheritor: %v", err)
@@ -290,8 +289,8 @@ func handleClaim(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusConflict, "交接事件已被领取或已撤销")
 			return
 		}
-		res, err := db.Exec(`UPDATE inheritance_events SET status = 'claimed', claimed_at = datetime('now'),
-				reversable_until = datetime('now', '+72 hours')
+		res, err := db.Exec(`UPDATE inheritance_events SET status = 'claimed', claimed_at = `+dbNow()+`,
+				reversable_until = `+dbNowAdd("+72 hours")+`
 			WHERE id = ? AND status = 'pending'`, eventID)
 		if err != nil {
 			log.Printf("claim event: %v", err)
@@ -455,7 +454,7 @@ func eventWhere(uid int64, month, q string) (string, []any) {
 	where := "e.user_id = ?"
 	args := []any{uid}
 	if month != "" {
-		where += " AND substr(e.created_at, 1, 7) = ?"
+		where += " AND " + dbMonth("e.created_at") + " = ?"
 		args = append(args, month)
 	}
 	if q != "" {

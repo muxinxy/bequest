@@ -1,7 +1,9 @@
 # 托孤(bequest)服务器部署文档
 
+> **English**: [README-deploy.en.md](README-deploy.en.md) · 服务端总览: [README.md](README.md) · 仓库根: [../README.md](../README.md)
+
 > 仓库: https://github.com/muxinxy/bequest | 镜像: `ghcr.io/muxinxy/bequest`
-> 服务器: Go 1.26, 单二进制, 默认监听 8080, SQLite 数据库 `data/bequest.db`(运行时自动创建)。
+> 服务器: Go 1.26, 单二进制, 默认监听 8080, 数据库支持 SQLite(默认)/MySQL/PostgreSQL, 首次启动自动迁移。
 
 ---
 
@@ -95,12 +97,38 @@ volumes:
 |------|------|------|
 | `JWT_SECRET` | 是 | JWT 签名密钥, 生产环境必须为高强度随机值 |
 | `ENCRYPTION_KEY` | 是 | 加密密钥, 生产环境必须为高强度随机值 |
+| `DB_DRIVER` | 否 | 数据库驱动: `sqlite`(默认) / `mysql` / `postgres` |
+| `DB_DSN` | 否 | 完整连接串; 设置后忽略下方 `DB_*` 单变量 |
+| `DB_HOST` | 否 | MySQL/PostgreSQL 主机(默认 `127.0.0.1`) |
+| `DB_PORT` | 否 | 端口(MySQL 默认 `3306`; Postgres 默认 `5432`) |
+| `DB_USER` | 否 | 数据库用户(默认 `bequest`) |
+| `DB_PASS` | 否 | 数据库密码 |
+| `DB_NAME` | 否 | 数据库名(默认 `bequest`) |
 | `SMTP_HOST` | 否 | SMTP 服务器地址(如 `smtp.qq.com`) |
 | `SMTP_PORT` | 否 | SMTP 端口(如 465/587) |
 | `SMTP_USER` | 否 | SMTP 用户名 |
 | `SMTP_PASS` | 否 | SMTP 密码/授权码 |
 | `SMTP_FROM` | 否 | 发件人地址 |
 | `DATA_DIR` | 否 | 数据目录(镜像内默认为 `/data`) |
+
+### 使用 MySQL / PostgreSQL
+
+连接串也可整体用 `DB_DSN` 提供:
+
+```bash
+# PostgreSQL(libpq 格式)
+DB_DRIVER=postgres \
+DB_DSN="host=127.0.0.1 port=5432 user=bequest password=secret dbname=bequest sslmode=disable" \
+go run .
+
+# MySQL(Go driver 格式)
+DB_DRIVER=mysql \
+DB_DSN="bequest:secret@tcp(127.0.0.1:3306)/bequest?charset=utf8mb4&parseTime=false&clientFoundRows=true" \
+go run .
+```
+
+- 首次启动会自动在目标库中执行对应方言的迁移(建表/索引/种子), 记录于 `schema_migrations` 表;
+- `backup` 子命令仅支持 SQLite(`VACUUM INTO`);MySQL/PostgreSQL 请用 `mysqldump` / `pg_dump`。
 
 ---
 

@@ -37,6 +37,14 @@ services:
       # SMTP_USER: ${SMTP_USER:-}
       # SMTP_PASS: ${SMTP_PASS:-}
       # SMTP_FROM: ${SMTP_FROM:-}
+      # 可选: 使用 MySQL / PostgreSQL 作为数据库(默认 SQLite)
+      # DB_DRIVER: ${DB_DRIVER:-sqlite}
+      # DB_DSN: ${DB_DSN:-}
+      # DB_HOST: ${DB_HOST:-}
+      # DB_PORT: ${DB_PORT:-}
+      # DB_USER: ${DB_USER:-}
+      # DB_PASS: ${DB_PASS:-}
+      # DB_NAME: ${DB_NAME:-}
       # 可选: 首个管理员引导(见 README「管理后台」)
       # ADMIN_USERNAME: ${ADMIN_USERNAME:-}
       # ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}

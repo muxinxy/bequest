@@ -24,15 +24,15 @@ func parseID(r *http.Request) (int64, error) {
 // ---------- categories ----------
 
 type categoryJSON struct {
-	ID         int64  `json:"id"`
-	Name       string `json:"name"`
-	AssetType  string `json:"asset_type"`
-	IsPreset   int    `json:"is_preset"`
-	CreatedAt  string `json:"created_at"`
-	SortOrder  int    `json:"sort_order"`
-	AssetCount       int      `json:"asset_count"`
-	Remark           string   `json:"remark"`
-	InheritorNames   []string `json:"inheritor_names,omitempty"` // 绑定的继承人名字
+	ID             int64    `json:"id"`
+	Name           string   `json:"name"`
+	AssetType      string   `json:"asset_type"`
+	IsPreset       int      `json:"is_preset"`
+	CreatedAt      string   `json:"created_at"`
+	SortOrder      int      `json:"sort_order"`
+	AssetCount     int      `json:"asset_count"`
+	Remark         string   `json:"remark"`
+	InheritorNames []string `json:"inheritor_names,omitempty"` // 绑定的继承人名字
 }
 
 // validAssetType reports whether s is a supported category type.
@@ -89,7 +89,7 @@ func handleListCategories(db *sql.DB) http.HandlerFunc {
 		sqlStr := `SELECT c.id, c.name, c.asset_type, c.is_preset, c.created_at, c.sort_order,
 				(SELECT COUNT(*) FROM assets a WHERE a.category_id = c.id AND a.deleted_at IS NULL) AS asset_count,
 				c.remark,
-				(SELECT GROUP_CONCAT(i.name, '、') FROM category_inheritors ci
+				(SELECT ` + dbGroupConcat("i.name", "、") + ` FROM category_inheritors ci
 					JOIN inheritors i ON i.id = ci.inheritor_id
 					WHERE ci.category_id = c.id) AS inheritor_names
 			FROM categories c WHERE ` + where + ` ORDER BY c.sort_order, c.id`
@@ -160,7 +160,7 @@ func handleCreateCategory(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "资产类型必须为 physical 或 virtual")
 			return
 		}
-		res, err := db.Exec(`INSERT INTO categories (user_id, name, asset_type, is_preset) VALUES (?, ?, ?, 0)`, userID(r), name, assetType)
+		id, err := execInsert(db, `INSERT INTO categories (user_id, name, asset_type, is_preset) VALUES (?, ?, ?, 0)`, userID(r), name, assetType)
 		if err != nil {
 			if isUniqueViolation(err) {
 				writeError(w, http.StatusConflict, "分组已存在")
@@ -170,7 +170,6 @@ func handleCreateCategory(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
 		}
-		id, _ := res.LastInsertId()
 		// 新分组排最后(sort_order 用 id 即单调递增)。
 		db.Exec(`UPDATE categories SET sort_order = ? WHERE id = ?`, id, id)
 		c, err := scanCategory(db.QueryRow(`SELECT id, name, asset_type, is_preset, created_at, sort_order,
@@ -355,7 +354,7 @@ func handleDeleteCategory(db *sql.DB) http.HandlerFunc {
 			}
 			moved, _ = res.RowsAffected()
 		}
-		if _, err := db.Exec(`UPDATE categories SET deleted_at = datetime('now') WHERE id = ? AND user_id = ?`, id, uid); err != nil {
+		if _, err := db.Exec(`UPDATE categories SET deleted_at = `+dbNow()+` WHERE id = ? AND user_id = ?`, id, uid); err != nil {
 			log.Printf("soft delete category: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return

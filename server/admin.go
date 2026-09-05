@@ -165,18 +165,18 @@ func handleAdminStats(db *sql.DB) http.HandlerFunc {
 // ---------- users ----------
 
 type adminUser struct {
-	ID               int64  `json:"id"`
-	Username         string `json:"username"`
-	Email            string `json:"email"`
-	Tier             string `json:"tier"`
-	MemberExpiresAt  string `json:"member_expires_at"` // 空=永久/非会员
-	Role             string `json:"role"`
-	Disabled         bool   `json:"disabled"`
-	InheritStage     string `json:"inherit_stage"`
-	LastLoginAt      string `json:"last_login_at"`
-	CreatedAt        string `json:"created_at"`
-	AssetCount       int    `json:"asset_count"`
-	InheritorCount   int    `json:"inheritor_count"`
+	ID              int64  `json:"id"`
+	Username        string `json:"username"`
+	Email           string `json:"email"`
+	Tier            string `json:"tier"`
+	MemberExpiresAt string `json:"member_expires_at"` // 空=永久/非会员
+	Role            string `json:"role"`
+	Disabled        bool   `json:"disabled"`
+	InheritStage    string `json:"inherit_stage"`
+	LastLoginAt     string `json:"last_login_at"`
+	CreatedAt       string `json:"created_at"`
+	AssetCount      int    `json:"asset_count"`
+	InheritorCount  int    `json:"inheritor_count"`
 }
 
 // handleAdminListUsers: GET /api/v1/admin/users?q=&role=&tier=&page=&page_size=
@@ -335,7 +335,7 @@ func handleAdminUpdateUser(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "没有需要更新的内容")
 			return
 		}
-		sets = append(sets, "updated_at = datetime('now')")
+		sets = append(sets, "updated_at = "+dbNow())
 		args = append(args, id)
 		res, err := db.Exec(`UPDATE users SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...)
 		if err != nil {
@@ -429,7 +429,7 @@ func handleAdminAuditLog(db *sql.DB) http.HandlerFunc {
 				writeError(w, http.StatusBadRequest, "to 必须为 YYYY-MM-DD 格式")
 				return
 			}
-			conds = append(conds, "created_at < date(?, '+1 day')") // 含 to 当天
+			conds = append(conds, "created_at < "+dbDateOneDayLater("?")) // 含 to 当天
 			args = append(args, to)
 		}
 		cond := "1=1"
@@ -523,7 +523,7 @@ func handleAdmin2FAConfirm(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "验证码错误")
 			return
 		}
-		if _, err := db.Exec(`UPDATE users SET totp_secret = ?, updated_at = datetime('now') WHERE id = ?`,
+		if _, err := db.Exec(`UPDATE users SET totp_secret = ?, updated_at = `+dbNow()+` WHERE id = ?`,
 			req.Secret, uid); err != nil {
 			log.Printf("enable 2fa: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
@@ -554,7 +554,7 @@ func handleAdmin2FADisable(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "验证码错误")
 			return
 		}
-		if _, err := db.Exec(`UPDATE users SET totp_secret = NULL, updated_at = datetime('now') WHERE id = ?`, uid); err != nil {
+		if _, err := db.Exec(`UPDATE users SET totp_secret = NULL, updated_at = `+dbNow()+` WHERE id = ?`, uid); err != nil {
 			log.Printf("disable 2fa: %v", err)
 			writeError(w, http.StatusInternalServerError, "服务器内部错误")
 			return
@@ -668,9 +668,9 @@ func maskProviders(ps []provider) []map[string]any {
 	out := make([]map[string]any, 0, len(ps))
 	for _, p := range ps {
 		out = append(out, map[string]any{
-			"name":            p.Name,
-			"api_key_set":     p.APIKey != "",
-			"api_secret_set":  p.APISecret != "",
+			"name":           p.Name,
+			"api_key_set":    p.APIKey != "",
+			"api_secret_set": p.APISecret != "",
 		})
 	}
 	return out
@@ -782,34 +782,34 @@ func handleAdminPutConfig(db *sql.DB) http.HandlerFunc {
 		cfg.SMTPServers = servers
 		cfg.SMSProviders = mergeProviders(req.SMSProviders, cfg.SMSProviders)
 		cfg.PhoneProviders = mergeProviders(req.PhoneProviders, cfg.PhoneProviders)
-if req.FreeAssetQuota > 0 {
-		cfg.FreeAssetQuota = req.FreeAssetQuota
-	}
-	if req.FreeMonthlyEmails > 0 {
-		cfg.FreeMonthlyEmails = req.FreeMonthlyEmails
-	}
-	if req.MemberMonthlyEmails > 0 {
-		cfg.MemberMonthlyEmails = req.MemberMonthlyEmails
-	}
-	if req.MemberMonthlySms > 0 {
-		cfg.MemberMonthlySms = req.MemberMonthlySms
-	}
-	if len(req.DefaultLadderDays) > 0 {
-		if msg := validateLadderDays(req.DefaultLadderDays); msg != "" {
-			writeError(w, http.StatusBadRequest, msg)
+		if req.FreeAssetQuota > 0 {
+			cfg.FreeAssetQuota = req.FreeAssetQuota
+		}
+		if req.FreeMonthlyEmails > 0 {
+			cfg.FreeMonthlyEmails = req.FreeMonthlyEmails
+		}
+		if req.MemberMonthlyEmails > 0 {
+			cfg.MemberMonthlyEmails = req.MemberMonthlyEmails
+		}
+		if req.MemberMonthlySms > 0 {
+			cfg.MemberMonthlySms = req.MemberMonthlySms
+		}
+		if len(req.DefaultLadderDays) > 0 {
+			if msg := validateLadderDays(req.DefaultLadderDays); msg != "" {
+				writeError(w, http.StatusBadRequest, msg)
+				return
+			}
+			cfg.DefaultLadderDays = req.DefaultLadderDays
+		}
+		if err := writeConfigFile(cfg); err != nil {
+			log.Printf("admin write config: %v", err)
+			writeError(w, http.StatusInternalServerError, "无法写入 config.json")
 			return
 		}
-		cfg.DefaultLadderDays = req.DefaultLadderDays
-	}
-	if err := writeConfigFile(cfg); err != nil {
-		log.Printf("admin write config: %v", err)
-		writeError(w, http.StatusInternalServerError, "无法写入 config.json")
-		return
-	}
-	loadConfig() // reload systemServers/freeAssetQuota/providers in memory
-	auditAdmin(db, actor, "admin_config_update", fmt.Sprintf("smtp_servers:%d sms:%d phone:%d quota:%d emails:%d/%d sms:%d ladder:%v",
-		len(servers), len(cfg.SMSProviders), len(cfg.PhoneProviders), freeAssetQuota,
-		freeMonthlyEmails, memberMonthlyEmails, memberMonthlySms, defaultLadderConfig))
+		loadConfig() // reload systemServers/freeAssetQuota/providers in memory
+		auditAdmin(db, actor, "admin_config_update", fmt.Sprintf("smtp_servers:%d sms:%d phone:%d quota:%d emails:%d/%d sms:%d ladder:%v",
+			len(servers), len(cfg.SMSProviders), len(cfg.PhoneProviders), freeAssetQuota,
+			freeMonthlyEmails, memberMonthlyEmails, memberMonthlySms, defaultLadderConfig))
 		writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
 	}
 }

@@ -110,7 +110,7 @@ func handleCreateAssetInheritor(db *sql.DB) http.HandlerFunc {
 		if priority < 1 {
 			priority = 1
 		}
-		res, err := db.Exec(`INSERT INTO asset_inheritors (asset_id, inheritor_id, priority, trigger_days, ladder_id)
+		id, err := execInsert(db, `INSERT INTO asset_inheritors (asset_id, inheritor_id, priority, trigger_days, ladder_id)
 			VALUES (?, ?, ?, ?, ?)`,
 			assetID, req.InheritorID, priority, nullableInt(req.TriggerDays), nullableLadderID(req.LadderID))
 		if err != nil {
@@ -119,7 +119,6 @@ func handleCreateAssetInheritor(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "该继承人已绑定此资产")
 			return
 		}
-		id, _ := res.LastInsertId()
 		var assetName, inName string
 		if err := db.QueryRow(`SELECT a.name, i.name FROM assets a JOIN inheritors i ON i.id = ?
 			WHERE a.id = ? AND a.user_id = ? AND i.user_id = ?`,
@@ -358,7 +357,7 @@ func handleCreateCategoryInheritor(db *sql.DB) http.HandlerFunc {
 		if priority < 1 {
 			priority = 1
 		}
-		res, err := db.Exec(`INSERT INTO category_inheritors (category_id, inheritor_id, priority, trigger_days, ladder_id)
+		id, err := execInsert(db, `INSERT INTO category_inheritors (category_id, inheritor_id, priority, trigger_days, ladder_id)
 			VALUES (?, ?, ?, ?, ?)`,
 			catID, req.InheritorID, priority, nullableInt(req.TriggerDays), nullableLadderID(req.LadderID))
 		if err != nil {
@@ -366,7 +365,6 @@ func handleCreateCategoryInheritor(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "该继承人已绑定此分组")
 			return
 		}
-		id, _ := res.LastInsertId()
 		var catName, inName string
 		if err := db.QueryRow(`SELECT c.name, i.name FROM categories c JOIN inheritors i ON i.id = ?
 			WHERE c.id = ? AND c.user_id = ? AND i.user_id = ?`,
