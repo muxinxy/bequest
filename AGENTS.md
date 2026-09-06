@@ -45,6 +45,8 @@ Flutter(`app/`):
 - Go 代码注释通篇中文 —— 新增注释保持同一风格。
 - Windows 开发环境:git push 走 Clash 代理 127.0.0.1:7897(已在 git config);Go 模块走 `goproxy.cn`;Flutter pub 走 `storage.flutter-io.cn`。
 - **Windows shell**:用 `pwsh`(PowerShell 7,Scoop 安装在 `D:\Scoop\shims\pwsh.exe`)—— 别用 Windows PowerShell 5.1 或 cmd。这里的 Bash 工具是 Windows 上的 BusyBox:不支持 `;` 连接 `&&`、缺它没有的 awk/sed 参数;带嵌套引号的多行 PowerShell `-Command` 字符串会炸 —— 优先写成临时 `.py`/`.ps1` 文件再跑,文件检查用 Read/Edit 工具而非 shell 文本处理。
-- 发版流程:推 `v*` tag 触发 `.github/workflows/release.yml`(构建二进制 + Docker 多架构 + Android APK + GitHub Release)。Docker 构建前 `app/build/web` 必须存在。Android APK 用 GitHub Secrets 里的密钥 release 签名(`ANDROID_KEYSTORE_BASE64` 等)—— **绝不提交 keystore**。
+- **命令链静默中断(重要踩坑)**:多步 `&&` 长链(如 `git add ... && git commit ... && git add ... && git commit ...`)在本机会**中途断掉且不报错**,曾导致发版提交丢失、tag 打在错误提交上。重要操作(commit/tag/push/删除)一律**单条 Bash 分开执行**,事后用 `git log`/`git status` 核实。同理,`gh` 的长数字参数、`--jq` 复杂引号表达式、`for`/`$(...)` 循环会被 shell→cmd 层弄坏(典型报错 `unknown shorthand flag: 'N' in -N`),必须写成临时 `.sh`/`.ps1` 文件执行。
+- **控制台乱码 ≠ 文件损坏**:GBK 终端把 UTF-8 输出显示为 `鍚`/`鏂板` 等乱码只是显示问题;内容是否真的异常(如 Release 说明里混入字面 `\n`)要做字节级核实(`git show`、写临时脚本 grep),不要凭乱码"修"文件。
+- 发版流程:推 `v*` tag 触发 `.github/workflows/release.yml`(构建二进制 + Docker 多架构 + Android APK + GitHub Release)。**tag 必须打在同时包含 CHANGELOG `## vX.Y.Z` 小节与 `app/lib/pages/about_page.dart` 版本常量更新的提交上**——Release 说明从 tag 处的 CHANGELOG 提取,APK 内「关于」页版本号构建时烘焙,漏一样产物就是错的。Docker 构建前 `app/build/web` 必须存在(workflow 内已自建)。Android APK 用 GitHub Secrets 里的密钥 release 签名(`ANDROID_KEYSTORE_BASE64` 等)—— **绝不提交 keystore**。CI 监控用后台轮询脚本(`gh run view --json status,conclusion` 每 60s),别用 `gh run watch`(参数会被 shell 弄坏)。
 - `server/config.json`(系统 SMTP/短信服务商/额度)是 gitignore 的运行时配置;管理后台可在线改写。仅当 config.json 不存在时 `SMTP_*` 环境变量才生效。
 - BLOB 列存的是客户端加密后的密文;服务端永远见不到明文(E2E)。不要在服务端解密。
