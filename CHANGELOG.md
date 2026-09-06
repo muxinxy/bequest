@@ -2,6 +2,19 @@
 
 > **English**: This changelog is maintained in Chinese by the project's maintainers and records per-release feature/security/fix notes. For an English overview of the project see [README.en.md](README.en.md); English architecture docs live in [docs/architecture.en.md](docs/architecture.en.md).
 
+## v0.9.1 (2026-09-06)
+
+### 新增
+- **构建产物扩容**：服务器二进制新增 4 个平台——`linux/arm`(GOARM=7, 树莓派 32 位系统/旧 NAS)、`linux/riscv64`、`linux/loong64`(龙芯)、`windows/arm64`(Windows on ARM), 共 9 个平台
+- **Docker 多架构扩容**：镜像新增 `linux/arm/v7` 与 `linux/riscv64`——基础镜像升至 alpine:3.22(官方多架构覆盖所需平台); Go 构建阶段改为在原生架构上交叉编译到目标平台(`--platform=$BUILDPLATFORM` + `TARGETOS/TARGETARCH`), 避免 QEMU 模拟下编译
+- 龙芯(loong64)仅提供二进制产物: 官方 alpine 镜像暂不支持该架构, 可在任意宿主机上直接运行静态二进制
+
+### 修复
+- App「关于」页产品版本号未随版本更新(仍显示 v0.8.8), 本次起与发布版本同步为 v0.9.1
+
+### 验证
+- 4 个新平台本机交叉编译全通过(linux/arm、linux/riscv64、linux/loong64、windows/arm64); alpine:3.22 官方镜像架构清单已核实
+
 ## v0.9.0 (2026-09-05)
 
 ### 新增
