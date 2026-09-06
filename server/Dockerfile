@@ -5,13 +5,21 @@
 #   cd .. && docker build -t ghcr.io/muxinxy/bequest:latest --build-arg VERSION=1.0.0 -f server/Dockerfile .
 
 # ---------- 构建阶段:Go 服务端 ----------
-FROM golang:1.26-alpine AS build
+# 用 $BUILDPLATFORM 原生架构跑编译器、交叉编译到目标架构, 避免 QEMU 模拟下编译(arm/v7/riscv64 极慢)
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 WORKDIR /src
 COPY server/go.mod server/go.sum ./
 RUN go mod download
 COPY server/ .
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/bequest-server .
+# TARGETOS/TARGETARCH/TARGETVARIANT 由 buildx 按目标平台自动注入
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+RUN set -eux; \
+    if [ "${TARGETARCH}" = "arm" ]; then export GOARM="${TARGETVARIANT#v}"; fi; \
+    CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
+    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/bequest-server .
 
 # ---------- 构建阶段:Flutter Web 客户端 ----------
 # 复用本地已构建产物(仓库根 app/build/web), 避免镜像构建内跑 Flutter。
@@ -19,7 +27,8 @@ FROM scratch AS web
 COPY app/build/web /web/
 
 # ---------- 运行阶段 ----------
-FROM alpine:3.20
+# alpine:3.22 起官方多架构镜像覆盖 arm/v7 与 riscv64(loong64 暂无, 龙芯仅提供二进制产物)
+FROM alpine:3.22
 RUN apk add --no-cache ca-certificates \
     && adduser -D -u 10001 appuser
 COPY --from=build /out/bequest-server /usr/local/bin/bequest-server

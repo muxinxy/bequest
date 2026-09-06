@@ -1,5 +1,6 @@
 #!/usr/bin/env sh
 # 托孤(bequest)服务器交叉编译脚本(仓库根目录执行: ./scripts/build.sh)
+# 共 9 个平台: linux/{amd64,arm64,arm,riscv64,loong64} windows/{amd64,arm64} darwin/{amd64,arm64}
 # 产物输出到 dist/bequest-server-<VERSION>-<os>-<arch>[.exe]
 #
 # 用法:
@@ -20,6 +21,8 @@ mkdir -p "$DIST_DIR"
 : "${GOPROXY:=https://proxy.golang.org,direct}"
 export GOPROXY
 export CGO_ENABLED=0
+# GOARM 仅对 GOARCH=arm 生效(v7: 树莓派 32 位系统/旧 NAS), 其余架构忽略
+export GOARM=7
 
 build() {
   os="$1"
@@ -34,7 +37,11 @@ build() {
 
 build linux amd64
 build linux arm64
+build linux arm
+build linux riscv64
+build linux loong64
 build windows amd64
+build windows arm64
 build darwin amd64
 build darwin arm64
 

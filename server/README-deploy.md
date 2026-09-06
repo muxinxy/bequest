@@ -33,7 +33,7 @@ VERSION=1.0.0 ./scripts/build.sh   # 版本为 1.0.0
 GOPROXY=https://goproxy.cn,direct ./scripts/build.sh   # 国内网络可覆盖代理
 ```
 
-交叉编译 5 个平台: `linux/amd64`、`linux/arm64`、`windows/amd64`(带 `.exe`)、`darwin/amd64`、`darwin/arm64`, 产物在 `dist/`(文件名含版本, 如 `bequest-server-1.0.0-linux-amd64`)。
+交叉编译 9 个平台: `linux/amd64`、`linux/arm64`、`linux/arm`(GOARM=7)、`linux/riscv64`、`linux/loong64`、`windows/amd64`(带 `.exe`)、`windows/arm64`、`darwin/amd64`、`darwin/arm64`, 产物在 `dist/`(文件名含版本, 如 `bequest-server-1.0.0-linux-amd64`)。
 
 ---
 
@@ -143,8 +143,8 @@ git push origin v1.0.0
 
 触发后依次执行三个 job:
 
-1. **build** — 在 `ubuntu-latest` 上交叉编译 5 平台二进制(版本号取自标签, 去掉 `v` 前缀, 通过 `-X main.version=1.0.0` 注入), 产物上传为 workflow artifact;
-2. **docker** — `docker/build-push-action` 构建 `linux/amd64` + `linux/arm64` 多架构镜像, 推送到 `ghcr.io/muxinxy/bequest`, 标签为 `1.0.0`(semver)与 `latest`;
+1. **build** — 在 `ubuntu-latest` 上交叉编译 9 平台二进制(版本号取自标签, 去掉 `v` 前缀, 通过 `-X main.version=1.0.0` 注入), 产物上传为 workflow artifact;
+2. **docker** — `docker/build-push-action` 构建 `linux/amd64` + `arm64` + `arm/v7` + `riscv64` 多架构镜像(构建阶段在原生架构上交叉编译, 避免 QEMU 模拟), 推送到 `ghcr.io/muxinxy/bequest`, 标签为 `1.0.0`(semver)与 `latest`;
 3. **android** — 构建 3 个 ABI 的 release 签名 APK(文件名含版本, 如 `bequest-v1.0.0-arm64-v8a.apk`);
 4. **release** — `softprops/action-gh-release` 将二进制与 APK 产物附加到 GitHub Release(draft: false, 自动生成发布说明)。
 

@@ -33,7 +33,7 @@ VERSION=1.0.0 ./scripts/build.sh   # version is 1.0.0
 GOPROXY=https://goproxy.cn,direct ./scripts/build.sh   # override the proxy for networks in mainland China
 ```
 
-Cross-compiles 5 platforms: `linux/amd64`, `linux/arm64`, `windows/amd64` (with `.exe`), `darwin/amd64`, `darwin/arm64`; outputs land in `dist/` (filenames include the version, e.g. `bequest-server-1.0.0-linux-amd64`).
+Cross-compiles 9 platforms: `linux/amd64`, `linux/arm64`, `linux/arm` (GOARM=7), `linux/riscv64`, `linux/loong64`, `windows/amd64` (with `.exe`), `windows/arm64`, `darwin/amd64`, `darwin/arm64`; outputs land in `dist/` (filenames include the version, e.g. `bequest-server-1.0.0-linux-amd64`).
 
 ---
 
@@ -143,8 +143,8 @@ git push origin v1.0.0
 
 Once triggered, the following jobs run in sequence:
 
-1. **build** — cross-compiles the 5-platform binaries on `ubuntu-latest` (the version is taken from the tag, `v` prefix stripped, injected via `-X main.version=1.0.0`); outputs are uploaded as workflow artifacts;
-2. **docker** — `docker/build-push-action` builds the `linux/amd64` + `linux/arm64` multi-arch images and pushes them to `ghcr.io/muxinxy/bequest` with the `1.0.0` (semver) and `latest` tags;
+1. **build** — cross-compiles the 9-platform binaries on `ubuntu-latest` (the version is taken from the tag, `v` prefix stripped, injected via `-X main.version=1.0.0`); outputs are uploaded as workflow artifacts;
+2. **docker** — `docker/build-push-action` builds the `linux/amd64` + `arm64` + `arm/v7` + `riscv64` multi-arch images (the build stage cross-compiles on the native architecture to avoid QEMU emulation) and pushes them to `ghcr.io/muxinxy/bequest` with the `1.0.0` (semver) and `latest` tags;
 3. **android** — builds release-signed APKs for 3 ABIs (filenames include the version, e.g. `bequest-v1.0.0-arm64-v8a.apk`);
 4. **release** — `softprops/action-gh-release` attaches the binary and APK artifacts to a GitHub Release (draft: false, release notes auto-generated).
 

@@ -119,9 +119,9 @@ git push origin v0.1.0
 
 流水线（`.github/workflows/release.yml`）产出：
 
-- **二进制**：GitHub Release 页 assets——`bequest-server-<版本>-{linux,windows,darwin}-{amd64,arm64}`
+- **二进制**：GitHub Release 页 assets——`bequest-server-<版本>-{linux,windows,darwin}-{amd64,arm64}` 及 `linux/{arm,riscv64,loong64}`、`windows/arm64`（共 9 个平台）
 - **Android APK**：GitHub Release 页 assets——`bequest-v<版本>-{arm64-v8a,armeabi-v7a,x86_64}.apk`（release 签名，可直接覆盖升级安装）
-- **Docker 镜像**：`ghcr.io/muxinxy/bequest:<版本>` 与 `:latest`（linux/amd64 + arm64，多架构）
+- **Docker 镜像**：`ghcr.io/muxinxy/bequest:<版本>` 与 `:latest`（linux/amd64 + arm64 + arm/v7 + riscv64，多架构）
 - **版本注入**：`GET /api/v1/version` 返回 tag 版本（`-X main.version=`）
 
 ## 发布签名（Secrets）
