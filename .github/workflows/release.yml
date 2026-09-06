@@ -150,7 +150,7 @@ jobs:
           for src in app/build/app/outputs/flutter-apk/app-*-release.apk; do
             [ -e "$src" ] || continue
             abi="$(basename "$src" | sed -E 's/^app-(.*)-release\.apk$/\1/')"
-            cp "$src" "android-dist/bequest-v${VERSION}-${abi}.apk"
+            cp "$src" "android-dist/bequest-${VERSION}-${abi}.apk"
           done
           ls -l android-dist/
 
