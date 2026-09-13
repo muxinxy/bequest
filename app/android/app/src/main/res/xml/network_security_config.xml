@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 默认禁明文 HTTP:本应用承载加密密文与继承交接,全部流量走 HTTPS。
+     自托管部署请经 HTTPS 反代暴露(见 server/README-deploy.md 的反代指引);
+     局域网纯 HTTP 的自建服务器与 S3/WebDAV 备份端点同样会被系统拒绝,请为其启用 TLS。 -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>
