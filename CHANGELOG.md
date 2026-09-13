@@ -2,6 +2,19 @@
 
 > **English**: This changelog is maintained in Chinese by the project's maintainers and records per-release feature/security/fix notes. For an English overview of the project see [README.en.md](README.en.md); English architecture docs live in [docs/architecture.en.md](docs/architecture.en.md).
 
+## 未发布
+
+### 新增
+- **/healthz 升级**：返回 JSON `{"status","version","db"}`(DB 不可达时 503),Docker 镜像内置 `HEALTHCHECK` 据此判定容器健康——`docker ps` 可见 HEALTHY 状态
+- **部署文档新增「HTTPS / 反向代理」指引**：Caddy/Nginx 配置示例 + 说明为何不可裸 HTTP(口令/JWT 明文过网、Android 默认拒绝明文)
+
+### 安全
+- **Android 默认禁明文 HTTP**：`usesCleartextTraffic="true"` 改为 network security config `cleartextTrafficPermitted="false"`——本应用承载加密密文与继承交接,所有流量走 HTTPS;局域网纯 HTTP 的自建服务器与 S3/WebDAV 备份端点会被系统拒绝,请为其启用 TLS(升级注意)
+- **验证码入库**：答案哈希由进程内存改存 DB 表 `captchas`(迁移 026,三方言)——服务重启后验证码不失效,多实例部署共用一库即可;一次性消费/大小写不敏感/5 分钟过期语义不变
+
+### 修复
+- CHANGELOG 删除重复的 v0.6.4(2026-08-14)小节(内容已被 2026-08-15 版覆盖)
+
 ## v0.9.1 (2026-09-06)
 
 ### 新增
@@ -264,19 +277,7 @@
 - **保存 S3 后 WebDAV 配置丢失**：保存时与已存配置合并,两协议字段互不覆盖
 
 ### 优化
-- 备份文件名用本地账户名称(如 `bequest_张三_...`);S3 下载/列表走平台请求(302 跟随 + no-referrer)
-
-## v0.6.4 (2026-08-14)
-
-### 同步与备份
-- **S3 对齐 WebDAV**：S3 `download` 改走平台下载(302 跟随 + web 端 no-referrer),兼容 S3 兼容网关(CDN 重定向/防盗链)
-- **修复:S3 下载 403(CORS preflight)**：`_signedHeaders` 原固定带 `Content-Type: application/json`——GET 下载无 body 却带此头,web 端 fetch 视为非简单请求 → 强制 CORS preflight → 跨域签名地址(OSS)preflight 失败 403。改为 upload 才带 Content-Type,GET/DELETE 不带(简单请求无需 preflight)
-- **修复:S3 列表 403(SigV4 签名 bug)**：`listFiles` 带 query string(`?list-type=2&prefix=`),签名代码原把 query 拼进 canonical URI——SigV4 规范中 query 是独立一行,服务端验签不匹配 → 403。`s3AuthorizationHeader` 新增 `canonicalQuery` 参数,query 按键排序 + 键值各自编码
-- **备份文件名用本地账户名称**：本地模式备份文件名取当前激活账户的名称(如 `bequest_张三_<设备名>_<时间戳>.json`),不再一律回退 'local';云端仍用用户名。auto_backup 同步复用
-- **修复:保存 S3 后 WebDAV 配置丢失**：`_formConfig` 只返回当前协议字段,保存时另一协议配置被覆盖。`_save` 改为与已存配置合并(当前协议以表单为准,另一协议沿用已存值)
-
-### 验证
-- Flutter 152 测试全过(新增:S3 302 下载、带 query 签名、download 无 Content-Type、currentAccountName 本地账户名、配置合并、签名向量不回归)
+- 备份文件名用本地账户名称(如 `bequest_张三_...`),auto_backup 同步复用;S3 下载/列表走平台请求(302 跟随 + no-referrer)
 
 ## v0.6.3 (2026-08-14)
 

@@ -60,7 +60,47 @@ volumes:
 
 ---
 
-## 3. config.json(多 SMTP 示例)
+## 3. HTTPS / 反向代理(强烈建议)
+
+服务器本身只提供 HTTP(默认 `:8080`)。它承载加密资产与继承交接,请务必经 HTTPS 反向代理对外暴露,不要将 8080 直接暴露到公网:
+
+- 登录口令、JWT、验证码等均以明文过网,裸 HTTP 下可被中间人窃听/篡改;
+- **Android 客户端默认拒绝明文 HTTP**(见应用 `network_security_config.xml`)——不启用 HTTPS 时 Android 端将无法连接(局域网自用可用 Web 端代替,或自担风险自行放行);
+- 客户端的 S3/WebDAV 等加密备份端点同样需要 HTTPS。
+
+### Caddy(推荐,自动签发/续期证书)
+
+```Caddyfile
+bequest.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+### Nginx
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name bequest.example.com;
+    ssl_certificate     /etc/letsencrypt/live/bequest.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/bequest.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+(证书可用 `certbot --nginx -d bequest.example.com` 签发。)
+
+容器探活:镜像内置 `HEALTHCHECK`,`GET /healthz` 会真实 `PingContext` 检查数据库连通性并返回 `{"status","version","db"}`;`docker ps` 的 HEALTHY 状态即据此判定。Docker Compose 之外(裸机/自建反代)也可用该端点做监控探针。
+
+---
+
+## 4. config.json(多 SMTP 示例)
 
 > 说明: 当前代码仍以 `SMTP_*` 环境变量提供单 SMTP 支持; 多 SMTP 通过 `config.json` 配置。
 
@@ -91,7 +131,7 @@ volumes:
 
 ---
 
-## 4. 环境变量
+## 5. 环境变量
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
@@ -132,7 +172,7 @@ go run .
 
 ---
 
-## 5. 发布流程(Release 工作流)
+## 6. 发布流程(Release 工作流)
 
 `.github/workflows/release.yml` 在**推送 `v*` 标签**时自动触发, 例如:
 
@@ -152,7 +192,7 @@ git push origin v1.0.0
 
 ---
 
-## 6. Android 发布签名(Secrets)
+## 7. Android 发布签名(Secrets)
 
 APK 使用固定 release keystore 签名(保证版本升级无需卸载重装)。CI 构建时从 GitHub Secrets 还原签名文件, 仓库不保存 keystore/密码。
 

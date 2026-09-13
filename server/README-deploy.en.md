@@ -60,7 +60,47 @@ volumes:
 
 ---
 
-## 3. config.json (multi-SMTP example)
+## 3. HTTPS / reverse proxy (strongly recommended)
+
+The server itself only speaks HTTP (default `:8080`). Because it carries encrypted assets and inheritance handover, always expose it behind an HTTPS reverse proxy — do not publish port 8080 directly to the internet:
+
+- Login passwords, JWTs and captchas all travel in clear text and can be intercepted/tampered with over plain HTTP;
+- **The Android client refuses cleartext HTTP by default** (see the app's `network_security_config.xml`) — without HTTPS the Android app cannot connect (for LAN-only use, the Web client works as a fallback, or lift the restriction at your own risk);
+- The client's S3/WebDAV encrypted backup endpoints need HTTPS as well.
+
+### Caddy (recommended, automatic certificate issuance/renewal)
+
+```Caddyfile
+bequest.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+### Nginx
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name bequest.example.com;
+    ssl_certificate     /etc/letsencrypt/live/bequest.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/bequest.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+(Issue the certificate with `certbot --nginx -d bequest.example.com`.)
+
+Container health check: the image ships with a `HEALTHCHECK`; `GET /healthz` performs a real `PingContext` against the database and returns `{"status","version","db"}` — the HEALTHY status in `docker ps` is derived from it. Outside Docker Compose (bare metal / your own proxy) the same endpoint works as a monitoring probe.
+
+---
+
+## 4. config.json (multi-SMTP example)
 
 > Note: the current code still provides single-SMTP support via the `SMTP_*` environment variables; multiple SMTP servers are configured through `config.json`.
 
@@ -91,7 +131,7 @@ Save the above as `server/config.json` (or mount it as `/data/config.json` as de
 
 ---
 
-## 4. Environment variables
+## 5. Environment variables
 
 | Variable | Required | Description |
 |------|------|------|
@@ -132,7 +172,7 @@ go run .
 
 ---
 
-## 5. Release workflow
+## 6. Release workflow
 
 `.github/workflows/release.yml` triggers automatically when a **`v*` tag is pushed**, e.g.:
 
@@ -152,7 +192,7 @@ You can also trigger it manually from the workflow page (workflow_dispatch); in 
 
 ---
 
-## 6. Android release signing (Secrets)
+## 7. Android release signing (Secrets)
 
 APKs are signed with a fixed release keystore (so version upgrades do not require uninstall/reinstall). CI restores the signing files from GitHub Secrets at build time; the repo does not store the keystore/passwords.
 
