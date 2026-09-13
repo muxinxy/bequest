@@ -15,6 +15,11 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// testDB holds the most recently created test database, for shared helpers
+// (doReq/fetchCaptcha) that can't plumb db through 20 call sites. Tests in a
+// package run sequentially (no t.Parallel in this repo), so this is safe.
+var testDB *sql.DB
+
 // newTestServer builds the full app wiring against a throwaway DB.
 // TEST_DB_DRIVER selects the backend: empty/"sqlite" uses a temp file DB;
 // "mysql"/"postgres" connect to the live server described by TEST_DB_DSN
@@ -41,6 +46,7 @@ func newTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 		}
 		ts := httptest.NewServer(newMux(db))
 		t.Cleanup(ts.Close)
+		testDB = db
 		return ts, db
 	case "mysql":
 		old := currentDialect
@@ -55,6 +61,7 @@ func newTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 		}
 		ts := httptest.NewServer(newMux(db))
 		t.Cleanup(func() { ts.Close(); db.Close() })
+		testDB = db
 		return ts, db
 	case "postgres":
 		old := currentDialect
@@ -69,6 +76,7 @@ func newTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 		}
 		ts := httptest.NewServer(newMux(db))
 		t.Cleanup(func() { ts.Close(); db.Close() })
+		testDB = db
 		return ts, db
 	default:
 		t.Fatalf("unsupported TEST_DB_DRIVER %q", driverName)
@@ -226,7 +234,10 @@ func fetchCaptcha(t *testing.T, ts *httptest.Server) map[string]string {
 	if c.CaptchaID == "" || !strings.HasPrefix(c.ImageSVG, "<svg") || c.Format != "svg" {
 		t.Fatalf("captcha shape: %+v", c)
 	}
-	id, answer, _ := generateCaptcha()
+	id, answer, _, err := generateCaptcha(testDB)
+	if err != nil {
+		t.Fatalf("generateCaptcha: %v", err)
+	}
 	return map[string]string{
 		"captcha_id": id,
 		"captcha":    answer,
@@ -235,14 +246,19 @@ func fetchCaptcha(t *testing.T, ts *httptest.Server) map[string]string {
 
 // TestCaptchaSVG: SVG 结构 + 大小写不敏感 + 一次性消费。
 func TestCaptchaSVG(t *testing.T) {
-	id, answer, svg := generateCaptcha()
+	ts, db := newTestServer(t)
+	_ = ts
+	id, answer, svg, err := generateCaptcha(db)
+	if err != nil {
+		t.Fatalf("generateCaptcha: %v", err)
+	}
 	if len(answer) != 4 || !strings.HasPrefix(svg, "<svg") || !strings.Contains(svg, "</svg>") {
 		t.Fatalf("bad captcha: answer=%q svg=%q", answer, svg)
 	}
-	if !verifyCaptcha(id, strings.ToLower(answer)) { // 小写提交也应通过
+	if !verifyCaptcha(db, id, strings.ToLower(answer)) { // 小写提交也应通过
 		t.Fatalf("verify lowercase failed")
 	}
-	if verifyCaptcha(id, answer) { // 一次性:已消费
+	if verifyCaptcha(db, id, answer) { // 一次性:已消费
 		t.Fatalf("verify reused entry")
 	}
 }
@@ -353,10 +369,21 @@ func TestAuthFlow(t *testing.T) {
 		t.Fatalf("me response missing user: %s", me.Body.String())
 	}
 
-	// healthz still works
+	// healthz still works:200 + JSON 载荷(status/version/db)
 	hz := doReq(t, ts, http.MethodGet, "/healthz", "", "")
-	if hz.Code != http.StatusOK || strings.TrimSpace(hz.Body.String()) != "ok" {
+	if hz.Code != http.StatusOK {
 		t.Fatalf("healthz status = %d, body=%s", hz.Code, hz.Body.String())
+	}
+	var hzBody struct {
+		Status  string `json:"status"`
+		Version string `json:"version"`
+		DB      string `json:"db"`
+	}
+	if err := json.Unmarshal([]byte(hz.Body.String()), &hzBody); err != nil {
+		t.Fatalf("healthz body not JSON: %v (body=%s)", err, hz.Body.String())
+	}
+	if hzBody.Status != "ok" || hzBody.DB != "ok" || hzBody.Version == "" {
+		t.Fatalf("healthz payload unexpected: %+v", hzBody)
 	}
 }
 

@@ -69,12 +69,17 @@ func runScheduler(db *sql.DB) {
 func newMux(db *sql.DB) *http.ServeMux {
 	mux := http.NewServeMux()
 	// 探活:查 DB 可达性(容器探活据此判断健康,而非只看进程在)。
+	// 返回 JSON:{"status":"ok","version":<构建版本>,"db":"ok"};DB 不可达时 503。
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := db.PingContext(r.Context()); err != nil {
-			writeError(w, http.StatusServiceUnavailable, "数据库不可用")
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"status": "unavailable", "version": version, "db": "error",
+			})
 			return
 		}
-		w.Write([]byte("ok"))
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status": "ok", "version": version, "db": "ok",
+		})
 	})
 	// 管理后台(内嵌单页,无需构建)。
 	mux.HandleFunc("GET /admin", serveAdminPage)
@@ -91,7 +96,7 @@ func newMux(db *sql.DB) *http.ServeMux {
 	admin := func(h http.Handler) http.Handler { return requireAdmin(db, h) }
 	mux.HandleFunc("POST /api/v1/auth/register", handleRegister(db))
 	mux.HandleFunc("POST /api/v1/auth/login", handleLogin(db))
-	mux.HandleFunc("GET /api/v1/auth/captcha", handleGetCaptcha)
+	mux.HandleFunc("GET /api/v1/auth/captcha", handleGetCaptcha(db))
 	mux.HandleFunc("GET /api/v1/auth/check", handleCheckUsername(db))
 	mux.HandleFunc("GET /api/v1/auth/check-email", handleCheckEmail(db))
 	mux.HandleFunc("POST /api/v1/auth/reset-request", handleRequestPasswordReset(db))

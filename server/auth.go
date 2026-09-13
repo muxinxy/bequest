@@ -197,7 +197,7 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
-		if !verifyCaptcha(req.CaptchaID, req.Captcha) {
+		if !verifyCaptcha(db, req.CaptchaID, req.Captcha) {
 			writeError(w, http.StatusBadRequest, "验证码错误或已过期")
 			return
 		}
@@ -288,7 +288,7 @@ func handleLogin(db *sql.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "请求数据格式错误")
 			return
 		}
-		if !verifyCaptcha(req.CaptchaID, req.Captcha) {
+		if !verifyCaptcha(db, req.CaptchaID, req.Captcha) {
 			writeError(w, http.StatusBadRequest, "验证码错误或已过期")
 			return
 		}

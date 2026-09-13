@@ -43,4 +43,7 @@ WORKDIR /data
 ENV DATA_DIR=/data WEB_DIR=/web
 EXPOSE 8080
 VOLUME ["/data"]
+# 容器探活:/healthz 内部 PingContext 查 DB,不可达时 503(30s 间隔,90s 无响应判死)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -qO /dev/null http://127.0.0.1:8080/healthz || exit 1
 ENTRYPOINT ["bequest-server"]

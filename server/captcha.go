@@ -3,29 +3,18 @@ package main
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net/http"
 	"strings"
-	"sync"
-	"time"
 )
 
 // ---------- SVG 图形验证码(无外部依赖) ----------
-// 4 位随机字符(去 0O1lI 易混淆)渲染成 SVG 图片,答案 sha256 哈希存内存缓存
-// (5 分钟过期),客户端提交 captcha_id + 答案(比对前转大写),防机器人/防爆破。
-// 单机内存缓存即可;多实例部署需换共享存储(本项目单二进制,足够)。
-
-type captchaEntry struct {
-	answerHash string
-	expiresAt  time.Time
-}
-
-var (
-	captchaMu    sync.Mutex
-	captchaStore = map[string]captchaEntry{}
-)
+// 4 位随机字符(去 0O1lI 易混淆)渲染成 SVG 图片,答案 sha256 哈希存 DB 表
+// captchas(迁移 026,5 分钟过期):重启不失效,多实例部署共用一库即可。
+// 客户端提交 captcha_id + 答案(比对前转大写),防机器人/防爆破。
 
 // captchaChars: 去易混淆字符 0/O/1/I(小写 l 不会出现)。
 const captchaChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -41,14 +30,9 @@ func randInt(n int) int {
 	return int(v.Int64())
 }
 
-// captchaCleanup removes expired entries; called on each generation.
-func captchaCleanup() {
-	now := time.Now()
-	for id, e := range captchaStore {
-		if now.After(e.expiresAt) {
-			delete(captchaStore, id)
-		}
-	}
+// captchaPrune 清理过期条目;每次生成验证码时顺带执行(量小,无需调度器)。
+func captchaPrune(db *sql.DB) {
+	db.Exec("DELETE FROM captchas WHERE expires_at <= " + dbNow()) // 尽力而为
 }
 
 // buildCaptchaSVG renders code as a 120x40 SVG: 每字符随机旋转 ±20°、深色、
@@ -87,55 +71,66 @@ func buildCaptchaSVG(code string) string {
 	return b.String()
 }
 
-// generateCaptcha mints a fresh captcha: returns its id, plaintext answer
-// (内部用,供测试取答案;handler 不暴露)和 SVG 图片。
-func generateCaptcha() (id, answer, svg string) {
+// generateCaptcha mints a fresh captcha(入库,5 分钟过期): returns its id,
+// plaintext answer(内部用,供测试取答案;handler 不暴露)和 SVG 图片。
+func generateCaptcha(db *sql.DB) (id, answer, svg string, err error) {
 	var sb strings.Builder
 	for i := 0; i < 4; i++ {
 		sb.WriteByte(captchaChars[randInt(len(captchaChars))])
 	}
 	answer = sb.String() // 全大写
 	hash := sha256.Sum256([]byte(answer))
-	idBytes := make([]byte, 8)
+	idBytes := make([]byte, 16)
 	rand.Read(idBytes)
 	id = hex.EncodeToString(idBytes)
 
-	captchaMu.Lock()
-	captchaCleanup()
-	captchaStore[id] = captchaEntry{
-		answerHash: hex.EncodeToString(hash[:]),
-		expiresAt:  time.Now().Add(5 * time.Minute),
+	captchaPrune(db)
+	if _, err = db.Exec(
+		"INSERT INTO captchas (id, answer_hash, expires_at) VALUES (?, ?, "+dbNowAdd("5 minutes")+")",
+		id, hex.EncodeToString(hash[:])); err != nil {
+		return "", "", "", err
 	}
-	captchaMu.Unlock()
-	return id, answer, buildCaptchaSVG(answer)
+	return id, answer, buildCaptchaSVG(answer), nil
 }
 
 // handleGetCaptcha: GET /api/v1/auth/captcha -> {"captcha_id","image_svg","format"}
-func handleGetCaptcha(w http.ResponseWriter, r *http.Request) {
-	id, _, svg := generateCaptcha()
-	writeJSON(w, http.StatusOK, map[string]any{
-		"captcha_id": id,
-		"image_svg":  svg,
-		"format":     "svg",
-	})
+func handleGetCaptcha(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, _, svg, err := generateCaptcha(db)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "验证码生成失败")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"captcha_id": id,
+			"image_svg":  svg,
+			"format":     "svg",
+		})
+	}
 }
 
 // verifyCaptcha checks captcha_id + answer(大小写不敏感),消费该条目。
-// Returns true if valid; the entry is deleted on any attempt (one-time).
-func verifyCaptcha(id, answer string) bool {
+// 任何尝试(无论对错)都删除该条目(one-time):先 SELECT 取哈希并校验未过期,
+// 再无条件 DELETE 并以 RowsAffected 判定本次尝试是否为唯一消费者——并发重复
+// 使用同一 id 时只有一方能通过。返回 true 表示有效。
+func verifyCaptcha(db *sql.DB, id, answer string) bool {
 	if id == "" || answer == "" {
 		return false
 	}
-	captchaMu.Lock()
-	defer captchaMu.Unlock()
-	e, ok := captchaStore[id]
-	if !ok {
+	var answerHash string
+	err := db.QueryRow(
+		"SELECT answer_hash FROM captchas WHERE id = ? AND expires_at > "+dbNow(), id,
+	).Scan(&answerHash)
+	if err != nil {
+		return false // 不存在或已过期
+	}
+	res, err := db.Exec("DELETE FROM captchas WHERE id = ?", id)
+	if err != nil {
 		return false
 	}
-	delete(captchaStore, id) // one-time use
-	if time.Now().After(e.expiresAt) {
-		return false
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false // 已被并发请求消费
 	}
 	hash := sha256.Sum256([]byte(strings.ToUpper(answer)))
-	return hex.EncodeToString(hash[:]) == e.answerHash
+	return hex.EncodeToString(hash[:]) == answerHash
 }
