@@ -62,7 +62,9 @@ jobs:
         run: flutter build apk --debug
 
       - name: 校验 Android 明文 HTTP 策略
+        # 工作目录是 app/(:defaults.run.working-directory),Android 工程在 android/ 下;
+        # 第一条 grep 同时确认打包资源存在,避免负向断言空真。
         run: |
           grep -q 'cleartextTrafficPermitted="true"' build/app/intermediates/packaged_res/debug/packageDebugResources/xml/network_security_config.xml
-          grep -q 'cleartextTrafficPermitted="false"' app/src/main/res/xml/network_security_config.xml
-          test ! -e app/src/profile/res/xml/network_security_config.xml
+          grep -q 'cleartextTrafficPermitted="false"' android/app/src/main/res/xml/network_security_config.xml
+          test ! -e android/app/src/profile/res/xml/network_security_config.xml
