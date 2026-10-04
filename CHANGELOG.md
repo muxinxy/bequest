@@ -2,7 +2,7 @@
 
 > **English**: This changelog is maintained in Chinese by the project's maintainers and records per-release feature/security/fix notes. For an English overview of the project see [README.en.md](README.en.md); English architecture docs live in [docs/architecture.en.md](docs/architecture.en.md).
 
-## 未发布
+## v0.9.2 (2026-10-04)
 
 ### 新增
 - **/healthz 升级**：返回 JSON `{"status","version","db"}`(DB 不可达时 503),Docker 镜像内置 `HEALTHCHECK` 据此判定容器健康——`docker ps` 可见 HEALTHY 状态

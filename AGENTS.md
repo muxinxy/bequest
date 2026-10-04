@@ -8,7 +8,7 @@
 - `app/` — Flutter 客户端(一套代码 → Android + Web)。`flutter_localizations` + 手写的字典式 L10n。
 - `docs/` — `architecture.md`(+ `.en.md`)ADR 决策记录;`progress.md`(中文开发日志)。**改继承/安全相关逻辑前先读 `architecture.md`。**
 - `scripts/` — `build.sh`/`build.ps1`(交叉编译)、`test-all-dbs.sh`(三方言回归)。
-- `CHANGELOG.md` — 每次发版的中文说明(发版时更新;最新为 v0.9.1)。
+- `CHANGELOG.md` — 每次发版的中文说明(发版时更新;最新为 v0.9.2)。
 
 ## 构建与测试
 
