@@ -1,6 +1,6 @@
 # CI:push/PR 时自动验证
 #   1. go test  (server/,含全部后端测试)
-#   2. flutter test + flutter build web (app/)
+#   2. flutter test + flutter build web + Android debug APK(含明文策略断言)
 # 通过后才允许合并;失败会在 PR 上标红。
 name: ci
 
@@ -55,3 +55,14 @@ jobs:
       - name: build web
         # --no-web-resources-cdn:CanvasKit 本地打包,国内不依赖 gstatic CDN(否则白屏)。
         run: flutter build web --no-tree-shake-icons --no-web-resources-cdn
+
+      # Android debug 构建:资源/manifest 合并错误(如 network security config
+      # 覆盖失效)在 PR 期暴露,而不是拖到打 tag 的 release 工作流。
+      - name: build android (debug)
+        run: flutter build apk --debug
+
+      - name: 校验 Android 明文 HTTP 策略
+        run: |
+          grep -q 'cleartextTrafficPermitted="true"' build/app/intermediates/packaged_res/debug/packageDebugResources/xml/network_security_config.xml
+          grep -q 'cleartextTrafficPermitted="false"' app/src/main/res/xml/network_security_config.xml
+          test ! -e app/src/profile/res/xml/network_security_config.xml

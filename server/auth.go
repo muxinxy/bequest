@@ -280,7 +280,7 @@ type loginRequest struct {
 }
 
 // handleLogin: POST /api/v1/auth/login -> 200 {token, user}; 401 bad creds
-// 用户名或邮箱均可登录(identifier 匹配 username 或 email);需通过算术验证码。
+// 用户名或邮箱均可登录(identifier 匹配 username 或 email);需通过图形验证码。
 func handleLogin(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req loginRequest

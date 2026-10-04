@@ -188,18 +188,18 @@
 # 后端（需 Go；模块走 goproxy.cn 镜像）
 cd D:\Documents\Code\bequest\server
 $env:GOPROXY = "https://goproxy.cn,direct"
-go run .                    # 监听 :8080，首次启动自动建库 server/data/bequest.db
+go run .                    # 监听 :17654，首次启动自动建库 server/data/bequest.db
 
 # 客户端（需 Flutter；已配国内镜像）
 cd D:\Documents\Code\bequest\app
 flutter pub get
-flutter run                 # Android 模拟器访问后端用 http://10.0.2.2:8080
+flutter run                 # Android debug 模拟器访问后端用 http://10.0.2.2:17654
 
 # Web 客户端（同套代码编译，服务端同源托管）
 cd D:\Documents\Code\bequest\app
 flutter build web
 cd D:\Documents\Code\bequest\server
-go run .                    # 浏览器访问 http://localhost:8080
+go run .                    # 浏览器访问 http://localhost:17654
 ```
 
 ## 决策变更记录

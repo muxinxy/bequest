@@ -38,6 +38,9 @@ class _LoginPageState extends State<LoginPage> {
   String _captchaSvg = '';
   bool _captchaFailed = false;
 
+  /// 服务器地址未配置(正式包首次使用):提示先到「服务器设置」填写。
+  bool _serverMissing = false;
+
   @override
   void initState() {
     super.initState();
@@ -96,13 +99,14 @@ class _LoginPageState extends State<LoginPage> {
           _captchaController.clear();
         });
       }
-    } catch (_) {
-      // 验证码获取失败:展示重试入口,不无限转圈。
+    } catch (e) {
+      // 验证码获取失败:展示重试入口,不无限转圈;未配置地址时给出明确引导。
       if (mounted) {
         setState(() {
           _captchaId = '';
           _captchaSvg = '';
           _captchaFailed = true;
+          _serverMissing = e is ServerNotConfiguredException;
         });
       }
     }
@@ -193,6 +197,11 @@ class _LoginPageState extends State<LoginPage> {
       // 验证码错误/过期:刷新验证码让用户重试。
       if (e.message.contains('验证码')) await _refreshCaptcha();
       _showError(e.message);
+    } on ServerNotConfiguredException catch (_) {
+      if (mounted) {
+        setState(() => _serverMissing = true);
+        _showError(L10n.tr('尚未配置服务器地址,请在「服务器设置」中填写'));
+      }
     } catch (_) {
       _showError(L10n.tr('登录失败,请检查网络后重试'));
     } finally {
@@ -410,6 +419,14 @@ class _LoginPageState extends State<LoginPage> {
                 child: Text(L10n.tr('进入本地模式')),
               ),
               const SizedBox(height: 8),
+              if (_serverMissing) ...[
+                Text(
+                  L10n.tr('尚未配置服务器地址,请在「服务器设置」中填写'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                const SizedBox(height: 8),
+              ],
               TextButton(
                 onPressed: _submitting
                     ? null

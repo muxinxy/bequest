@@ -4,6 +4,5 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- Debug builds talk to the dev backend over plain HTTP (10.0.2.2:8080). -->
-    <application android:usesCleartextTraffic="true"/>
+    <!-- debug/res/xml 覆盖 main 的 HTTPS-only 配置,允许模拟器访问 10.0.2.2:17654。 -->
 </manifest>

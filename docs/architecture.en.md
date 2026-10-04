@@ -71,7 +71,7 @@ States: `inactive → warning → triggered → claimed → reversed`
 
 ### ADR-8 Self-hosted sync (privacy first, client connects directly)
 
-- Users who are privacy-conscious can sync encrypted backups to their own WebDAV/S3 (FTP/SFTP reserved)
+- Users who are privacy-conscious can sync encrypted backups to their own WebDAV/S3/FTP (FTP supports plain/FTPES/FTPS modes; evaluate the plain mode yourself)
 - Sync credentials are **stored on-device only** (secure_store) and never pass through the bequest server; sync actions connect client-direct to the remote
 - A backup = full data dump (asset ciphertext + categories + templates + inheritors) packaged into a single file encrypted with the master key (AES-GCM)
 - Hand-rolled on purpose: `webdav_client` internally uses dio (cannot inject an http.Client/MockClient for tests), `aws_s3` lacks null safety; SigV4 is implemented with `package:crypto` and locked down against AWS's official test vectors
@@ -91,9 +91,9 @@ States: `inactive → warning → triggered → claimed → reversed`
 - **Three entitlement tiers**: guest (20 assets, no cloud sync/inheritance, local usable) / free (50 assets, cloud sync + inheritance) / member (unlimited); UI badges + asset-cap blocking at creation time
 - **Mode switch**: cloud→local (pull everything, write to vault) / local→cloud (login required, upload item by item, categories deduped by name) — copy-style migration, not continuous sync (`ponytail:` upgradeable to bidirectional incremental later)
 - **Releases**: Release includes Android APKs (`flutter build apk --release --split-per-abi`, three ABIs uploaded as assets)
-- Android networking: main manifest gains the `INTERNET` permission + `usesCleartextTraffic` (required for self-hosted HTTP; debug/profile build permissions/config do not carry into release)
+- Android networking: the main manifest keeps the `INTERNET` permission; profile/release builds reject cleartext HTTP through Network Security Config, leave the server URL empty by default, and require HTTPS; a debug resource override permits the emulator to access `http://10.0.2.2:17654`
 
-- Binaries: `scripts/build.sh` (5 platforms) / `build.ps1` (local Windows); Docker: multi-stage alpine, non-root, `WORKDIR=/data` so the relative path `data/bequest.db` lands on the volume
+- Binaries: `scripts/build.sh` (9 platforms) / `build.ps1` (local Windows); the SQLite database is `<DATA_DIR>/bequest.db` (`data` by default on bare metal); the Docker image explicitly uses `DATA_DIR=/data/data` to preserve older images' actual `data/bequest.db` path inside the `/data` volume
 - Releases: tag `v*` triggers GitHub Actions — matrix builds + buildx dual-arch push to `ghcr.io/muxinxy/bequest` + Release assets; the workflow quotes `"on":` to dodge YAML 1.1 boolean coercion
 - Migrations in deployment: SQL migrations are compiled into the binary via `go:embed`, so the Docker runtime needs no external `migrations/` directory; only `/data` is persisted as the database volume
 
@@ -147,6 +147,7 @@ States: `inactive → warning → triggered → claimed → reversed`
 - Login/register request bodies carry `captcha_id + captcha`; `verifyCaptcha` checks and **consumes once** (deletes the entry, preventing replay)
 - Single-machine in-memory cache (`captcha.go` map + mutex); multi-instance deployments would need shared storage (this project is a single binary)
 - Frontend: arithmetic card on the login/register pages (click to refresh); a wrong captcha auto-refreshes and retries
+- Evolution: the current implementation is an **SVG image captcha** (`captcha.go`: 4 random characters rendered as SVG; the sha256 answer hash is stored in the `captchas` table — migration 026, 5-minute expiry, one-time consumption, shared across instances; response is `{"captcha_id","image_svg","format"}`)
 
 ### ADR-18 Per-IP rate limiting
 
@@ -226,7 +227,7 @@ States: `inactive → warning → triggered → claimed → reversed`
 - User isolation: every query is filtered by the `user_id` in the JWT; cross-account access is answered with 404/401
 - Endpoints:
   - `GET /healthz`
-  - `GET /api/v1/auth/captcha` (arithmetic captcha: `{"captcha_id","question"}`)
+  - `GET /api/v1/auth/captcha` (image captcha: `{"captcha_id","image_svg","format"}`)
   - `POST /api/v1/auth/register`, `POST /api/v1/auth/login` (with captcha_id/captcha), `GET /api/v1/me`, `PUT /api/v1/me` (change username/email)
   - `GET /api/v1/auth/check?username=`, `GET /api/v1/auth/check-email?email=` (live duplicate check at registration)
   - `POST /api/v1/auth/reset-request` (email code), `POST /api/v1/auth/reset` (code-based password reset)

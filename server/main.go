@@ -3,8 +3,11 @@ package main
 import (
 	"database/sql"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -30,11 +33,16 @@ func main() {
 		if currentDialect != dialectSQLite {
 			log.Fatalf("backup subcommand requires sqlite (current driver %s); use mysqldump/pg_dump", currentDialect)
 		}
-		out := "bequest-backup-" + time.Now().Format("20060102-150405") + ".db"
-		if _, err := db.Exec("VACUUM INTO '" + out + "'"); err != nil {
+		var out string
+		if len(os.Args) > 2 {
+			if os.Args[2] != "--output" || len(os.Args) != 4 {
+				log.Fatalf("usage: bequest-server backup [--output <path>] / 用法: backup [--output <路径>]")
+			}
+			out = os.Args[3]
+		}
+		if err := runBackup(db, out); err != nil {
 			log.Fatalf("backup: %v", err)
 		}
-		log.Printf("backup written to %s", out)
 		return
 	}
 
@@ -42,12 +50,35 @@ func main() {
 
 	go runScheduler(db)
 
-	addr := ":8080"
+	port := 17654
 	if p := os.Getenv("PORT"); p != "" {
-		addr = ":" + p
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > 65535 {
+			log.Fatalf("invalid PORT %q: want integer in 1-65535", p)
+		}
+		port = n
+	}
+	addr := ":" + strconv.Itoa(port)
+	if h := os.Getenv("HOST"); h != "" {
+		addr = net.JoinHostPort(h, strconv.Itoa(port))
 	}
 	log.Printf("bequest server listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, localize(cors(rateLimit(newMux(db))))))
+}
+
+// runBackup 执行 VACUUM INTO 一致性快照(仅 SQLite)。out 为空时按时间戳
+// 写到 CWD(容器内 WORKDIR=/data 即落在数据卷)。路径以 SQL 字符串字面量
+// 拼接,单引号需翻倍转义,避免含引号路径报语法错误。
+func runBackup(db *sql.DB, out string) error {
+	if out == "" {
+		out = "bequest-backup-" + time.Now().Format("20060102-150405") + ".db"
+	}
+	escaped := strings.ReplaceAll(out, "'", "''")
+	if _, err := db.Exec("VACUUM INTO '" + escaped + "'"); err != nil {
+		return err
+	}
+	log.Printf("backup written to %s", out)
+	return nil
 }
 
 // runScheduler ticks the dead-man's-switch scan every 60s; pruneLogs runs

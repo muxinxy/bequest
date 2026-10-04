@@ -72,7 +72,7 @@ bequest/
 
 ### ADR-8 自托管同步（隐私第一，客户端直连）
 
-- 用户因隐私顾虑可把加密备份同步到自己的 WebDAV/S3（FTP/SFTP 预留）
+- 用户因隐私顾虑可把加密备份同步到自己的 WebDAV/S3/FTP（FTP 支持明文/FTPES/FTPS 三种模式,明文模式请自行评估）
 - 同步凭据**仅存本机**（secure_store），绝不经过托孤服务端；同步动作客户端直连远端
 - 备份 = 全量数据（资产密文 + 分类 + 模板 + 继承人）打包后主密钥 AES-GCM 加密单文件
 - 实现为纯手写：`webdav_client` 内部用 dio（无法注入 http.Client/MockClient 测试）、`aws_s3` 无 null safety；SigV4 用 package:crypto 实现并以 AWS 官方测试向量锁定
@@ -92,9 +92,9 @@ bequest/
 - **三层权益**：访客（20 条、无云同步/继承、本地可用）/ 免费（50 条、云同步+继承）/ 会员（不限）；UI 徽章 + 创建时资产上限拦截
 - **模式切换**：云→本地（拉取全量写 vault）/ 本地→云（需登录，逐条上传，分类按名去重）——复制式迁移，非连续同步（ponytail: 后续可升级为双向增量）
 - **发布**：Release 含 Android APK（`flutter build apk --release --split-per-abi`，三 ABI 上传 assets）
-- Android 网络：主 manifest 加 `INTERNET` 权限 + `usesCleartextTraffic`（自托管 HTTP 必需；debug/profile 构建的权限/配置不继承到 release）
+- Android 网络：主 manifest 保留 `INTERNET` 权限；profile/release 通过 Network Security Config 禁止明文 HTTP，服务器地址默认留空并要求 HTTPS；debug 资源覆盖允许模拟器访问本机 `http://10.0.2.2:17654`
 
-- 二进制：`scripts/build.sh`（5 平台）/ `build.ps1`（本地 Windows）；Docker：多阶段 alpine 非 root，`WORKDIR=/data` 使相对路径 `data/bequest.db` 落在卷上
+- 二进制：`scripts/build.sh`（9 平台）/ `build.ps1`（本地 Windows）；SQLite 数据库路径为 `<DATA_DIR>/bequest.db`（裸机默认 `data`）；Docker 镜像显式使用 `DATA_DIR=/data/data`，保持旧镜像在 `/data` 卷内的实际路径 `data/bequest.db`
 - 发布：tag `v*` 触发 GitHub Actions——矩阵构建 + buildx 双架构推 `ghcr.io/muxinxy/bequest` + Release 资产；workflow 用 `"on":` 加引号规避 YAML 1.1 解析器布尔化问题
 - 迁移部署：SQL 迁移通过 `go:embed` 编译进二进制，Docker 运行时不依赖外部 `migrations/` 目录；仅将 `/data` 作为数据库持久化卷
 
@@ -148,6 +148,7 @@ bequest/
 - 登录/注册请求体携带 `captcha_id + captcha`，`verifyCaptcha` 校验并**一次性消费**（删除条目，防重放）
 - 单机内存缓存（`captcha.go` map + mutex）；多实例部署需换共享存储（本项目单二进制）
 - 前端：登录/注册页算式卡片（点击刷新），验证码错误自动刷新重试
+- 演进：现实现为 **SVG 图形验证码**（`captcha.go`：4 位随机字符渲染 SVG，答案 sha256 哈希入库 `captchas` 表（迁移 026，5 分钟过期、一次性消费、多实例共用一库），响应 `{"captcha_id","image_svg","format"}`）
 
 ### ADR-18 按 IP 频率限制
 
@@ -227,7 +228,7 @@ bequest/
 - 用户隔离：所有查询按 JWT 中 user_id 过滤，越权一律 404/401
 - 端点：
   - `GET /healthz`
-  - `GET /api/v1/auth/captcha`（算术验证码：`{"captcha_id","question"}`）
+  - `GET /api/v1/auth/captcha`（图形验证码：`{"captcha_id","image_svg","format"}`）
   - `POST /api/v1/auth/register`、`POST /api/v1/auth/login`（带 captcha_id/captcha）、`GET /api/v1/me`、`PUT /api/v1/me`（改用户名/邮箱）
   - `GET /api/v1/auth/check?username=`、`GET /api/v1/auth/check-email?email=`（注册实时查重）
   - `POST /api/v1/auth/reset-request`（邮箱验证码）、`POST /api/v1/auth/reset`（验证码重置密码）

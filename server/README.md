@@ -7,16 +7,16 @@ Go 编写的数字资产保险箱 + 数字遗嘱后端：HTTP API、提醒调度
 ## 快速开始
 
 ```bash
-# 本地开发(默认 SQLite,监听 :8080,首次启动自动建库 data/bequest.db)
+# 本地开发(默认 SQLite,监听 :17654,首次启动自动建库 data/bequest.db)
 go run .
 
 # 指定数据库(见下方「数据库」)
 DB_DRIVER=postgres DB_USER=bequest DB_PASS=secret DB_NAME=bequest go run .
 
 # 浏览器入口
-#   http://localhost:8080        Flutter Web 客户端(需先 cd ../app && flutter build web)
-#   http://localhost:8080/admin  管理后台
-#   http://localhost:8080/claim  继承人领取页(无需登录)
+#   http://localhost:17654        Flutter Web 客户端(需先 cd ../app && flutter build web)
+#   http://localhost:17654/admin  管理后台
+#   http://localhost:17654/claim  继承人领取页(无需登录)
 ```
 
 ## 数据库
@@ -41,9 +41,10 @@ DB_DRIVER=postgres DB_USER=bequest DB_PASS=secret DB_NAME=bequest go run .
 | `ENCRYPTION_KEY` | **生产必填** | 加密 SMTP 密码等敏感配置的 AES 密钥 |
 | `SMTP_HOST/PORT/USER/PASS/FROM` | 否 | 系统邮件兜底（无 config.json 时生效） |
 | `ADMIN_USERNAME/ADMIN_PASSWORD` | 否 | 启动时引导/提升首个管理员 |
-| `PORT` | `8080` | 监听端口 |
+| `PORT` | `17654` | 监听端口(1-65535,非法值启动即报错) |
+| `HOST` | 空(监听全部网卡) | 监听地址(如 `127.0.0.1` 仅本机访问) |
 | `WEB_DIR` | 自动探测 | Flutter Web 静态目录（`WEB_DIR` > `./web` > `app/build/web`） |
-| `DATA_DIR` | `data` | 数据目录 |
+| `DATA_DIR` | `data` | SQLite 数据目录;数据库为 `<DATA_DIR>/bequest.db`(镜像默认 `/data/data`) |
 
 ## 邮件配置（三层，优先级从高到低）
 
@@ -58,17 +59,18 @@ DB_DRIVER=postgres DB_USER=bequest DB_PASS=secret DB_NAME=bequest go run .
 go run . 或 ./bequest-server
 
 # 健康检查(查 DB 可达)
-curl http://localhost:8080/healthz
+curl http://localhost:17654/healthz
 
 # 备份(SQLite)
-./bequest-server backup     # 生成 bequest-backup-<时间戳>.db
+./bequest-server backup                         # 写到当前目录 bequest-backup-<时间戳>.db
+./bequest-server backup --output /path/to/b.db  # 指定输出路径
 
 # 版本
-curl http://localhost:8080/api/v1/version
+curl http://localhost:17654/api/v1/version
 ```
 
 ## 部署
 
 - Docker Compose（推荐）：见 [docker-compose.yml](docker-compose.yml)，先建 `.env`（`JWT_SECRET`/`ENCRYPTION_KEY` 必填）。生产远程拉镜像运行请使用**不含 `build:` 段**的 compose 或 `docker run`（见仓库根 README 部署章节）。
-- 二进制交叉编译：`../scripts/build.sh`（5 平台）或 `../scripts/build.ps1`（Windows）。
+- 二进制交叉编译：`../scripts/build.sh`（9 平台）或 `../scripts/build.ps1`（Windows）。
 - 详细部署说明（中/英）：[README-deploy.md](README-deploy.md)。

@@ -3,7 +3,7 @@
 > 中文版: [README-deploy.md](README-deploy.md)
 
 > Repo: https://github.com/muxinxy/bequest | Image: `ghcr.io/muxinxy/bequest`
-> Server: Go 1.26, single binary, listens on 8080 by default, SQLite database `data/bequest.db` (created automatically at runtime).
+> Server: Go 1.26, single binary, listens on 17654 by default, SQLite database `data/bequest.db` (created automatically at runtime).
 
 ---
 
@@ -47,9 +47,11 @@ cd server
 docker compose up -d --build
 ```
 
-- The service listens on host port `8080`;
-- Data lands in `server/data/` on the host (volume mount `./data:/data`);
-- Inside the container `WORKDIR=/data`, and the database is written to `data/bequest.db` on the volume; the SQL migration files are already embedded in the server binary, so there is no need to mount the `migrations/` directory into the container;
+- The service listens on host port `17654`;
+- Compose uses the Docker named volume `bequest_data` by default. The image sets `DATA_DIR=/data/data`, so the database is `data/bequest.db` inside the volume (container path `/data/data/bequest.db`), preserving the path used by older images;
+- With a `./data:/data` bind mount, the host path is `server/data/data/bequest.db`. To use `server/data/bequest.db` instead, also set `DATA_DIR=/data`. Before changing `DATA_DIR` on an existing deployment, move the database files accordingly; the new version refuses to start when it detects the legacy database (instead of silently creating an empty one);
+- To keep the legacy host port 8080, change the mapping to `"8080:17654"` — the health check follows the container's `PORT`; changing the in-container `PORT` is not recommended (the mapping would need to change too);
+- SQL migrations are embedded in the server binary, so there is no need to mount the `migrations/` directory into the container;
 - The same applies to `config.json`: the server reads `config.json` from its CWD, so simply mount the host config file into the container (uncomment the corresponding lines in `docker-compose.yml`):
 
 ```yaml
@@ -62,7 +64,7 @@ volumes:
 
 ## 3. HTTPS / reverse proxy (strongly recommended)
 
-The server itself only speaks HTTP (default `:8080`). Because it carries encrypted assets and inheritance handover, always expose it behind an HTTPS reverse proxy — do not publish port 8080 directly to the internet:
+The server itself only speaks HTTP (default `:17654`). Because it carries encrypted assets and inheritance handover, always expose it behind an HTTPS reverse proxy — do not publish port 17654 directly to the internet:
 
 - Login passwords, JWTs and captchas all travel in clear text and can be intercepted/tampered with over plain HTTP;
 - **The Android client refuses cleartext HTTP by default** (see the app's `network_security_config.xml`) — without HTTPS the Android app cannot connect (for LAN-only use, the Web client works as a fallback, or lift the restriction at your own risk);
@@ -72,7 +74,7 @@ The server itself only speaks HTTP (default `:8080`). Because it carries encrypt
 
 ```Caddyfile
 bequest.example.com {
-    reverse_proxy 127.0.0.1:8080
+    reverse_proxy 127.0.0.1:17654
 }
 ```
 
@@ -86,7 +88,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/bequest.example.com/privkey.pem;
 
     location / {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:17654;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -149,7 +151,9 @@ Save the above as `server/config.json` (or mount it as `/data/config.json` as de
 | `SMTP_USER` | No | SMTP username |
 | `SMTP_PASS` | No | SMTP password/authorization code |
 | `SMTP_FROM` | No | Sender address |
-| `DATA_DIR` | No | Data directory (defaults to `/data` inside the image) |
+| `DATA_DIR` | No | SQLite data directory; database is `<DATA_DIR>/bequest.db`. Bare-metal default: `data`; image default: `/data/data` |
+| `PORT` | No | Listen port (default `17654`; 1-65535, invalid values fail at startup) |
+| `HOST` | No | Listen address (default: all interfaces; e.g. `127.0.0.1` for localhost only) |
 
 ### Using MySQL / PostgreSQL
 

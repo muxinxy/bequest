@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 仅 debug 包允许连接本机明文 HTTP 开发服务;profile/release 继续使用 main 的 HTTPS-only 配置。 -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

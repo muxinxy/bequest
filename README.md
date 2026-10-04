@@ -12,15 +12,15 @@
 
 ## 功能
 
-- Web 客户端：同一套 Flutter 代码编译 Web，由 Go 服务端同源托管（`go run .` 自动探测并服务 `app/build/web`），浏览器打开 `http://localhost:8080` 即用；argon2 换 hash-wasm WASM（自托管 `app/web/assets/hash-wasm.js`），解锁 ~0.3s；默认相对路径（同源免 CORS），服务端带 CORS 中间件支持独立部署/Flutter dev server
+- Web 客户端：同一套 Flutter 代码编译 Web，由 Go 服务端同源托管（`go run .` 自动探测并服务 `app/build/web`），浏览器打开 `http://localhost:17654` 即用；argon2 换 hash-wasm WASM（自托管 `app/web/assets/hash-wasm.js`），解锁 ~0.3s；默认相对路径（同源免 CORS），服务端带 CORS 中间件支持独立部署/Flutter dev server
 - 资产管理：实体/虚拟资产、预设+自定义分类、敏感字段端到端加密（AES-256-GCM，每资产独立密钥 AK，主密钥/继承密钥包装；老资产自动回退主密钥解密）；主页**分组视图**（按分类分组、可折叠），搜索支持**分组名和资产名**
 - 继承（dead man's switch）：不登录升级提醒（免费 30/60/90/120 天，会员 7/14/30/60 天）→ 触发交接 → 继承人凭 event_key + 访问码双因子领取密钥；三重取消窗口（触发前登录 / 领取前 / 领取后登录反转）；**资产级 + 分组级继承**：资产/分组可绑定多个继承人并各自设置触发天数，触发按资产/分组产生事件，继承人领取只拿指定资产密钥；**全局继承开关**（设置页一键开关全部继承）
 - 提醒：每资产到期提醒（30/7/1 天 + 已到期）、默认/自定义模板、站内信 + 邮件（SMTP）
 - 导入导出：JSON（全部/分类/单条，主密码验证）；加密导出 `.beq`（主密码加密）、导入可选覆盖现有；自托管同步：WebDAV/S3 加密备份（**无需登录**，配置仅存本机）
 - 主密码：支持**修改**与**重置**（忘记时用账户密码验证；重置后旧凭据不可恢复）；**跨设备恢复**——新设备登录凭「主密码 + 盐」重新派生（注册时盐上传服务端，明文不敏感）
 - 账号：设置页可**修改用户名/邮箱**与**修改登录密码**（改后所有设备强制重新登录）；登录支持用户名**或邮箱**；注册用户名/邮箱**实时查重**（防枚举）；**忘记密码**邮箱验证码重置（6 位、10 分钟有效、5 次错误作废、限流）；注册双密码输入 + 主密码提示语 + 主密码≠登录密码
-- 安全：APP 锁（PIN + 生物识别，含 Web 端锁定）、手动锁定（主页 AppBar 一键锁定）、免费/会员权益（免费资产上限 50）、**注册/登录算术验证码**（防机器人）、**按 IP 频率限制**（登录/注册 5 次/分，其他 300 次/分）、**管理后台 2FA (TOTP)**
-- 继承交接：继承人可访问 `http://服务器/claim` 凭 event_key + 访问码**网页领取**密钥；领取后 72h 内号主登录可反悔
+- 安全：APP 锁（PIN + 生物识别，含 Web 端锁定）、手动锁定（主页 AppBar 一键锁定）、免费/会员权益（免费资产上限 50）、**注册/登录图形验证码**（SVG，防机器人）、**按 IP 频率限制**（登录/注册 5 次/分，其他 300 次/分）、**管理后台 2FA (TOTP)**
+- 继承交接：继承人可访问 `https://服务器/claim` 凭 event_key + 访问码**网页领取**密钥；领取后 72h 内号主登录可反悔
 - 本地模式：**多本地账户**（各自独立主密码与加密数据），进入需验证账户主密码，云端/本地密钥隔离互不覆盖
 - 分组：自定义排序、删除保护（资产移入目标分组/合并）、未分类批量整理、30 天内到期预警
 
@@ -46,20 +46,20 @@ DB_DRIVER=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_USER=bequest DB_PASS=secret DB
 
 ```bash
 # 服务端（Go 1.26+）
-cd server && go run .            # 监听 :8080, 首次启动自动建库 server/data/bequest.db
+cd server && go run .            # 监听 :17654, 首次启动自动建库 server/data/bequest.db
 
 # 客户端（Flutter，Android/Web）
-cd app && flutter run            # 模拟器访问后端用 http://10.0.2.2:8080
-# 自托管 http://IP:8080 可直接连接：release 包已含网络权限与明文 HTTP 支持
+cd app && flutter run            # debug 模拟器访问后端用 http://10.0.2.2:17654
+# release 包默认拒绝明文 HTTP;自托管请配置 HTTPS 反向代理
 
 # Web 客户端（同源托管，浏览器即用）
 cd app && flutter build web      # 构建到 app/build/web
-cd ../server && go run .         # 自动探测并服务 app/build/web，浏览器打开 http://localhost:8080
+cd ../server && go run .         # 自动探测并服务 app/build/web，浏览器打开 http://localhost:17654
 ```
 
 ## 管理后台
 
-浏览器打开 `http://localhost:8080/admin`（单页内嵌，Go 同源托管，无需构建）。
+浏览器打开 `http://localhost:17654/admin`（单页内嵌，Go 同源托管，无需构建）。
 
 - **首个管理员**：启动时设置环境变量自动创建/提升
   `ADMIN_USERNAME=admin ADMIN_PASSWORD=<强密码> go run .`
@@ -80,7 +80,7 @@ cd server
 docker compose up -d --build
 ```
 
-- 服务监听 `:8080`，数据落在 `server/data/`（容器内 `/data` 卷）
+- 服务监听 `:17654`;SQLite 数据保存在 Docker 命名卷 `bequest_data`（卷内 `data/bequest.db`）
 - 多 SMTP / 短信 / 电话负载均衡：挂载 `config.json` 到 `/data/config.json`
   （`{"smtp_servers":[{"host","port","user","password","from_addr"}],"sms_providers":[],"phone_providers":[]}`；不配则回退环境变量 `SMTP_HOST/PORT/USER/PASS/FROM`）
 
@@ -90,7 +90,7 @@ docker compose up -d --build
 # Windows（PowerShell, 默认走 goproxy.cn 镜像）
 .\scripts\build.ps1            # → dist\bequest-server-dev-windows-amd64.exe 等
 
-# Linux/macOS（交叉编译 5 平台）
+# Linux/macOS（交叉编译 9 平台）
 VERSION=1.0.0 ./scripts/build.sh   # → dist/bequest-server-1.0.0-<os>-<arch>
 ```
 

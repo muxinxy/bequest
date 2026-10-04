@@ -38,12 +38,14 @@ COPY --from=web /web /web
 # 使用 bind mount 时,宿主机目录需可被 uid 10001 写入(Linux: chown -R 10001:10001 ./data)。
 RUN mkdir -p /data && chown appuser:appuser /data
 USER appuser
-# 服务器在 CWD 下打开 "data/bequest.db"; WORKDIR=/data 使相对路径落在卷上
+# 保持旧版镜像的实际数据库路径 /data/data/bequest.db,避免升级后切换到空库。
+# 裸机默认 DATA_DIR=data;镜像可用 -e DATA_DIR=... 显式覆盖。
 WORKDIR /data
-ENV DATA_DIR=/data WEB_DIR=/web
-EXPOSE 8080
+ENV DATA_DIR=/data/data WEB_DIR=/web
+EXPOSE 17654
 VOLUME ["/data"]
-# 容器探活:/healthz 内部 PingContext 查 DB,不可达时 503(30s 间隔,90s 无响应判死)
+# 容器探活:/healthz 内部 PingContext 查 DB,不可达时 503(30s 间隔,90s 无响应判死)。
+# 端口跟随容器 PORT 环境变量(默认 17654),与实际监听地址保持一致。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -qO /dev/null http://127.0.0.1:8080/healthz || exit 1
+    CMD wget -qO /dev/null http://127.0.0.1:${PORT:-17654}/healthz || exit 1
 ENTRYPOINT ["bequest-server"]

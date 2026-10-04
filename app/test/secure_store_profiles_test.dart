@@ -85,6 +85,17 @@ void main() {
     expect(await store.migrateLegacyLocalProfile(), isFalse);
   });
 
+  test('服务器地址迁移:旧开发默认 8080 精确匹配时升级为 17654', () async {
+    await store.saveServerUrl('http://10.0.2.2:8080');
+    expect(await store.readServerUrl(), 'http://10.0.2.2:17654');
+    // 迁移已回写持久化:再次读取仍是新值。
+    expect(await store.readServerUrl(), 'http://10.0.2.2:17654');
+
+    // 用户自定义地址(含自建 :8080)不得被自动改动。
+    await store.saveServerUrl('http://192.168.1.5:8080');
+    expect(await store.readServerUrl(), 'http://192.168.1.5:8080');
+  });
+
   test('退出登录(clearAll):保留加密凭据与服务器地址,清除会话/锁凭据', () async {
     // 模拟已登录设备:加密凭据 + 服务器配置 + 会话 + 应用锁。
     await store.saveJwt('jwt-token');
@@ -92,8 +103,8 @@ void main() {
     await store.saveMasterSalt('salt');
     await store.saveWrappingKey('wk');
     await store.saveMasterHint('提示');
-    await store.saveServerUrl('http://10.0.2.2:8080');
-    await store.saveRecentUrls(['http://10.0.2.2:8080']);
+    await store.saveServerUrl('http://10.0.2.2:17654');
+    await store.saveRecentUrls(['http://10.0.2.2:17654']);
     await store.savePinHash('pin-hash');
     await store.savePatternHash('pattern-hash');
     await store.saveStorageMode('cloud');
@@ -106,8 +117,8 @@ void main() {
     expect(await store.readWrappingKey(), 'wk');
     expect(await store.readMasterHint(), '提示');
     // 服务器地址是设备级配置,同样保留。
-    expect(await store.readServerUrl(), 'http://10.0.2.2:8080');
-    expect(await store.readRecentUrls(), ['http://10.0.2.2:8080']);
+    expect(await store.readServerUrl(), 'http://10.0.2.2:17654');
+    expect(await store.readRecentUrls(), ['http://10.0.2.2:17654']);
     // 会话与锁凭据必须清除。
     expect(await store.readJwt(), isNull);
     expect(await store.readPinHash(), isNull);
@@ -120,7 +131,7 @@ void main() {
     await store.saveMasterKey('mk');
     await store.saveMasterSalt('salt');
     await store.saveWrappingKey('wk');
-    await store.saveServerUrl('http://10.0.2.2:8080');
+    await store.saveServerUrl('http://10.0.2.2:17654');
 
     await store.clearAll(keepKeys: false);
 
@@ -128,7 +139,7 @@ void main() {
     expect(await store.readMasterSalt(), isNull);
     expect(await store.readWrappingKey(), isNull);
     // 服务器地址仍是设备级配置,保留。
-    expect(await store.readServerUrl(), 'http://10.0.2.2:8080');
+    expect(await store.readServerUrl(), 'http://10.0.2.2:17654');
   });
 
   test('本地账户:提示语随激活同步标准槽,退出恢复云端提示语', () async {

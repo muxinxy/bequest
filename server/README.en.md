@@ -9,16 +9,16 @@ Go backend for the digital asset vault + digital will: HTTP API, reminder schedu
 ## Quick start
 
 ```bash
-# Local development (default SQLite, listens on :8080; first run auto-creates data/bequest.db)
+# Local development (default SQLite, listens on :17654; first run auto-creates data/bequest.db)
 go run .
 
 # Specify a database (see "Databases" below)
 DB_DRIVER=postgres DB_USER=bequest DB_PASS=secret DB_NAME=bequest go run .
 
 # Browser entry points
-#   http://localhost:8080        Flutter Web client (run cd ../app && flutter build web first)
-#   http://localhost:8080/admin  Admin console
-#   http://localhost:8080/claim  Inheritor claim page (no login required)
+#   http://localhost:17654        Flutter Web client (run cd ../app && flutter build web first)
+#   http://localhost:17654/admin  Admin console
+#   http://localhost:17654/claim  Inheritor claim page (no login required)
 ```
 
 ## Databases
@@ -43,9 +43,10 @@ DB_DRIVER=postgres DB_USER=bequest DB_PASS=secret DB_NAME=bequest go run .
 | `ENCRYPTION_KEY` | **Required in production** | AES key that encrypts sensitive config such as SMTP passwords |
 | `SMTP_HOST/PORT/USER/PASS/FROM` | No | System-mail fallback (takes effect only when no `config.json` exists) |
 | `ADMIN_USERNAME/ADMIN_PASSWORD` | No | Bootstrap/promote the first admin at startup |
-| `PORT` | `8080` | Listen port |
+| `PORT` | `17654` | Listen port (1-65535; invalid values fail at startup) |
+| `HOST` | empty (all interfaces) | Listen address (e.g. `127.0.0.1` for localhost only) |
 | `WEB_DIR` | Auto-detected | Flutter Web static directory (`WEB_DIR` > `./web` > `app/build/web`) |
-| `DATA_DIR` | `data` | Data directory |
+| `DATA_DIR` | `data` | SQLite data directory; database is `<DATA_DIR>/bequest.db` (image default: `/data/data`) |
 
 ## Mail configuration (three layers, highest priority first)
 
@@ -60,17 +61,18 @@ DB_DRIVER=postgres DB_USER=bequest DB_PASS=secret DB_NAME=bequest go run .
 go run .  # or ./bequest-server
 
 # Health check (checks DB reachability)
-curl http://localhost:8080/healthz
+curl http://localhost:17654/healthz
 
 # Backup (SQLite)
-./bequest-server backup     # produces bequest-backup-<timestamp>.db
+./bequest-server backup                         # writes bequest-backup-<timestamp>.db to the CWD
+./bequest-server backup --output /path/to/b.db  # explicit output path
 
 # Version
-curl http://localhost:8080/api/v1/version
+curl http://localhost:17654/api/v1/version
 ```
 
 ## Deployment
 
 - Docker Compose (recommended): see [docker-compose.yml](docker-compose.yml); create `.env` first (`JWT_SECRET`/`ENCRYPTION_KEY` required). For production, pull and run the image remotely using a compose file **without the `build:` section** or `docker run` (see the deployment section in the repo-root README).
-- Binary cross-compilation: `../scripts/build.sh` (5 platforms) or `../scripts/build.ps1` (Windows).
+- Binary cross-compilation: `../scripts/build.sh` (9 platforms) or `../scripts/build.ps1` (Windows).
 - Detailed deployment guide: [README-deploy.en.md](README-deploy.en.md) (中文: [README-deploy.md](README-deploy.md)).

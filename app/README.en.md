@@ -27,18 +27,18 @@ Flutter client for the digital asset vault: the same codebase compiles to **Andr
 cd app
 flutter pub get
 
-# Connect to a local backend (emulators reach the host via 10.0.2.2)
-flutter run                      # default Android emulator; once the login page loads, enter http://10.0.2.2:8080 as the server address
+# Connect to a local backend (debug builds allow local HTTP; emulators reach the host via 10.0.2.2)
+flutter run                      # default Android emulator; server address defaults to http://10.0.2.2:17654
 
 # Debug against a specific backend address directly (use the LAN IP on a physical Android device)
-# Login page/settings → server address is editable; release builds already include network permission and cleartext-HTTP support
+# Login page/settings → server address is editable; release builds reject cleartext HTTP, so self-hosted servers need HTTPS
 ```
 
 The Web build is usually served same-origin by the server (no need to run it separately):
 
 ```bash
 flutter build web                # output lands in build/web
-cd ../server && go run .         # open http://localhost:8080 in a browser
+cd ../server && go run .         # open http://localhost:17654 in a browser
 ```
 
 ## Tests and checks

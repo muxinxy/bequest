@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -57,6 +58,16 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
       _snack(L10n.tr('请输入服务器地址'));
       return;
     }
+    // 结构化校验:提前区分地址格式错误与明文 HTTP 被系统拒绝,
+    // 而不是保存后给通用"连接失败"。
+    final error = ApiConfig.validateServerUrl(
+      url,
+      httpsOnly: !kIsWeb && !kDebugMode,
+    );
+    if (error != null) {
+      _snack(L10n.tr(error));
+      return;
+    }
     // 先验证连接,验证有效才保存。
     if (!await _testConnection(quiet: false)) {
       _snack(L10n.tr('无法连接服务器,请检查地址'));
@@ -111,12 +122,19 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
         padding: const EdgeInsets.all(16),
         children: [
           Text(L10n.tr('服务器地址'), style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(
+            L10n.tr('Android 正式版仅允许 HTTPS;debug 版可连接本机 HTTP'),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 8),
           TextFormField(
             controller: _urlController,
             keyboardType: TextInputType.url,
             decoration: InputDecoration(
-              hintText: 'http://10.0.2.2:8080',
+              hintText: ApiConfig.defaultBaseUrl.isEmpty
+                  ? 'https://bequest.example.com'
+                  : ApiConfig.defaultBaseUrl,
               border: const OutlineInputBorder(),
               // 连接指示灯:绿=可用,红=不可用,灰=未测试。
               suffixIcon: Padding(

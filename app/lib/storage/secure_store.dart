@@ -221,8 +221,19 @@ class SecureStore {
   Future<String?> readSyncConfig() async =>
       _storage.read(key: await _syncConfigKeyFor());
 
-  /// 服务器地址覆盖(设置页写入;为空则用 ApiConfig.defaultBaseUrl)。
-  Future<String?> readServerUrl() => _storage.read(key: _serverUrlKey);
+  /// 服务器地址覆盖(设置页写入;为空则用默认地址)。
+  /// 读取时做一次性迁移:端口 8080→17654 后,精确匹配旧开发默认值的地址
+  /// 自动升级并回写;用户自定义地址(含自建 :8080)一律不动。
+  Future<String?> readServerUrl() async {
+    final url = await _storage.read(key: _serverUrlKey);
+    const legacyDevUrl = 'http://10.0.2.2:8080';
+    const currentDevUrl = 'http://10.0.2.2:17654';
+    if (url != null && url.trim() == legacyDevUrl) {
+      await _storage.write(key: _serverUrlKey, value: currentDevUrl);
+      return currentDevUrl;
+    }
+    return url;
+  }
 
   Future<void> saveServerUrl(String url) =>
       _storage.write(key: _serverUrlKey, value: url);

@@ -192,6 +192,17 @@ const Map<String, String> enPagesAccount = {
   '清除设置': 'Clear settings',
   // ---- server_settings_page ----
   '服务器设置': 'Server settings',
+  '正式版仅允许 HTTPS;debug 版可连接本机 HTTP':
+      'Release builds require HTTPS; debug builds may use local HTTP',
+  '尚未配置服务器地址,请在「服务器设置」中填写':
+      'Server address is not configured. Set it under Server settings',
+  '地址需以 http:// 或 https:// 开头':
+      'Address must start with http:// or https://',
+  '地址缺少主机名': 'Address is missing a host name',
+  '地址不应包含用户信息或 # 片段':
+      'Address must not contain userinfo or a #fragment',
+  'Android 正式版仅允许 HTTPS 地址':
+      'Android release builds only allow HTTPS addresses',
   '请输入服务器地址': 'Please enter a server address',
   '无法连接服务器,请检查地址': 'Cannot reach the server, please check the address',
   '服务器地址': 'Server address',

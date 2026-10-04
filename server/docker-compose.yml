@@ -4,12 +4,14 @@
 #   2. docker compose up -d --build
 #
 # 关于数据目录:
-#   镜像内 WORKDIR=/data, 服务器在 CWD 下打开 "data/bequest.db",
-#   相对路径落在 /data 上。默认使用 Docker 命名卷 bequest_data
-#   (首次初始化自动继承镜像内 /data 的属主权限, 非 root 用户可直接写入);
-#   如需在宿主机直接查看数据文件, 把 volumes 改为:
+#   裸机默认 DATA_DIR=data;镜像为兼容旧版实际落盘位置,默认设为 /data/data,
+#   数据库位于命名卷 bequest_data 内的 data/bequest.db。
+#   (首次初始化自动继承镜像内 /data 的属主权限,非 root 用户可直接写入);
+#   如需在宿主机直接查看数据文件,把 volumes 改为:
 #     - ./data:/data
-#   并保证宿主机 ./data 可被容器内 uid 10001 写入(Linux: chown -R 10001:10001 ./data)。
+#   此时数据库位于宿主机 ./data/data/bequest.db;也可同时显式设置 DATA_DIR=/data
+#   改为 ./data/bequest.db。请勿在未迁移数据库文件时修改现有部署的 DATA_DIR。
+#   宿主机 ./data 需可被容器内 uid 10001 写入(Linux: chown -R 10001:10001 ./data)。
 #   config.json 同理: 服务器从 CWD 读取 config.json,
 #   把宿主机配置挂载到 ./config.json:/data/config.json 即可生效。
 services:
@@ -22,7 +24,9 @@ services:
     container_name: bequest
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "17654:17654"
+      # 如需保持旧宿主端口:改为 "8080:17654"(容器内保持默认,健康检查仍有效)。
+      # 要改容器内监听端口请同步改映射(见 environment 的 PORT)。
     volumes:
       - bequest_data:/data
       # 可选: 使用宿主机配置文件(见 README-deploy.md 的 config.json 示例)
@@ -45,6 +49,10 @@ services:
       # DB_USER: ${DB_USER:-}
       # DB_PASS: ${DB_PASS:-}
       # DB_NAME: ${DB_NAME:-}
+      # SQLite 目录(镜像默认 /data/data;修改现有部署前先迁移数据库文件)
+      # DATA_DIR: ${DATA_DIR:-/data/data}
+      # 可选: 容器内监听端口(默认 17654;健康检查自动跟随,但需同步修改上方映射)
+      # PORT: ${PORT:-17654}
       # 可选: 首个管理员引导(见 README「管理后台」)
       # ADMIN_USERNAME: ${ADMIN_USERNAME:-}
       # ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}

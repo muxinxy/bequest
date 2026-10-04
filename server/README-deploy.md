@@ -3,7 +3,7 @@
 > **English**: [README-deploy.en.md](README-deploy.en.md) · 服务端总览: [README.md](README.md) · 仓库根: [../README.md](../README.md)
 
 > 仓库: https://github.com/muxinxy/bequest | 镜像: `ghcr.io/muxinxy/bequest`
-> 服务器: Go 1.26, 单二进制, 默认监听 8080, 数据库支持 SQLite(默认)/MySQL/PostgreSQL, 首次启动自动迁移。
+> 服务器: Go 1.26, 单二进制, 默认监听 17654, 数据库支持 SQLite(默认)/MySQL/PostgreSQL, 首次启动自动迁移。
 
 ---
 
@@ -47,10 +47,12 @@ cd server
 docker compose up -d --build
 ```
 
-- 服务监听宿主机 `8080` 端口;
-- 数据库落在宿主机 `server/data/`(`./data:/data` 卷挂载);
-- 容器内 `WORKDIR=/data`, 数据库写入卷中的 `data/bequest.db`; SQL 迁移文件已嵌入服务器二进制, 无需在容器内挂载 `migrations/` 目录;
-- `config.json` 同理: 服务器从 CWD 读取 `config.json`, 将宿主机配置文件挂载到容器即可(取消 `docker-compose.yml` 中对应注释):
+- 服务监听宿主机 `17654` 端口;
+- Compose 默认使用 Docker 命名卷 `bequest_data`,镜像设置 `DATA_DIR=/data/data`,数据库位于卷内 `data/bequest.db`(容器路径 `/data/data/bequest.db`),与旧版镜像实际落盘位置兼容;
+- 如改用 `./data:/data` 绑定挂载,数据库对应宿主机 `server/data/data/bequest.db`;若希望改成 `server/data/bequest.db`,请同时设置 `DATA_DIR=/data`。现有部署修改 `DATA_DIR` 前必须先迁移数据库文件,否则会启动一套空库(新版本检测到旧库存在时会拒绝启动并提示迁移);
+- 需兼容旧宿主端口 8080 时,把映射改为 `"8080:17654"` 即可,健康检查自动跟随容器 `PORT`;不建议改动容器内 `PORT`(还需同步改映射);
+- SQL 迁移文件已嵌入服务器二进制,无需在容器内挂载 `migrations/` 目录;
+- `config.json` 同理:服务器从 CWD 读取 `config.json`,将宿主机配置文件挂载到容器即可(取消 `docker-compose.yml` 中对应注释):
 
 ```yaml
 volumes:
@@ -62,7 +64,7 @@ volumes:
 
 ## 3. HTTPS / 反向代理(强烈建议)
 
-服务器本身只提供 HTTP(默认 `:8080`)。它承载加密资产与继承交接,请务必经 HTTPS 反向代理对外暴露,不要将 8080 直接暴露到公网:
+服务器本身只提供 HTTP(默认 `:17654`)。它承载加密资产与继承交接,请务必经 HTTPS 反向代理对外暴露,不要将 17654 直接暴露到公网:
 
 - 登录口令、JWT、验证码等均以明文过网,裸 HTTP 下可被中间人窃听/篡改;
 - **Android 客户端默认拒绝明文 HTTP**(见应用 `network_security_config.xml`)——不启用 HTTPS 时 Android 端将无法连接(局域网自用可用 Web 端代替,或自担风险自行放行);
@@ -72,7 +74,7 @@ volumes:
 
 ```Caddyfile
 bequest.example.com {
-    reverse_proxy 127.0.0.1:8080
+    reverse_proxy 127.0.0.1:17654
 }
 ```
 
@@ -86,7 +88,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/bequest.example.com/privkey.pem;
 
     location / {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:17654;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -149,7 +151,9 @@ server {
 | `SMTP_USER` | 否 | SMTP 用户名 |
 | `SMTP_PASS` | 否 | SMTP 密码/授权码 |
 | `SMTP_FROM` | 否 | 发件人地址 |
-| `DATA_DIR` | 否 | 数据目录(镜像内默认为 `/data`) |
+| `DATA_DIR` | 否 | SQLite 数据目录,数据库为 `<DATA_DIR>/bequest.db`;裸机默认 `data`,镜像默认 `/data/data` |
+| `PORT` | 否 | 监听端口(默认 `17654`;1-65535,非法值启动即报错) |
+| `HOST` | 否 | 监听地址(默认全部网卡;如 `127.0.0.1` 仅本机访问) |
 
 ### 使用 MySQL / PostgreSQL
 

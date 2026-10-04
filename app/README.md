@@ -25,18 +25,18 @@ Flutter 编写的数字资产保险箱客户端：同一套代码编译 **Androi
 cd app
 flutter pub get
 
-# 连接本地后端(模拟器用 10.0.2.2 访问宿主机)
-flutter run                      # 默认 Android 模拟器;进入登录页后服务器地址填 http://10.0.2.2:8080
+# 连接本地后端(debug 包允许本机 HTTP;模拟器用 10.0.2.2 访问宿主机)
+flutter run                      # 默认 Android 模拟器;服务器地址默认 http://10.0.2.2:17654
 
 # 直接指定后端地址调试(Android 真机填局域网 IP)
-# 登录页/设置 → 服务器地址 可改;release 包已含网络权限与明文 HTTP 支持
+# 登录页/设置 → 服务器地址可改;release 包默认拒绝明文 HTTP,自托管请配置 HTTPS
 ```
 
 Web 版通常由服务端同源托管（无需单独跑）：
 
 ```bash
 flutter build web                # 产物在 build/web
-cd ../server && go run .         # 浏览器打开 http://localhost:8080
+cd ../server && go run .         # 浏览器打开 http://localhost:17654
 ```
 
 ## 测试与检查

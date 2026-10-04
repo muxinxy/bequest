@@ -5,6 +5,8 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,7 +40,7 @@ const (
 	dialectPostgres
 )
 
-const dataDir = "data"
+const defaultDataDir = "data"
 
 func (d dialect) String() string {
 	switch d {
@@ -193,7 +195,7 @@ func smtpUserCol() string {
 }
 
 // openDB opens the configured database. DB_DRIVER selects the backend:
-//   - "sqlite" (default): data/bequest.db, WAL mode + busy timeout
+//   - "sqlite" (default): DATA_DIR/bequest.db, WAL mode + busy timeout
 //   - "mysql":  DB_DSN, or DB_HOST/DB_PORT/DB_USER/DB_PASS/DB_NAME
 //   - "postgres": DB_DSN, or DB_HOST/DB_PORT/DB_USER/DB_PASS/DB_NAME
 func openDB() (*sql.DB, error) {
@@ -253,10 +255,31 @@ func openDB() (*sql.DB, error) {
 		db.SetMaxIdleConns(5)
 		return db, nil
 	default:
-		if err := os.MkdirAll(dataDir, 0o755); err != nil {
-			return nil, fmt.Errorf("create data dir: %w", err)
+		dataDir := envOr("DATA_DIR", defaultDataDir)
+		dbPath := filepath.Join(dataDir, "bequest.db")
+		// 升级保护:旧版本忽略 DATA_DIR、一律用 CWD 下的 data/bequest.db。
+		// 显式设置 DATA_DIR 而目标库不存在、但旧路径库存在时拒绝启动,
+		// 避免静默在新目录迁移出一套空库(表现为"用户数据全部消失")。
+		if os.Getenv("DATA_DIR") != "" {
+			_, statErr := os.Stat(dbPath)
+			legacyPath := filepath.Join(defaultDataDir, "bequest.db")
+			_, legacyErr := os.Stat(legacyPath)
+			switch {
+			case os.IsNotExist(statErr) && legacyErr == nil:
+				return nil, fmt.Errorf(
+					"database not found under DATA_DIR=%q but legacy %q exists (old versions ignored DATA_DIR); stop the server, move bequest.db(-wal/-shm) into DATA_DIR, or unset DATA_DIR / DATA_DIR 指定的数据库不存在,而旧版默认库存在(旧版本忽略 DATA_DIR):请先停止服务,把 bequest.db(-wal/-shm)迁移进 DATA_DIR,或取消 DATA_DIR 设置",
+					dataDir, legacyPath)
+			case statErr == nil && legacyErr == nil:
+				log.Printf("warning: both DATA_DIR %q and legacy %q hold a database; make sure the intended one is used / DATA_DIR 与旧版默认库同时存在,请确认使用的是预期的数据库",
+					dbPath, legacyPath)
+			}
 		}
-		dsn := "file:" + filepath.Join(dataDir, "bequest.db") +
+		if err := os.MkdirAll(dataDir, 0o700); err != nil {
+			return nil, fmt.Errorf("create data dir %q: %w", dataDir, err)
+		}
+		// SQLite 的 file: URI 把 ? # % 当控制字符,路径必须按 URI 转义后再拼接
+		// (目录名含空格/中文/问号等时否则会打开到错误路径甚至静默建空库)。
+		dsn := "file:" + url.PathEscape(filepath.ToSlash(dbPath)) +
 			"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
 		db, err := sql.Open("sqlite", dsn)
 		if err != nil {

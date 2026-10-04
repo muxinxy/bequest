@@ -6,14 +6,32 @@ import 'package:http/http.dart' as http;
 import '../l10n/app_l10n.dart';
 import '../logger.dart';
 
-/// 后端接口客户端。后端运行在开发机 8080 端口,
-/// Android 模拟器通过 http://10.0.2.2:8080 访问。
+/// 默认服务器地址:Android debug 连开发机(模拟器经 10.0.2.2 访问宿主机);
+/// web 同源用相对路径(空串);Android profile/release 留空,由用户配置
+/// HTTPS 地址(系统策略禁止明文 HTTP,预填 HTTP 必然失败)。
+const kDefaultBaseUrl = kIsWeb || !kDebugMode ? '' : 'http://10.0.2.2:17654';
+
+/// 非 web 平台服务器地址未配置时抛出:空 baseUrl 会生成移动端无法发送的
+/// 相对 URI(dart:io 没有当前域名),与其在网络层失败不如尽早给出明确语义。
+class ServerNotConfiguredException implements Exception {
+  const ServerNotConfiguredException();
+
+  @override
+  String toString() => 'server base url is not configured';
+}
+
+/// 后端接口客户端。Android debug 模拟器默认通过
+/// http://10.0.2.2:17654 访问开发机;正式包需配置 HTTPS 地址。
 class ApiClient {
-  /// 默认本机后端;构造时可注入覆盖(见 ApiConfig,设置页可持久化覆盖)。
+  /// 构造时可注入覆盖(见 ApiConfig,设置页可持久化覆盖)。
   ApiClient({http.Client? client, String? baseUrl})
       : _client = client ?? http.Client(),
-        // ponytail: web 与后端同源,空 baseUrl = 相对路径;移动端默认开发机。
-        baseUrl = baseUrl ?? (kIsWeb ? '' : 'http://10.0.2.2:8080');
+        baseUrl = baseUrl ?? kDefaultBaseUrl {
+    // 非 web 平台空地址不可用,构造即失败;调用方捕获后应引导到服务器设置页。
+    if (!kIsWeb && this.baseUrl.isEmpty) {
+      throw const ServerNotConfiguredException();
+    }
+  }
 
   final http.Client _client;
   final String baseUrl;
